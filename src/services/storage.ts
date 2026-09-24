@@ -26,8 +26,6 @@ import {
   SAMPLE_TRANSVULCANIA_SEGMENTS,
   SAMPLE_GUT_PROFILE,
   SAMPLE_ECCENTRIC_EXERCISES,
-  SAMPLE_PMC_DATA,
-  generateSamplePMCData,
   SAMPLE_TEST_WORKOUTS,
   SAMPLE_DAILY_CHECKINS,
   SAMPLE_WEIGHT_HISTORY,
@@ -38,6 +36,7 @@ import {
   SAMPLE_WUT_CHECK,
   SAMPLE_ADAPTATION_STAGES
 } from './sampleData';
+import { computePmcSeries, localDateKey } from '../utils/trainingLoad';
 
 const STORAGE_KEYS = {
   PROFILE: 'uphill_coach_profile',
@@ -279,13 +278,12 @@ export const StorageService = {
   getCheckIns(): DailyCheckIn[] {
     try {
       const stored = localStorage.getItem(STORAGE_KEYS.DAILY_CHECKINS);
-      if (stored) {
+      if (stored !== null) {
         const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length >= 7) {
-          return parsed;
-        }
+        if (Array.isArray(parsed)) return parsed;
       }
-      return SAMPLE_DAILY_CHECKINS;
+      // Solo en la primera carga (sin nada guardado) se muestran los de ejemplo
+      return this.isTestDataActive() ? SAMPLE_DAILY_CHECKINS : [];
     } catch {
       return SAMPLE_DAILY_CHECKINS;
     }
@@ -313,32 +311,53 @@ export const StorageService = {
     suuntoWorkouts: Workout[],
     suuntoCheckIns: DailyCheckIn[],
   ): { addedWorkouts: number; completedPlanned: number; checkInsAdded: number } {
+    // Con una cuenta Suunto real, los entrenos de ejemplo (completados, con TSS
+    // ficticio) contaminarían CTL/ATL/TSB: se eliminan antes de integrar.
+    if (suuntoWorkouts.length > 0 && this.isTestDataActive()) {
+      this.clearOnlySampleData();
+    }
     const workouts = this.getWorkouts();
-    const importedKeys = new Set(workouts.map((w) => w.suuntoWorkoutKey).filter(Boolean));
+    const byKey = new Map(workouts.filter((w) => w.suuntoWorkoutKey).map((w) => [w.suuntoWorkoutKey as string, w]));
     let addedWorkouts = 0;
     let completedPlanned = 0;
 
+    // Datos medidos por Suunto (se copian siempre, también al re-sincronizar,
+    // para recoger cambios como un TSS o una duración editados en Suunto).
+    const measured = (sw: Workout) => ({
+      completed: true,
+      suuntoWorkoutKey: sw.suuntoWorkoutKey,
+      date: sw.date,
+      actualDurationMin: sw.actualDurationMin,
+      actualDistanceKm: sw.actualDistanceKm,
+      actualElevationGainM: sw.actualElevationGainM,
+      actualAvgHr: sw.actualAvgHr,
+      actualMaxHr: sw.actualMaxHr,
+      actualTss: sw.actualTss,
+      tss: sw.tss,
+    });
+
     for (const sw of suuntoWorkouts) {
-      if (!sw.suuntoWorkoutKey || importedKeys.has(sw.suuntoWorkoutKey)) continue;
-      importedKeys.add(sw.suuntoWorkoutKey);
+      if (!sw.suuntoWorkoutKey) continue;
+      const existing = byKey.get(sw.suuntoWorkoutKey);
+      if (existing) {
+        Object.assign(existing, measured(sw), {
+          zoneSenseBreakdown: sw.zoneSenseBreakdown ?? existing.zoneSenseBreakdown,
+        });
+        continue;
+      }
       const planned = workouts.find(
         (w) => w.date === sw.date && !w.completed && !w.suuntoWorkoutKey && w.type !== 'rest',
       );
       if (planned) {
-        Object.assign(planned, {
-          completed: true,
-          suuntoWorkoutKey: sw.suuntoWorkoutKey,
-          actualDurationMin: sw.actualDurationMin,
-          actualDistanceKm: sw.actualDistanceKm,
-          actualElevationGainM: sw.actualElevationGainM,
-          actualAvgHr: sw.actualAvgHr,
-          actualMaxHr: sw.actualMaxHr,
+        Object.assign(planned, measured(sw), {
           zoneSenseBreakdown: sw.zoneSenseBreakdown ?? planned.zoneSenseBreakdown,
-          actualTss: sw.actualTss,
+          intensityFactor: undefined,
         });
+        byKey.set(sw.suuntoWorkoutKey, planned);
         completedPlanned++;
       } else {
         workouts.push(sw);
+        byKey.set(sw.suuntoWorkoutKey, sw);
         addedWorkouts++;
       }
     }
@@ -368,7 +387,7 @@ export const StorageService = {
   },
 
   getTodayCheckIn(): DailyCheckIn | undefined {
-    const today = new Date().toISOString().split('T')[0];
+    const today = localDateKey();
     return this.getCheckIns().find(c => c.date === today);
   },
 
@@ -641,20 +660,15 @@ Puedes revisar tus umbrales (AeT y AnT) en tu perfil, registrar tu test de deriv
   },
 
   // --- PMC Performance Management Chart (Mejora 3) ---
+  // El PMC ya no se guarda: se calcula siempre a partir de los entrenos
+  // completados (TSS de Suunto). Así nunca se mezcla con series de ejemplo.
   getPMCData(): PMCDataPoint[] {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEYS.PMC_DATA);
-      if (stored) return JSON.parse(stored);
-      const generated = generateSamplePMCData();
-      this.savePMCData(generated);
-      return generated;
-    } catch {
-      return generateSamplePMCData();
-    }
+    return computePmcSeries(this.getWorkouts(), this.getProfile().antHr);
   },
 
-  savePMCData(points: PMCDataPoint[]): void {
-    localStorage.setItem(STORAGE_KEYS.PMC_DATA, JSON.stringify(points));
+  /** Borra la serie PMC antigua (datos de ejemplo) que guardaban versiones anteriores. */
+  savePMCData(_points?: PMCDataPoint[]): void {
+    localStorage.removeItem(STORAGE_KEYS.PMC_DATA);
   },
 
   // --- Eccentric Outdoor Exercises (Mejora 4) ---
@@ -812,7 +826,6 @@ Puedes revisar tus umbrales (AeT y AnT) en tu perfil, registrar tu test de deriv
   loadFullTestData(): void {
     this.saveWorkouts(SAMPLE_TEST_WORKOUTS);
     this.saveGutProfile(SAMPLE_GUT_PROFILE);
-    this.savePMCData(generateSamplePMCData());
     this.saveWeightHistory(SAMPLE_WEIGHT_HISTORY);
     this.saveWeeklySummaries(SAMPLE_WEEKLY_SUMMARIES);
     this.saveMesocycleProgression(SAMPLE_MESOCYCLE_PROGRESSION);
@@ -843,7 +856,7 @@ Puedes revisar tus umbrales (AeT y AnT) en tu perfil, registrar tu test de deriv
     this.saveHydrationTests(userHydrationTests);
 
     // Keep today's checkin if recorded by athlete
-    const today = new Date().toISOString().split('T')[0];
+    const today = localDateKey();
     const userCheckIns = this.getCheckIns().filter(c => c.date === today);
     localStorage.setItem(STORAGE_KEYS.DAILY_CHECKINS, JSON.stringify(userCheckIns));
 
@@ -966,7 +979,7 @@ Puedes revisar tus umbrales (AeT y AnT) en tu perfil, registrar tu test de deriv
         this.saveTransvulcaniaPlan(data.raceSimulation);
       }
       if (Array.isArray(data.pmcData)) {
-        this.savePMCData(data.pmcData);
+        // La serie PMC se recalcula desde los entrenos; no se importa.
         countSummary.pmcPoints = data.pmcData.length;
       }
       if (Array.isArray(data.weightHistory)) {

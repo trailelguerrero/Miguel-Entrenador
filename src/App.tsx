@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { computePmcSeries, getWorkoutLoad } from './utils/trainingLoad';
 import { Navbar } from './components/Navbar';
 import { MorningBanner } from './components/MorningBanner';
 import { CalendarView } from './components/CalendarView';
@@ -60,6 +61,8 @@ export default function App() {
   const [targetRace, setTargetRace] = useState<TargetRace>(StorageService.getTargetRace());
   const [secondaryRaces, setSecondaryRaces] = useState<TargetRace[]>(StorageService.getSecondaryRaces());
   const [workouts, setWorkouts] = useState<Workout[]>(StorageService.getWorkouts());
+  // PMC real (CTL/ATL/TSB) calculado desde los entrenos completados, TSS de Suunto
+  const pmcData = useMemo(() => computePmcSeries(workouts, profile.antHr), [workouts, profile.antHr]);
   const [todayCheckIn, setTodayCheckIn] = useState<DailyCheckIn | undefined>(StorageService.getTodayCheckIn());
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(StorageService.getChatMessages());
   const [suuntoConfig, setSuuntoConfig] = useState<SuuntoIntegrationConfig>(StorageService.getSuuntoConfig());
@@ -361,8 +364,9 @@ export default function App() {
     if (selectedWorkout && selectedWorkout.id === workout.id) {
       setSelectedWorkout(workout);
     }
+    const completedTss = workout.completed ? getWorkoutLoad(workout, profile.antHr)?.tss : undefined;
     const tssInfo = workout.completed 
-      ? (workout.actualTss || workout.plannedTss ? ` • ${workout.actualTss || workout.plannedTss} TSS` : '')
+      ? (completedTss != null ? ` • ${completedTss} TSS` : '')
       : (workout.plannedTss ? ` • ${workout.plannedTss} TSS` : '');
     showToast({
       type: 'success',
@@ -828,7 +832,7 @@ Son exactamente 4 días de carga (3 entre semana y la tirada larga del fin de se
             targetRace={targetRace}
             workouts={workouts}
             checkIns={StorageService.getCheckIns()}
-            pmcData={StorageService.getPMCData()}
+            pmcData={pmcData}
             suuntoConfig={suuntoConfig}
             onNavigateTab={(tab) => setActiveTab(tab)}
             onScheduleDeload={handleScheduleDeload}
@@ -1013,6 +1017,7 @@ Son exactamente 4 días de carga (3 entre semana y la tirada larga del fin de se
         }}
         initialDateStr={selectedAddDate}
         defaultAetHr={profile.aetHr}
+        defaultAntHr={profile.antHr}
       />
 
       <FartlekGeneratorModal

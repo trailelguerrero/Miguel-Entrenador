@@ -20,7 +20,8 @@
  *    - Deload / Supercompensation: Load drops (-40% to -50%) + HRV 7d rebounds above baseline.
  */
 
-import { Workout, DailyCheckIn, AthleteProfile, PMCDataPoint } from '../types';
+import { Workout, DailyCheckIn, AthleteProfile } from '../types';
+import { buildDailyLoadSeries } from './trainingLoad';
 
 export type OverreachingType = 
   | 'optimal_adaptation'
@@ -134,18 +135,26 @@ export interface HRVLoadSummary {
   series: HRVLoadDataPoint[];
 }
 
+/** Media de los valores > 0 (0 = sin dato), redondeada a `decimals`. */
+function avgPositive(values: number[], decimals: number): number {
+  const v = values.filter(x => x > 0);
+  if (v.length === 0) return 0;
+  const f = 10 ** decimals;
+  return Math.round((v.reduce((a, b) => a + b, 0) / v.length) * f) / f;
+}
+
 /**
  * Calculates continuous daily HRV and rolling load metrics for the evaluation window.
  */
 export function calculateHRVLoadCorrelation(
   workouts: Workout[],
   checkIns: DailyCheckIn[],
-  pmcData: PMCDataPoint[],
   profile: AthleteProfile,
   daysCount: number = 35
 ): HRVLoadSummary {
-  const baselineHrv = profile.baselineHrv || 51.5;
-  const today = new Date();
+  const realHrvs = (checkIns || []).map(c => c.hrvRmssd).filter(v => v > 0);
+  const baselineHrv = profile.baselineHrv ||
+    (realHrvs.length > 0 ? Math.round((realHrvs.reduce((a, b) => a + b, 0) / realHrvs.length) * 10) / 10 : 0);
 
   // Index check-ins by date
   const checkInMap = new Map<string, DailyCheckIn>();
@@ -153,46 +162,12 @@ export function calculateHRVLoadCorrelation(
     checkIns.forEach(c => checkInMap.set(c.date, c));
   }
 
-  // Index daily workouts by date
-  const workoutTssMap = new Map<string, { tss: number; km: number; minutes: number; titles: string[] }>();
-  
-  // Need enough past days to calculate a clean 7-day rolling window for the earliest point
+  // Carga diaria real: solo entrenos completados, TSS de Suunto cuando existe.
+  // (Need enough past days to calculate a clean 7-day rolling window for the earliest point)
   const totalDaysToFetch = daysCount + 14;
-  for (let i = totalDaysToFetch - 1; i >= 0; i--) {
-    const d = new Date(today);
-    d.setDate(today.getDate() - i);
-    const dateStr = d.toISOString().split('T')[0];
-    workoutTssMap.set(dateStr, { tss: 0, km: 0, minutes: 0, titles: [] });
-  }
-
-  // Fill TSS from PMC fallback
-  if (pmcData && pmcData.length > 0) {
-    pmcData.forEach(p => {
-      if (workoutTssMap.has(p.date)) {
-        const item = workoutTssMap.get(p.date)!;
-        item.tss = p.tss || 0;
-        if (p.workoutTitle) item.titles.push(p.workoutTitle);
-      }
-    });
-  }
-
-  // Overwrite/enrich with actual workouts
-  if (workouts && workouts.length > 0) {
-    workouts.forEach(w => {
-      if (workoutTssMap.has(w.date)) {
-        const item = workoutTssMap.get(w.date)!;
-        const dur = w.completed && w.actualDurationMin ? w.actualDurationMin : (w.plannedDurationMin || 0);
-        const dist = w.completed && w.actualDistanceKm !== undefined ? w.actualDistanceKm : (w.plannedDistanceKm || 0);
-        const tss = w.actualTss || w.plannedTss || Math.round((dur / 60) * 55);
-
-        item.tss += tss;
-        item.km += dist;
-        item.minutes += dur;
-        if (w.title && !item.titles.includes(w.title)) {
-          item.titles.push(w.title);
-        }
-      }
-    });
+  const workoutTssMap = new Map<string, { tss: number; km: number; minutes: number; titles: string[] }>();
+  for (const day of buildDailyLoadSeries(workouts, totalDaysToFetch, profile.antHr)) {
+    workoutTssMap.set(day.date, { tss: day.tss, km: day.km, minutes: day.minutes, titles: day.titles });
   }
 
   // Generate continuous daily HRV series
@@ -208,15 +183,12 @@ export function calculateHRVLoadCorrelation(
   }> = [];
 
   // Compute standard deviation of all known check-ins for the SWC band
+  // (only real check-ins; with fewer than 2 values there is no SD → band = baseline)
   const knownHrvValues: number[] = [];
-  checkInMap.forEach(c => knownHrvValues.push(c.hrvRmssd));
-  if (knownHrvValues.length < 5) {
-    // default realistic standard deviation for trail runners (~7-9 ms)
-    knownHrvValues.push(48, 52, 54, 46, 50, 53, 44, 42, 51);
-  }
-  const meanHrv = knownHrvValues.reduce((a, b) => a + b, 0) / knownHrvValues.length;
-  const variance = knownHrvValues.reduce((acc, v) => acc + Math.pow(v - meanHrv, 2), 0) / knownHrvValues.length;
-  const standardDeviation = Math.round(Math.sqrt(variance) * 10) / 10 || 7.5;
+  checkInMap.forEach(c => { if (c.hrvRmssd > 0) knownHrvValues.push(c.hrvRmssd); });
+  const meanHrv = knownHrvValues.length > 0 ? knownHrvValues.reduce((a, b) => a + b, 0) / knownHrvValues.length : 0;
+  const variance = knownHrvValues.length > 1 ? knownHrvValues.reduce((acc, v) => acc + Math.pow(v - meanHrv, 2), 0) / knownHrvValues.length : 0;
+  const standardDeviation = Math.round(Math.sqrt(variance) * 10) / 10;
 
   // Smallest Worthwhile Change (SWC): baseline ± 0.5 * SD
   const swcHalfSd = Math.round((0.5 * standardDeviation) * 10) / 10;
@@ -228,15 +200,9 @@ export function calculateHRVLoadCorrelation(
     const wData = workoutTssMap.get(dateStr)!;
     const checkIn = checkInMap.get(dateStr);
 
-    let hrvVal = checkIn?.hrvRmssd;
-    let rHr = checkIn?.restingHr || 46;
-
-    // Synthetic fallback if no check-in exists for this day
-    if (!hrvVal) {
-      // Base around baseline with day-of-week micro-variations
-      const dayIdx = new Date(dateStr).getDay();
-      hrvVal = baselineHrv + (dayIdx % 3 === 0 ? -3 : dayIdx % 2 === 0 ? 2 : -1);
-    }
+    // Sin check-in ese día → sin dato (NaN). Nunca se inventan valores de HRV.
+    const hrvVal = checkIn?.hrvRmssd && checkIn.hrvRmssd > 0 ? checkIn.hrvRmssd : NaN;
+    const rHr = checkIn?.restingHr && checkIn.restingHr > 0 ? checkIn.restingHr : NaN;
 
     dailyRecords.push({
       date: dateStr,
@@ -257,23 +223,28 @@ export function calculateHRVLoadCorrelation(
 
     // 7-day rolling average of HRV
     let hrvSum = 0;
+    let hrvCount = 0;
     let tssSum = 0;
     let kmSum = 0;
     let minSum = 0;
 
     for (let j = i - 6; j <= i; j++) {
-      hrvSum += dailyRecords[j].dailyHrv;
+      if (!Number.isNaN(dailyRecords[j].dailyHrv)) {
+        hrvSum += dailyRecords[j].dailyHrv;
+        hrvCount++;
+      }
       tssSum += dailyRecords[j].dailyTss;
       kmSum += dailyRecords[j].dailyKm;
       minSum += dailyRecords[j].dailyMinutes;
     }
 
-    const hrv7dAvg = Math.round((hrvSum / 7) * 10) / 10;
+    // Media de las noches con dato real dentro de la ventana de 7 días
+    const hrv7dAvg = hrvCount > 0 ? Math.round((hrvSum / hrvCount) * 10) / 10 : 0;
     const weeklyTss = Math.round(tssSum);
     const weeklyKm = Math.round(kmSum * 10) / 10;
     const weeklyHours = Math.round((minSum / 60) * 10) / 10;
 
-    const isSuppressed = hrv7dAvg < swcLower;
+    const isSuppressed = hrvCount > 0 && hrv7dAvg < swcLower;
     const isHighLoad = weeklyTss >= 320;
     const isVeryHighLoad = weeklyTss >= 380;
     const isLowLoad = weeklyTss < 230;
@@ -292,13 +263,14 @@ export function calculateHRVLoadCorrelation(
       status = 'optimal_adaptation';
     }
 
-    const d = new Date(cur.date);
+    const [yy, mm, dd] = cur.date.split('-').map(Number);
+    const d = new Date(yy, mm - 1, dd);
     const dayLabel = `${d.getDate()} ${d.toLocaleString('es-ES', { month: 'short' })}`;
 
     fullSeries.push({
       date: cur.date,
       dayLabel,
-      dailyHrv: cur.dailyHrv,
+      dailyHrv: Number.isNaN(cur.dailyHrv) ? 0 : cur.dailyHrv,
       hrv7dAvg,
       hrvBaseline: baselineHrv,
       swcUpper,
@@ -307,7 +279,7 @@ export function calculateHRVLoadCorrelation(
       weeklyTss,
       weeklyKm,
       weeklyHours,
-      restingHr: cur.restingHr,
+      restingHr: Number.isNaN(cur.restingHr) ? 0 : cur.restingHr,
       status,
       isOverreaching: status === 'non_functional_overreaching',
       isSuppressed,
@@ -330,7 +302,7 @@ export function calculateHRVLoadCorrelation(
     ? Math.round(((latest.weeklyTss - point7dAgo.weeklyTss) / point7dAgo.weeklyTss) * 100)
     : 0;
 
-  const hrvDeltaFromBaselinePct = Math.round(((latest.hrv7dAvg - baselineHrv) / baselineHrv) * 100);
+  const hrvDeltaFromBaselinePct = baselineHrv > 0 && latest.hrv7dAvg > 0 ? Math.round(((latest.hrv7dAvg - baselineHrv) / baselineHrv) * 100) : 0;
 
   // Detect continuous overreaching episodes
   const overreachingEpisodes: OverreachingEpisode[] = [];
@@ -447,25 +419,26 @@ export function calculateHRVLoadCorrelation(
 
   // Resting HR 7d and Delta
   const last7SeriesPoints = displaySeries.slice(-7);
-  const restingHr7dAvg = last7SeriesPoints.length > 0
-    ? Math.round(last7SeriesPoints.reduce((acc, p) => acc + p.restingHr, 0) / last7SeriesPoints.length)
-    : 46;
-  const baselineRestingHr = profile.restingHr || 42;
-  const restingHrDelta = restingHr7dAvg - baselineRestingHr;
+  const last7RestingHr = last7SeriesPoints.map(p => p.restingHr).filter(v => v > 0);
+  const baselineRestingHr = profile.restingHr || 0;
+  const restingHr7dAvg = last7RestingHr.length > 0
+    ? Math.round(last7RestingHr.reduce((acc, v) => acc + v, 0) / last7RestingHr.length)
+    : baselineRestingHr;
+  const restingHrDelta = baselineRestingHr > 0 ? restingHr7dAvg - baselineRestingHr : 0;
 
   // Coefficient of Variation (CV) of the last 7 daily HRV points
-  const last7DailyHrv = last7SeriesPoints.map(p => p.dailyHrv);
+  const last7DailyHrv = last7SeriesPoints.map(p => p.dailyHrv).filter(v => v > 0);
   const mean7dDailyHrv = last7DailyHrv.reduce((a, b) => a + b, 0) / Math.max(last7DailyHrv.length, 1);
   const variance7d = last7DailyHrv.reduce((acc, v) => acc + Math.pow(v - mean7dDailyHrv, 2), 0) / Math.max(last7DailyHrv.length, 1);
   const hrvCvPct = mean7dDailyHrv > 0 
     ? Math.round((Math.sqrt(variance7d) / mean7dDailyHrv) * 1000) / 10 
-    : 8.5;
+    : 0;
 
   // Fatigue vs Recovery Autonomic Coupling Index (0 - 100)
   // High load + High HRV = Supercompensation (>75)
   // High load + Depressed HRV = Severe Overreaching (<35)
   // Low load + Elevated HRV = Deload / Recovery (65-80)
-  const hrvScore = Math.max(0, Math.min(100, 50 + ((latest.hrv7dAvg - baselineHrv) / baselineHrv) * 120));
+  const hrvScore = Math.max(0, Math.min(100, 50 + (baselineHrv > 0 && latest.hrv7dAvg > 0 ? ((latest.hrv7dAvg - baselineHrv) / baselineHrv) * 120 : 0)));
   const loadPenalty = latest.weeklyTss > 350 ? ((latest.weeklyTss - 350) / 15) : 0;
   const restingHrPenalty = restingHrDelta > 2 ? (restingHrDelta * 3) : 0;
   const rawCouplingIndex = Math.round(hrvScore - (latest.hrv7dAvg < swcLower ? loadPenalty * 1.5 : loadPenalty * 0.5) - restingHrPenalty);
@@ -484,7 +457,7 @@ export function calculateHRVLoadCorrelation(
 
   // Weekly Quadrants (Last 4 Weeks Analysis)
   const weeklyQuadrants: WeeklyQuadrantPoint[] = [];
-  const weekNames = ['Semana 1 (Base)', 'Semana 2 (Carga)', 'Semana 3 (Pico)', 'Semana Actual'];
+  const weekNames = ['Hace 3 semanas', 'Hace 2 semanas', 'Semana pasada', 'Últimos 7 días'];
   
   for (let w = 0; w < 4; w++) {
     const startIdx = Math.max(0, displaySeries.length - (4 - w) * 7);
@@ -493,8 +466,8 @@ export function calculateHRVLoadCorrelation(
 
     if (weekSlice.length > 0) {
       const weeklyTss = Math.round(weekSlice.reduce((acc, p) => acc + p.dailyTss, 0));
-      const avgHrv7d = Math.round((weekSlice.reduce((acc, p) => acc + p.hrv7dAvg, 0) / weekSlice.length) * 10) / 10;
-      const restingHrAvg = Math.round(weekSlice.reduce((acc, p) => acc + p.restingHr, 0) / weekSlice.length);
+      const avgHrv7d = avgPositive(weekSlice.map(p => p.hrv7dAvg), 1);
+      const restingHrAvg = avgPositive(weekSlice.map(p => p.restingHr), 0);
       const isCurrentWeek = w === 3;
 
       let quadrant: 'supercompensation' | 'overreaching' | 'systemic_fatigue' | 'deload_freshness';
@@ -541,7 +514,8 @@ export function calculateHRVLoadCorrelation(
   // Weekly Blocks (Microcycle Breakdown for Dual Axis Chart)
   const weeklyBlocks: WeeklyHrvLoadBlock[] = [];
   const totalWeeks = Math.max(1, Math.min(5, Math.floor(displaySeries.length / 7)));
-  const blockWeekLabels = ['Semana 1 (Base Aeróbica)', 'Semana 2 (Construcción)', 'Semana 3 (Carga Pico)', 'Semana 4 (Sobrecarga / NFOR)', 'Semana Actual'];
+  const blockWeekLabels = Array.from({ length: totalWeeks }, (_, w) =>
+    w === totalWeeks - 1 ? 'Últimos 7 días' : `Hace ${totalWeeks - 1 - w} sem.`);
 
   for (let w = 0; w < totalWeeks; w++) {
     const startIdx = Math.max(0, displaySeries.length - (totalWeeks - w) * 7);
@@ -550,23 +524,22 @@ export function calculateHRVLoadCorrelation(
 
     if (weekSlice.length > 0) {
       const weeklyTss = Math.round(weekSlice.reduce((acc, p) => acc + p.dailyTss, 0));
-      // Calculate realistic weekly Km and hours
-      const rawKm = weekSlice[weekSlice.length - 1]?.weeklyKm || Math.round(weeklyTss * 0.12);
-      const weeklyKm = Math.round(rawKm * 10) / 10;
-      const rawHours = weekSlice[weekSlice.length - 1]?.weeklyHours || Math.round(weeklyTss / 55 * 10) / 10;
-      const weeklyHours = Math.round(rawHours * 10) / 10;
+      // Km y horas reales de la semana (suma de 7 días del último punto)
+      const weeklyKm = Math.round((weekSlice[weekSlice.length - 1]?.weeklyKm || 0) * 10) / 10;
+      const weeklyHours = Math.round((weekSlice[weekSlice.length - 1]?.weeklyHours || 0) * 10) / 10;
 
-      const avgHrv = Math.round((weekSlice.reduce((acc, p) => acc + p.dailyHrv, 0) / weekSlice.length) * 10) / 10;
-      const minHrv = Math.min(...weekSlice.map(p => p.dailyHrv));
-      const restingHrAvg = Math.round(weekSlice.reduce((acc, p) => acc + p.restingHr, 0) / weekSlice.length);
+      const hrvValues = weekSlice.map(p => p.dailyHrv).filter(v => v > 0);
+      const avgHrv = avgPositive(hrvValues, 1);
+      const minHrv = hrvValues.length > 0 ? Math.min(...hrvValues) : 0;
+      const restingHrAvg = avgPositive(weekSlice.map(p => p.restingHr), 0);
       const isCurrentWeek = w === totalWeeks - 1;
-      const hrvDeltaPct = Math.round(((avgHrv - baselineHrv) / baselineHrv) * 100);
+      const hrvDeltaPct = baselineHrv > 0 && avgHrv > 0 ? Math.round(((avgHrv - baselineHrv) / baselineHrv) * 100) : 0;
 
       // Estimate elevation gain for mountain context
       const startDateStr = weekSlice[0].date;
       const endDateStr = weekSlice[weekSlice.length - 1].date;
-      const weekWorkouts = workouts.filter(wo => wo.date >= startDateStr && wo.date <= endDateStr);
-      const elevationGainM = weekWorkouts.reduce((acc, wo) => acc + (wo.actualElevationGainM || wo.plannedElevationGainM || 0), 0) || Math.round(weeklyKm * 42);
+      const weekWorkouts = workouts.filter(wo => wo.completed && wo.date >= startDateStr && wo.date <= endDateStr);
+      const elevationGainM = weekWorkouts.reduce((acc, wo) => acc + (wo.actualElevationGainM || 0), 0);
 
       let status: 'optimal' | 'functional_overreaching' | 'non_functional_overreaching' | 'deload';
       let statusLabel: string;
@@ -576,7 +549,7 @@ export function calculateHRVLoadCorrelation(
       let coachVerdict: string;
       let isOverreaching = false;
 
-      if (weeklyTss >= 320 && avgHrv < swcLower) {
+      if (weeklyTss >= 320 && avgHrv > 0 && avgHrv < swcLower) {
         status = 'non_functional_overreaching';
         statusLabel = 'Sobreentrenamiento (NFOR)';
         badgeBg = 'bg-rose-500/20';
@@ -584,7 +557,7 @@ export function calculateHRVLoadCorrelation(
         badgeBorder = 'border-rose-500/40';
         isOverreaching = true;
         coachVerdict = `¡Alarma de sobreentrenamiento! Carga acumulada muy alta (${weeklyTss} TSS) coincidiendo con un desplome del rMSSD medio (${avgHrv} ms, por debajo del umbral de ${swcLower} ms). Bloqueo autonómico parasimpático.`;
-      } else if (weeklyTss >= 350 && avgHrv < baselineHrv) {
+      } else if (weeklyTss >= 350 && avgHrv > 0 && avgHrv < baselineHrv) {
         status = 'functional_overreaching';
         statusLabel = 'Sobre-esfuerzo Funcional (FOR)';
         badgeBg = 'bg-amber-500/20';

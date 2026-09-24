@@ -36,7 +36,8 @@ Aplicación completa de entrenamiento de montaña inspirada en el manual de cabe
 
 ### 6. Sincronización real con tu cuenta Suunto
 - Botón **Conectar Suunto**: inicias sesión con tu cuenta Suunto una vez y listo (sin claves de desarrollador).
-- **Sincronizar** trae los últimos 28 días: entrenos (duración, distancia, desnivel, FC, TSS, tiempo en zonas ZoneSense) y, de cada noche, sueño, HRV y FC mínima → check-ins de readiness automáticos.
+- **Sincronizar** trae los entrenos de los últimos 365 días (duración, distancia, desnivel, FC, TSS, tiempo en zonas ZoneSense) y, de los últimos 28 días, sueño, HRV y FC mínima de cada noche → check-ins de readiness automáticos.
+- **CTL / ATL / TSB** se calculan con el TSS que da Suunto para cada entreno (nunca se recalcula), desde el primer entreno registrado: CTL = media exponencial de 42 días, ATL = de 7 días, TSB = CTL − ATL. Las sesiones planificadas no completadas no suman carga.
 - Funciona a través del servidor MCP de Suunto ya desplegado (`https://mcp-ten-kappa.vercel.app`), el mismo que se puede añadir como connector en claude.ai.
 
 ---

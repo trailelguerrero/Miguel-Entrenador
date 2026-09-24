@@ -27,6 +27,7 @@ import { Workout, AthleteProfile, WorkoutType, CoachLearnedInsight } from '../ty
 import { parseFitFile, ParsedFitResult } from '../utils/fitParser';
 import { formatZoneSenseWithBpm } from '../utils/zoneSense';
 import { calculateWorkoutTss } from '../utils/pmcCalculations';
+import { getWorkoutLoad } from '../utils/trainingLoad';
 import { SuuntoExportModal } from './SuuntoExportModal';
 
 interface WorkoutDetailModalProps {
@@ -160,12 +161,14 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
 
       setCoachAnalysis(feedbackText);
 
+      // Si el entreno viene de Suunto se conserva su TSS; solo se estima
+      // cuando no hay TSS medido (registro manual).
+      const hasSuuntoTss = !!workout.suuntoWorkoutKey;
       const tssResult = calculateWorkoutTss(
         Number(actualDuration),
-        Number(actualAvgHr),
-        profile.antHr || 166,
-        Number(athleteRpe),
-        Number(actualElevation)
+        Number(actualAvgHr) || undefined,
+        profile.antHr || undefined,
+        Number(athleteRpe) || undefined
       );
 
       const completedWorkout: Workout = {
@@ -185,8 +188,9 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
         fuelingNotes: fuelingNotes.trim() || undefined,
         coachFeedback: feedbackText,
         actualDfaAlpha1Avg: parsedFit?.estimatedDfaAlpha1,
-        tss: tssResult.tss,
-        intensityFactor: tssResult.intensityFactor,
+        tss: hasSuuntoTss ? workout.tss : tssResult.tss,
+        actualTss: hasSuuntoTss ? workout.actualTss : undefined,
+        intensityFactor: hasSuuntoTss ? workout.intensityFactor : tssResult.intensityFactor,
         zoneSenseBreakdown: parsedFit
           ? {
               aerobicPct: parsedFit.timeInAerobicPct,
@@ -393,7 +397,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                   <span className="text-[10px] text-zinc-500 uppercase tracking-wider block font-semibold">TSS Sesión</span>
                   <div className="flex items-baseline gap-1 mt-0.5">
                     <span className="text-xl font-black text-amber-400 font-mono">
-                      {workout.tss || calculateWorkoutTss(workout.actualDurationMin || workout.plannedDurationMin, workout.actualAvgHr, profile.antHr || 166, workout.athleteRpe, workout.actualElevationGainM).tss}
+                      {getWorkoutLoad(workout, profile.antHr)?.tss ?? workout.plannedTss ?? calculateWorkoutTss(workout.plannedDurationMin, undefined, profile.antHr || undefined).tss}
                     </span>
                     <span className="text-[10px] text-zinc-500">TSS</span>
                   </div>
@@ -402,7 +406,11 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                   <span className="text-[10px] text-zinc-500 uppercase tracking-wider block font-semibold">Intensity Factor (IF)</span>
                   <div className="flex items-baseline gap-1 mt-0.5">
                     <span className="text-xl font-black text-cyan-400 font-mono">
-                      {(workout.intensityFactor || calculateWorkoutTss(workout.actualDurationMin || workout.plannedDurationMin, workout.actualAvgHr, profile.antHr || 166, workout.athleteRpe, workout.actualElevationGainM).intensityFactor).toFixed(2)}
+                      {workout.intensityFactor != null
+                        ? workout.intensityFactor.toFixed(2)
+                        : workout.suuntoWorkoutKey
+                          ? '—'
+                          : calculateWorkoutTss(workout.actualDurationMin || workout.plannedDurationMin, workout.actualAvgHr || undefined, profile.antHr || undefined, workout.athleteRpe).intensityFactor.toFixed(2)}
                     </span>
                     <span className="text-[10px] text-zinc-500">IF</span>
                   </div>

@@ -1,3 +1,4 @@
+import { localDateKey } from '../utils/trainingLoad';
 import React, { useRef } from 'react';
 import { 
   X, 
@@ -43,21 +44,34 @@ export const ReportPdfModal: React.FC<ReportPdfModalProps> = ({
   if (!isOpen) return null;
 
   // Calculate dynamic metrics
-  const latestPmc = pmcData.length > 0 ? pmcData[pmcData.length - 1] : { ctl: 54.2, atl: 68.4, tsb: -14.2 };
+  const latestPmc = pmcData.length > 0 ? pmcData[pmcData.length - 1] : { ctl: 0, atl: 0, tsb: 0 };
   
   // Last 7 days HRV average
-  const last7CheckIns = checkIns.slice(-7);
+  // (los check-ins pueden venir en cualquier orden: se ordenan por fecha)
+  const last7CheckIns = [...checkIns]
+    .filter(c => c.hrvRmssd > 0)
+    .sort((x, y) => x.date.localeCompare(y.date))
+    .slice(-7);
   const avgHrv7d = last7CheckIns.length > 0 
     ? (last7CheckIns.reduce((acc, c) => acc + c.hrvRmssd, 0) / last7CheckIns.length).toFixed(1)
-    : '46.4';
-  const baselineHrv = profile.baselineHrv || 51.5;
-  const hrvDiffPct = (((Number(avgHrv7d) - baselineHrv) / baselineHrv) * 100).toFixed(1);
+    : '--';
+  const baselineHrv = profile.baselineHrv || 0;
+  const hrvDiffPct = baselineHrv > 0 && last7CheckIns.length > 0
+    ? (((Number(avgHrv7d) - baselineHrv) / baselineHrv) * 100).toFixed(1)
+    : '0.0';
 
-  // Volume and Elevation in last 30 days
-  const completedWorkouts = workouts.filter(w => w.completed);
-  const totalVolumeHours = (workouts.reduce((acc, w) => acc + (w.actualDurationMin || w.plannedDurationMin || 0), 0) / 60).toFixed(1);
-  const totalAscentM = workouts.reduce((acc, w) => acc + (w.actualElevationGainM || w.plannedElevationGainM || 0), 0);
-  const totalDistanceKm = workouts.reduce((acc, w) => acc + (w.actualDistanceKm || w.plannedDistanceKm || 0), 0).toFixed(1);
+  // Volume and Elevation in last 30 days (solo entrenos completados)
+  const since30d = localDateKey(new Date(Date.now() - 29 * 86400000));
+  const completedWorkouts = workouts.filter(w => w.completed && w.date >= since30d);
+  const totalVolumeHours = (completedWorkouts.reduce((acc, w) => acc + (w.actualDurationMin || 0), 0) / 60).toFixed(1);
+  const totalAscentM = completedWorkouts.reduce((acc, w) => acc + (w.actualElevationGainM || 0), 0);
+  const totalDistanceKm = completedWorkouts.reduce((acc, w) => acc + (w.actualDistanceKm || 0), 0).toFixed(1);
+  // % de tiempo aeróbico (ZoneSense) ponderado por duración, solo entrenos con ese dato
+  const zsWorkouts = completedWorkouts.filter(w => w.zoneSenseBreakdown && (w.actualDurationMin || 0) > 0);
+  const zsMinutes = zsWorkouts.reduce((acc, w) => acc + (w.actualDurationMin || 0), 0);
+  const aerobicPct30d = zsMinutes > 0
+    ? Math.round(zsWorkouts.reduce((acc, w) => acc + (w.actualDurationMin || 0) * w.zoneSenseBreakdown!.aerobicPct, 0) / zsMinutes)
+    : null;
 
   // Handle browser native print (PDF export)
   const handlePrint = () => {
@@ -215,8 +229,12 @@ export const ReportPdfModal: React.FC<ReportPdfModalProps> = ({
                 <span>Dictamen Fisiológico del Coach Miguel:</span>
               </div>
               <p className="text-zinc-200 print:text-zinc-800 leading-relaxed">
-                El atleta se encuentra en la <strong>Semana 4 del Mesociclo 2 (Base Aeróbica Estricta & Reversión de ADS)</strong>. Con un AeT de <strong>{profile.aetHr} bpm</strong> y un AnT de <strong>{profile.antHr} bpm</strong> (spread de {profile.antHr - profile.aetHr} bpm), el 82.5% del volumen se ha mantenido en Zona 1 y Zona 2 limpia, cumpliendo con la regla dorada del 80-90% de <em>Training for the Uphill Athlete</em>. 
-                Se detecta una divergencia simpática tras +5.200m de bajada excéntrica acumulada, por lo que se recomienda insertar un <strong>microciclo de descarga regenerativo (-45% volumen, DFA a1 &gt; 0.85 a &lt; 130 bpm)</strong> antes de acometer el siguiente bloque de fuerza específica.
+                Últimos 30 días: <strong>{completedWorkouts.length} entrenos completados</strong>, {totalVolumeHours} h, {totalDistanceKm} km y +{totalAscentM} m D+.
+                AeT <strong>{profile.aetHr} bpm</strong> / AnT <strong>{profile.antHr} bpm</strong> (spread de {profile.antHr - profile.aetHr} bpm).
+                {aerobicPct30d !== null
+                  ? <> Según ZoneSense de Suunto, el <strong>{aerobicPct30d}%</strong> del tiempo registrado con ZoneSense fue por debajo del umbral aeróbico.</>
+                  : <> No hay entrenos con datos de ZoneSense en este periodo.</>}
+                {' '}Estado de carga actual: CTL {latestPmc.ctl.toFixed(1)}, ATL {latestPmc.atl.toFixed(1)}, TSB {latestPmc.tsb.toFixed(1)}.
               </p>
             </div>
 

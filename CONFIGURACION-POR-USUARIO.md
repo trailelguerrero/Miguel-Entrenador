@@ -222,7 +222,7 @@ Se hace **desde la propia app**, una vez en cada navegador o dispositivo:
 
 A partir de ahí, pulsa **Sincronizar** cuando quieras traer datos nuevos. Cada sincronización:
 
-- Trae los **últimos 28 días**, el máximo que permite Suunto.
+- Trae los entrenos de los **últimos 365 días** (necesarios para que CTL/ATL/TSB coincidan con Suunto) y el sueño/HRV de los **últimos 28 días**, el máximo que permite Suunto para esos datos.
 - **Entrenos:**
   - Si ese día tenías una sesión planificada sin completar, se marca como completada con los datos reales: duración, distancia, desnivel, FC media y máxima, TSS y tiempo en zonas ZoneSense.
   - Si no, el entreno se añade al calendario como completado.

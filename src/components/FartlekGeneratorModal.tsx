@@ -241,8 +241,7 @@ export const FartlekGeneratorModal: React.FC<FartlekGeneratorModalProps> = ({
   // Handler to add the generated fartlek to Calendar
   const handleAddToCalendar = () => {
     const estAvgHr = Math.round((fartlekPlan.targetHrMin + fartlekPlan.targetHrMax) / 2);
-    const elev = fartlekPlan.estimatedElevationGainM || 0;
-    const tssResult = calculateWorkoutTss(fartlekPlan.totalDurationMin, estAvgHr, profile.antHr || 166, undefined, elev);
+    const tssResult = calculateWorkoutTss(fartlekPlan.totalDurationMin, estAvgHr, profile.antHr || undefined);
 
     const workoutToAdd: Workout = {
       id: `workout-fartlek-${Date.now()}`,

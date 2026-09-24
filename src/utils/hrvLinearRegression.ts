@@ -11,6 +11,7 @@
  */
 
 import { DailyCheckIn, Workout, AthleteProfile } from '../types';
+import { buildDailyLoadMap, localDateKey } from './trainingLoad';
 
 export interface HistoricalRegressionPoint {
   index: number;              // 1 to 30
@@ -82,19 +83,16 @@ export function calculateHrvPredictiveRegression(
   profile: AthleteProfile,
   scenario: LoadScenario = 'current_load'
 ): LinearRegressionResult {
-  const baselineHrv = profile.baselineHrv || 51.5;
-
   // Compute standard deviation of all known check-ins for the SWC band (Plews & Altini, 2017)
+  // Solo valores reales; nunca se rellenan con datos de ejemplo.
   const knownHrvValues: number[] = [];
   checkIns.forEach(c => {
-    if (c.hrvRmssd) knownHrvValues.push(c.hrvRmssd);
+    if (c.hrvRmssd > 0) knownHrvValues.push(c.hrvRmssd);
   });
-  if (knownHrvValues.length < 5) {
-    knownHrvValues.push(48, 52, 54, 46, 50, 53, 44, 42, 51);
-  }
-  const meanHrv = knownHrvValues.reduce((a, b) => a + b, 0) / knownHrvValues.length;
-  const variance = knownHrvValues.reduce((acc, v) => acc + Math.pow(v - meanHrv, 2), 0) / knownHrvValues.length;
-  const standardDeviation = Math.round(Math.sqrt(variance) * 10) / 10 || 7.5;
+  const meanHrv = knownHrvValues.length > 0 ? knownHrvValues.reduce((a, b) => a + b, 0) / knownHrvValues.length : 0;
+  const variance = knownHrvValues.length > 1 ? knownHrvValues.reduce((acc, v) => acc + Math.pow(v - meanHrv, 2), 0) / knownHrvValues.length : 0;
+  const standardDeviation = Math.round(Math.sqrt(variance) * 10) / 10;
+  const baselineHrv = profile.baselineHrv || Math.round(meanHrv * 10) / 10;
 
   // Smallest Worthwhile Change (SWC): baseline ± 0.5 * SD
   const swcHalfSd = Math.round((0.5 * standardDeviation) * 10) / 10;
@@ -107,7 +105,7 @@ export function calculateHrvPredictiveRegression(
   // Build a 30-day historical window up to the latest check-in
   const totalDays = 30;
   const latestCheckInDate = sortedCheckIns.length > 0 
-    ? new Date(sortedCheckIns[sortedCheckIns.length - 1].date)
+    ? new Date(sortedCheckIns[sortedCheckIns.length - 1].date + 'T12:00:00')
     : new Date();
 
   // Create date array for the last 30 days
@@ -115,46 +113,32 @@ export function calculateHrvPredictiveRegression(
   for (let i = totalDays - 1; i >= 0; i--) {
     const d = new Date(latestCheckInDate);
     d.setDate(d.getDate() - i);
-    dateStrings.push(d.toISOString().split('T')[0]);
+    dateStrings.push(localDateKey(d));
   }
 
   // Map check-ins by date for fast lookup
   const checkInMap = new Map<string, DailyCheckIn>();
   sortedCheckIns.forEach(c => checkInMap.set(c.date, c));
 
-  // Map daily TSS from workouts
-  const tssMap = new Map<string, number>();
-  workouts.forEach(w => {
-    const current = tssMap.get(w.date) || 0;
-    const workoutTss = (w.completed && w.actualDurationMin ? Math.round((w.actualDurationMin / 60) * 55) : (w.plannedDurationMin ? Math.round((w.plannedDurationMin / 60) * 50) : 40));
-    tssMap.set(w.date, current + workoutTss);
-  });
+  // TSS diario real (solo entrenos completados; TSS de Suunto cuando existe)
+  const loadMap = buildDailyLoadMap(workouts, profile.antHr);
 
-  // Extract raw points and calculate 7d rolling average
-  const rawData: { date: string; hrv: number; tss: number }[] = [];
+  // Solo las noches con HRV medida. x = posición del día dentro de la ventana
+  // de 30 días, para que los huecos sin dato no deformen la pendiente.
+  const rawData: { x: number; date: string; hrv: number; tss: number }[] = [];
   dateStrings.forEach((dStr, idx) => {
     const c = checkInMap.get(dStr);
-    let hrvVal: number;
-    if (c && c.hrvRmssd) {
-      hrvVal = c.hrvRmssd;
-    } else {
-      // Fallback realistic wave around baseline with slight fatigue drift in the last 10 days
-      const fatigueDecay = idx > 20 ? (idx - 20) * 0.45 : 0;
-      const wave = Math.sin(idx * 0.35) * 3.5;
-      hrvVal = Math.round(baselineHrv + wave - fatigueDecay);
+    if (c && c.hrvRmssd > 0) {
+      rawData.push({ x: idx + 1, date: dStr, hrv: c.hrvRmssd, tss: Math.round(loadMap.get(dStr)?.tss ?? 0) });
     }
-    const tssVal = tssMap.get(dStr) || (c && c.readinessScore ? Math.round((100 - c.readinessScore) * 0.75) : 45);
-    rawData.push({ date: dStr, hrv: hrvVal, tss: tssVal });
   });
 
-  // Calculate 7d rolling average for each point
-  const rolling7d: number[] = [];
-  for (let i = 0; i < rawData.length; i++) {
-    const windowStart = Math.max(0, i - 6);
-    const windowSlice = rawData.slice(windowStart, i + 1);
-    const avg = windowSlice.reduce((sum, item) => sum + item.hrv, 0) / windowSlice.length;
-    rolling7d.push(Math.round(avg * 10) / 10);
-  }
+  // Media móvil de 7 días (de las noches con dato dentro de los 7 días previos)
+  const rolling7d: number[] = rawData.map(p => {
+    const window = rawData.filter(q => q.x > p.x - 7 && q.x <= p.x);
+    const avg = window.reduce((sum, item) => sum + item.hrv, 0) / window.length;
+    return Math.round(avg * 10) / 10;
+  });
 
   // 2. Compute Ordinary Least Squares (OLS) Linear Regression: y = m*x + b
   // Using the daily HRV points (with 1-based index x_i = 1 .. n)
@@ -162,17 +146,17 @@ export function calculateHrvPredictiveRegression(
   let sumX = 0;
   let sumY = 0;
   for (let i = 0; i < n; i++) {
-    sumX += (i + 1);
+    sumX += rawData[i].x;
     sumY += rawData[i].hrv;
   }
-  const meanX = sumX / n;
-  const meanY = sumY / n;
+  const meanX = n > 0 ? sumX / n : 0;
+  const meanY = n > 0 ? sumY / n : 0;
 
   let ssXX = 0;
   let ssXY = 0;
   let ssYY = 0;
   for (let i = 0; i < n; i++) {
-    const x = i + 1;
+    const x = rawData[i].x;
     const y = rawData[i].hrv;
     const dx = x - meanX;
     const dy = y - meanY;
@@ -194,7 +178,7 @@ export function calculateHrvPredictiveRegression(
   const historicalPoints: HistoricalRegressionPoint[] = [];
 
   for (let i = 0; i < n; i++) {
-    const x = i + 1;
+    const x = rawData[i].x;
     const y = rawData[i].hrv;
     const fitted = slopeDaily * x + intercept;
     const residual = y - fitted;
@@ -234,13 +218,13 @@ export function calculateHrvPredictiveRegression(
   }
 
   let daysUntilSwcCrossover: number | null = null;
-  const currentHrv7d = rolling7d[rolling7d.length - 1];
+  const currentHrv7d = rolling7d.length > 0 ? rolling7d[rolling7d.length - 1] : 0;
 
   for (let k = 1; k <= 7; k++) {
-    const futureIndex = n + k;
+    const futureIndex = totalDays + k;
     const nextDate = new Date(latestDateObj);
     nextDate.setDate(latestDateObj.getDate() + k);
-    const dateStr = nextDate.toISOString().split('T')[0];
+    const dateStr = localDateKey(nextDate);
     const dayLabel = nextDate.toLocaleDateString('es-ES', { weekday: 'short', day: '2-digit' });
 
     // Baseline OLS projection

@@ -22,14 +22,15 @@ import { calculateACWRSummary, ACWRDataPoint } from '../utils/acwrCalculations';
 
 interface ACWRVisualizationProps {
   workouts: Workout[];
-  pmcData: PMCDataPoint[];
+  pmcData?: PMCDataPoint[];
+  antHr?: number;
   onScheduleDeload?: () => void;
   onNavigateTab?: (tab: string) => void;
 }
 
 export const ACWRVisualization: React.FC<ACWRVisualizationProps> = ({
   workouts,
-  pmcData,
+  antHr,
   onScheduleDeload,
   onNavigateTab,
 }) => {
@@ -39,8 +40,8 @@ export const ACWRVisualization: React.FC<ACWRVisualizationProps> = ({
 
   // Calculate full 28-day ACWR model
   const summary = useMemo(() => {
-    return calculateACWRSummary(workouts, pmcData);
-  }, [workouts, pmcData]);
+    return calculateACWRSummary(workouts, antHr);
+  }, [workouts, antHr]);
 
   const activeAcwr = calculationMode === 'standard' ? summary.currentAcwr : summary.currentEwmaAcwr;
 

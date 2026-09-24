@@ -51,8 +51,8 @@ export const WeeklyTssVsHrvWidget: React.FC<WeeklyTssVsHrvWidgetProps> = ({
 
   // Compute physiological correlation using Plews & Buchheit methodology
   const correlation = useMemo(() => {
-    return calculateHRVLoadCorrelation(workouts, checkIns, pmcData, profile, timeframe);
-  }, [workouts, checkIns, pmcData, profile, timeframe]);
+    return calculateHRVLoadCorrelation(workouts, checkIns, profile, timeframe);
+  }, [workouts, checkIns, profile, timeframe]);
 
   const {
     currentHrv7d,

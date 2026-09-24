@@ -46,8 +46,8 @@ export const HRVLoadOverreachingView: React.FC<HRVLoadOverreachingViewProps> = (
 
   // Compute physiological correlation model
   const summary = useMemo(() => {
-    return calculateHRVLoadCorrelation(workouts, checkIns, pmcData, profile, windowDays);
-  }, [workouts, checkIns, pmcData, profile, windowDays]);
+    return calculateHRVLoadCorrelation(workouts, checkIns, profile, windowDays);
+  }, [workouts, checkIns, profile, windowDays]);
 
   // Chart Dimensions
   const chartW = 780;

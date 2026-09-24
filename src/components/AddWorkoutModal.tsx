@@ -9,6 +9,7 @@ interface AddWorkoutModalProps {
   onSave: (workout: Workout) => void;
   initialDateStr?: string;
   defaultAetHr?: number;
+  defaultAntHr?: number;
 }
 
 export const AddWorkoutModal: React.FC<AddWorkoutModalProps> = ({
@@ -17,6 +18,7 @@ export const AddWorkoutModal: React.FC<AddWorkoutModalProps> = ({
   onSave,
   initialDateStr,
   defaultAetHr = 142,
+  defaultAntHr,
 }) => {
   if (!isOpen) return null;
 
@@ -38,8 +40,7 @@ export const AddWorkoutModal: React.FC<AddWorkoutModalProps> = ({
     e.preventDefault();
 
     const estAvgHr = Math.round(defaultAetHr * 0.94);
-    const elev = elevationGainM ? Number(elevationGainM) : 0;
-    const tssResult = calculateWorkoutTss(Number(durationMin), estAvgHr, 166, undefined, elev);
+    const tssResult = calculateWorkoutTss(Number(durationMin), estAvgHr, defaultAntHr || undefined);
 
     const newWorkout: Workout = {
       id: `custom-workout-${Date.now()}`,
