@@ -4,14 +4,20 @@ import path from 'path';
 import {defineConfig} from 'vite';
 import {VitePWA} from 'vite-plugin-pwa';
 
+// Versión visible en la app (panel "Estado de las APIs") para saber qué versión carga el móvil
+const APP_VERSION = `${(process.env.VERCEL_GIT_COMMIT_SHA || 'local').slice(0, 7)} · ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC`;
+
 export default defineConfig(() => {
   return {
+    define: {
+      __APP_VERSION__: JSON.stringify(APP_VERSION),
+    },
     plugins: [
       react(),
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: ['icon.svg'],
+        includeAssets: ['icon.svg', 'apple-touch-icon.png'],
         manifest: {
           id: '/',
           name: 'Uphill Coach AI - Trail Running & Suunto',
@@ -22,13 +28,12 @@ export default defineConfig(() => {
           display: 'standalone',
           start_url: '/',
           scope: '/',
+          // PNG 192/512 (+ maskable): Chrome en Android los necesita para instalar la app
           icons: [
-            {
-              src: '/icon.svg',
-              sizes: '192x192 512x512',
-              type: 'image/svg+xml',
-              purpose: 'any',
-            },
+            { src: '/pwa-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+            { src: '/pwa-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+            { src: '/pwa-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+            { src: '/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
           ],
         },
         workbox: {
@@ -36,6 +41,10 @@ export default defineConfig(() => {
           // /api/* lo atiende el servidor (p. ej. /api/suunto/connect es una navegación
           // real hacia el login de Suunto): el service worker no debe responder con index.html.
           navigateFallbackDenylist: [/^\/api\//],
+          // La versión nueva toma el control en cuanto se descarga (main.tsx recarga la página)
+          skipWaiting: true,
+          clientsClaim: true,
+          cleanupOutdatedCaches: true,
         },
         devOptions: {
           enabled: true,

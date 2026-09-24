@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   X, 
   CheckCircle, 
@@ -22,6 +22,7 @@ import {
   HardDrive
 } from 'lucide-react';
 import { AthleteProfile, TargetRace, SuuntoIntegrationConfig } from '../types';
+import { SuuntoAutoFillNotice, useSuuntoSources } from './SuuntoSourceTag';
 
 interface SetupGuideModalProps {
   isOpen: boolean;
@@ -32,6 +33,8 @@ interface SetupGuideModalProps {
   suuntoConfig: SuuntoIntegrationConfig;
   onOpenSuuntoTab: () => void;
   onOpenBackup: () => void;
+  onSyncSuunto?: () => Promise<string>;
+  isSyncingSuunto?: boolean;
 }
 
 export const SetupGuideModal: React.FC<SetupGuideModalProps> = ({
@@ -43,6 +46,8 @@ export const SetupGuideModal: React.FC<SetupGuideModalProps> = ({
   suuntoConfig,
   onOpenSuuntoTab,
   onOpenBackup,
+  onSyncSuunto,
+  isSyncingSuunto,
 }) => {
   const [currentStep, setCurrentStep] = useState<number>(profile.setupStep || 1);
 
@@ -98,6 +103,59 @@ export const SetupGuideModal: React.FC<SetupGuideModalProps> = ({
   );
   const [hasVolcanicExp, setHasVolcanicExp] = useState<boolean>(
     profile.advancedPhysiologicalProfile?.highMountain?.hasVolcanicTerrainExperience ?? true
+  );
+
+  // Datos de Suunto: etiquetas Suunto/Manual y relleno automático al sincronizar
+  const { sources, SourceTag } = useSuuntoSources(profile, {
+    restingHr: [restingHr, setRestingHr],
+    maxHr: [maxHr, setMaxHr],
+    aetHr: [aetHr, setAetHr],
+    antHr: [antHr, setAntHr],
+    baselineHrv: [baselineHrv, setBaselineHrv],
+    availableDaysPerWeek: [availableDays, setAvailableDays],
+    preferredLongRunDay: [longRunDay, setLongRunDay],
+    currentWeeklyVolumeHours: [currentVolume, setCurrentVolume],
+  });
+
+  // Si se sincroniza Suunto con la guía abierta, se vuelcan en el formulario
+  // los valores nuevos de los campos que vienen de Suunto (no los manuales).
+  useEffect(() => {
+    if (!profile.suuntoProfileUpdatedAt) return;
+    const src = profile.fieldSources || {};
+    const fromSuunto = (f: keyof NonNullable<AthleteProfile['fieldSources']>) => src[f] === 'suunto';
+    if (fromSuunto('restingHr')) setRestingHr(profile.restingHr);
+    if (fromSuunto('maxHr')) setMaxHr(profile.maxHr);
+    if (fromSuunto('aetHr')) setAetHr(profile.aetHr);
+    if (fromSuunto('antHr')) setAntHr(profile.antHr);
+    if (fromSuunto('baselineHrv') && profile.baselineHrv) setBaselineHrv(profile.baselineHrv);
+    if (fromSuunto('availableDaysPerWeek')) setAvailableDays(profile.availableDaysPerWeek);
+    if (fromSuunto('preferredLongRunDay')) setLongRunDay(profile.preferredLongRunDay);
+    if (fromSuunto('currentWeeklyVolumeHours')) setCurrentVolume(profile.currentWeeklyVolumeHours);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile.suuntoProfileUpdatedAt]);
+
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const handleSyncNow = async () => {
+    if (!onSyncSuunto) return;
+    setSyncMessage(await onSyncSuunto());
+  };
+
+  // Panel "rellenar desde Suunto" (paso 1 y paso 4)
+  const suuntoAutoFill = (
+    <div className="space-y-2">
+      <SuuntoAutoFillNotice profile={profile} suuntoConnected={suuntoConfig.connected} />
+      {suuntoConfig.connected && onSyncSuunto && (
+        <button
+          type="button"
+          onClick={handleSyncNow}
+          disabled={isSyncingSuunto}
+          className="px-3 py-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-zinc-950 font-black text-xs transition cursor-pointer disabled:opacity-50"
+        >
+          {isSyncingSuunto ? 'Sincronizando con Suunto…' : 'Sincronizar y rellenar desde Suunto'}
+        </button>
+      )}
+      {syncMessage && <p className="text-[11px] text-zinc-400 leading-relaxed">{syncMessage}</p>}
+    </div>
   );
 
   if (!isOpen) return null;
@@ -158,6 +216,7 @@ export const SetupGuideModal: React.FC<SetupGuideModalProps> = ({
           hasVolcanicTerrainExperience: hasVolcanicExp,
         }
       } : undefined,
+      fieldSources: sources,
       setupStep: isFinal ? totalSteps : currentStep + 1,
       setupCompleted: isFinal ? true : profile.setupCompleted,
     };
@@ -258,6 +317,8 @@ export const SetupGuideModal: React.FC<SetupGuideModalProps> = ({
                 </p>
               </div>
 
+              {suuntoAutoFill}
+
               {/* Datos biográficos básicos */}
               <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                 <div>
@@ -288,7 +349,7 @@ export const SetupGuideModal: React.FC<SetupGuideModalProps> = ({
                   />
                 </div>
                 <div>
-                  <label className="text-zinc-400 font-semibold block mb-1">Volumen Actual (h/sem)</label>
+                  <label className="text-zinc-400 font-semibold flex flex-wrap items-center mb-1">Volumen Actual (h/sem)<SourceTag field="currentWeeklyVolumeHours" /></label>
                   <input
                     type="number"
                     step="0.5"
@@ -514,7 +575,7 @@ export const SetupGuideModal: React.FC<SetupGuideModalProps> = ({
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-zinc-900/60 p-4 rounded-2xl border border-zinc-800">
                 <div>
-                  <label className="text-zinc-400 font-semibold block mb-1">FC Reposo Matutina</label>
+                  <label className="text-zinc-400 font-semibold flex flex-wrap items-center mb-1">FC Reposo Matutina<SourceTag field="restingHr" /></label>
                   <input
                     type="number"
                     value={restingHr}
@@ -524,7 +585,7 @@ export const SetupGuideModal: React.FC<SetupGuideModalProps> = ({
                   <span className="text-[10px] text-zinc-500 mt-1 block">Medida al despertar</span>
                 </div>
                 <div>
-                  <label className="text-zinc-400 font-semibold block mb-1">FC Máxima Real</label>
+                  <label className="text-zinc-400 font-semibold flex flex-wrap items-center mb-1">FC Máxima Real<SourceTag field="maxHr" /></label>
                   <input
                     type="number"
                     value={maxHr}
@@ -534,7 +595,7 @@ export const SetupGuideModal: React.FC<SetupGuideModalProps> = ({
                   <span className="text-[10px] text-zinc-500 mt-1 block">Test o carrera reciente</span>
                 </div>
                 <div>
-                  <label className="text-zinc-400 font-semibold block mb-1">Umbral AeT (VT1)</label>
+                  <label className="text-zinc-400 font-semibold flex flex-wrap items-center mb-1">Umbral AeT (VT1)<SourceTag field="aetHr" /></label>
                   <input
                     type="number"
                     value={aetHr}
@@ -544,7 +605,7 @@ export const SetupGuideModal: React.FC<SetupGuideModalProps> = ({
                   <span className="text-[10px] text-zinc-500 mt-1 block">DFA a1 &ge; 0.75 / Test deriva</span>
                 </div>
                 <div>
-                  <label className="text-zinc-400 font-semibold block mb-1">Umbral AnT (VT2 / LTHR)</label>
+                  <label className="text-zinc-400 font-semibold flex flex-wrap items-center mb-1">Umbral AnT (VT2 / LTHR)<SourceTag field="antHr" /></label>
                   <input
                     type="number"
                     value={antHr}
@@ -589,6 +650,7 @@ export const SetupGuideModal: React.FC<SetupGuideModalProps> = ({
                   <label className="text-zinc-300 font-bold flex items-center space-x-1.5">
                     <Heart className="w-4 h-4 text-red-400" />
                     <span>Línea Base HRV Nocturna (rMSSD ms)</span>
+                    <SourceTag field="baselineHrv" />
                   </label>
                   <span className="text-zinc-400 font-semibold">{baselineHrv} ms</span>
                 </div>
@@ -643,20 +705,22 @@ export const SetupGuideModal: React.FC<SetupGuideModalProps> = ({
               {/* Disponibilidad y tirada larga */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-zinc-900/60 p-4 rounded-2xl border border-zinc-800">
                 <div>
-                  <label className="text-zinc-400 font-semibold block mb-1">Días Disponibles a la Semana</label>
+                  <label className="text-zinc-400 font-semibold flex flex-wrap items-center mb-1">Días Disponibles a la Semana<SourceTag field="availableDaysPerWeek" /></label>
                   <select
                     value={availableDays}
                     onChange={(e) => setAvailableDays(Number(e.target.value))}
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-zinc-100 font-bold"
                   >
-                    <option value={4}>4 días (3 entre semana + 1 fin de semana) [Óptimo]</option>
-                    <option value={5}>5 días (4 entre semana + 1 fin de semana)</option>
-                    <option value={3}>3 días (2 entre semana + 1 fin de semana)</option>
+                    {[1, 2, 3, 4, 5, 6, 7].map((n) => (
+                      <option key={n} value={n}>
+                        {n === 4 ? '4 días (3 entre semana + 1 fin de semana) [Óptimo]' : n === 5 ? '5 días (4 entre semana + 1 fin de semana)' : n === 3 ? '3 días (2 entre semana + 1 fin de semana)' : `${n} ${n === 1 ? 'día' : 'días'}`}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
                 <div>
-                  <label className="text-zinc-400 font-semibold block mb-1">Día de Tirada Larga de Montaña</label>
+                  <label className="text-zinc-400 font-semibold flex flex-wrap items-center mb-1">Día de Tirada Larga de Montaña<SourceTag field="preferredLongRunDay" /></label>
                   <select
                     value={longRunDay}
                     onChange={(e) => setLongRunDay(e.target.value as any)}
@@ -753,7 +817,9 @@ export const SetupGuideModal: React.FC<SetupGuideModalProps> = ({
                 </div>
                 <p className="text-[11px] text-zinc-400 leading-relaxed">
                   Con la cuenta conectada, un solo clic sincroniza tus últimos 28 días: métricas nocturnas de HRV rMSSD, horas de sueño y desglose en zonas aeróbica/transición de ZoneSense.
+                  Además rellena tu ficha (FC, umbrales, HRV de referencia, volumen, días y tirada larga) con tus datos reales de Suunto.
                 </p>
+                {suuntoAutoFill}
               </div>
 
               {/* Archivo .FIT o .MD */}

@@ -1,0 +1,19 @@
+{
+  // Solo para la función serverless de Vercel (api/index.ts). No hereda del
+  // tsconfig.json raíz (el del frontend: types vite/client, DOM) y no declara
+  // "types": el chequeo de tipos de Vercel no resuelve librerías de tipos
+  // declaradas explícitamente (TS2688); sin "types" incluye @types/* solo.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "skipLibCheck": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true
+  },
+  "include": ["./**/*.ts", "../server/**/*.ts", "../src/types/**/*.ts", "../src/utils/readiness.ts"]
+}

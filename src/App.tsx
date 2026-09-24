@@ -30,6 +30,10 @@ import { SetupGuideModal } from './components/SetupGuideModal';
 import { ToastContainer } from './components/ToastContainer';
 import { ApiErrorBanner } from './components/ApiErrorBanner';
 import { apiStatus, useApiStatus } from './services/apiStatus';
+import { applySuuntoProfile, markManualChanges, ProfileChange, SUUNTO_FIELD_LABELS } from './utils/suuntoProfile';
+
+const formatProfileValue = (v: unknown): string =>
+  v === undefined || v === null ? '—' : v === true ? 'sí' : v === false ? 'no' : v === 'saturday' ? 'sábado' : v === 'sunday' ? 'domingo' : String(v);
 
 import { 
   AthleteProfile, 
@@ -110,7 +114,9 @@ export default function App() {
   const [isAdaptingSession, setIsAdaptingSession] = useState(false);
 
   // Sync state changes with StorageService
-  const handleSaveProfile = (updated: AthleteProfile) => {
+  const handleSaveProfile = (edited: AthleteProfile) => {
+    // Los campos que vienen de Suunto y el atleta cambia a mano pasan a 'manual'
+    const updated = markManualChanges(StorageService.getProfile(), edited);
     setProfile(updated);
     StorageService.saveProfile(updated);
     showToast({
@@ -183,6 +189,58 @@ export default function App() {
 
   const [isSyncingSuunto, setIsSyncingSuunto] = useState(false);
 
+  // Tras rellenar el perfil desde Suunto, Miguel explica en el chat qué ha tomado y qué revisar.
+  const askMiguelAboutSuuntoProfile = async (newProfile: AthleteProfile, changed: ProfileChange[]) => {
+    const lines = changed.map((c) => {
+      const why = newProfile.suuntoEvidence?.[c.field];
+      return `- ${SUUNTO_FIELD_LABELS[c.field]}: ${formatProfileValue(c.from)} → ${formatProfileValue(c.to)}${why ? ` (${why})` : ''}`;
+    });
+    const manual = Object.entries(newProfile.fieldSources || {})
+      .filter(([, src]) => src === 'manual')
+      .map(([f]) => SUUNTO_FIELD_LABELS[f as keyof typeof SUUNTO_FIELD_LABELS]);
+    const prompt =
+      `[SINCRONIZACIÓN SUUNTO – PERFIL AUTOMÁTICO] He actualizado estos datos de mi perfil con lo que registra mi Suunto:\n${lines.join('\n')}` +
+      (manual.length ? `\nEstos los mantengo a mano y no se han tocado: ${manual.join(', ')}.` : '') +
+      `\nResume en pocas líneas qué has tomado de Suunto, qué significa para mi entrenamiento y qué debería revisar o confirmar yo (por ejemplo, si mis zonas de FC de Suunto no están bien configuradas o conviene hacer el test de deriva para afinar el AeT). Recuerda que peso, altura, edad y lesiones los pongo yo.`;
+    try {
+      const reply = await ApiService.sendMessage(
+        [{ role: 'user', content: prompt }],
+        newProfile,
+        StorageService.getTodayCheckIn(),
+        targetRace,
+        'Perfil actualizado automáticamente desde Suunto',
+        historyDoc,
+        coachMemory,
+      );
+      const msg: ChatMessage = {
+        id: `assistant-suunto-${Date.now()}`,
+        role: 'assistant',
+        content: reply,
+        timestamp: new Date().toISOString(),
+        contextType: 'general',
+      };
+      const msgs = [...StorageService.getChatMessages(), msg];
+      StorageService.saveChatMessages(msgs);
+      setChatMessages(msgs);
+    } catch (err) {
+      // El aviso "Error de API de IA" ya lo muestra apiStatus; el perfil queda guardado igual
+      console.error('Miguel no pudo resumir el perfil de Suunto:', err);
+    }
+  };
+
+  const handleDisconnectSuunto = () => {
+    if (!confirm('¿Desconectar tu cuenta Suunto de esta app?\n\nSe borran los tokens de conexión de este navegador. Tus entrenos importados y tu perfil se conservan.')) return;
+    handleUpdateSuuntoConfig({
+      ...StorageService.getSuuntoConfig(),
+      auth: undefined,
+      connected: false,
+      syncStatus: undefined,
+      lastSyncMessage: 'Cuenta Suunto desconectada.',
+    });
+    apiStatus.reportSuuntoDisconnected('Cuenta Suunto desconectada.');
+    showToast({ type: 'info', title: 'Suunto desconectado', message: 'Puedes volver a conectarlo cuando quieras con "Conectar Suunto".' });
+  };
+
   // Trae workouts y sueño/HRV reales de Suunto y los integra en el calendario y los check-ins.
   const handleSyncSuunto = async (): Promise<string> => {
     const current = StorageService.getSuuntoConfig();
@@ -209,6 +267,22 @@ export default function App() {
       const summary = StorageService.mergeSuuntoSync(res.workouts || [], res.checkIns || []);
       setWorkouts(StorageService.getWorkouts());
       setTodayCheckIn(StorageService.getTodayCheckIn());
+
+      // Perfil automático: Suunto rellena sus campos (sin pisar los manuales)
+      if (res.profileFromSuunto) {
+        const { profile: newProfile, changed } = applySuuntoProfile(StorageService.getProfile(), res.profileFromSuunto);
+        setProfile(newProfile);
+        StorageService.saveProfile(newProfile);
+        if (changed.length) {
+          showToast({
+            type: 'info',
+            title: 'Perfil actualizado desde Suunto',
+            message: changed.map((c) => `${SUUNTO_FIELD_LABELS[c.field]}: ${formatProfileValue(c.to)}`).join(' • '),
+            duration: 7000,
+          });
+          askMiguelAboutSuuntoProfile(newProfile, changed);
+        }
+      }
 
       const message = `${res.message} Nuevos: ${summary.addedWorkouts} entrenos añadidos, ${summary.completedPlanned} sesiones planificadas completadas, ${summary.checkInsAdded} check-ins.`;
       handleUpdateSuuntoConfig({
@@ -276,6 +350,8 @@ export default function App() {
     window.history.replaceState(null, '', window.location.pathname);
     setSuuntoConfig(StorageService.getSuuntoConfig());
     handleSyncSuunto();
+    // Si se conectó desde la guía de setup (sin terminar), se vuelve a ella
+    if (!StorageService.getProfile().setupCompleted) setIsSetupGuideOpen(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -698,6 +774,7 @@ Son exactamente 4 días de carga (3 entre semana y la tirada larga del fin de se
         onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
         onOpenBackup={() => setIsBackupModalOpen(true)}
         onOpenSetupGuide={() => setIsSetupGuideOpen(true)}
+        onDisconnectSuunto={suuntoConfig.connected ? handleDisconnectSuunto : undefined}
       />
 
       {/* Main Container */}
@@ -827,6 +904,7 @@ Son exactamente 4 días de carga (3 entre semana y la tirada larga del fin de se
             suuntoConfig={suuntoConfig}
             onSyncSuunto={handleSyncSuunto}
             isSyncingSuunto={isSyncingSuunto}
+            onDisconnectSuunto={handleDisconnectSuunto}
           />
         )}
 
@@ -862,7 +940,7 @@ Son exactamente 4 días de carga (3 entre semana y la tirada larga del fin de se
           <ZoneSenseSuuntoView
             profile={profile}
             suuntoConfig={suuntoConfig}
-            onUpdateSuuntoConfig={handleUpdateSuuntoConfig}
+            onDisconnectSuunto={handleDisconnectSuunto}
             onSyncSuunto={handleSyncSuunto}
             isSyncingSuunto={isSyncingSuunto}
           />
@@ -897,26 +975,34 @@ Son exactamente 4 días de carga (3 entre semana y la tirada larga del fin de se
         onAddNewInsight={handleAddNewInsight}
       />
 
-      <AthleteProfileModal
-        isOpen={isProfileModalOpen}
-        onClose={() => setIsProfileModalOpen(false)}
-        profile={profile}
-        onSaveProfile={handleSaveProfile}
-        targetRace={targetRace}
-        onOpenSetupGuide={() => setIsSetupGuideOpen(true)}
-        onOpenBackup={() => setIsBackupModalOpen(true)}
-      />
+      {/* Se montan al abrir: así siempre parten del perfil actual (p. ej. recién actualizado desde Suunto) */}
+      {isProfileModalOpen && (
+        <AthleteProfileModal
+          isOpen={isProfileModalOpen}
+          onClose={() => setIsProfileModalOpen(false)}
+          profile={profile}
+          onSaveProfile={handleSaveProfile}
+          targetRace={targetRace}
+          suuntoConnected={suuntoConfig.connected}
+          onOpenSetupGuide={() => setIsSetupGuideOpen(true)}
+          onOpenBackup={() => setIsBackupModalOpen(true)}
+        />
+      )}
 
-      <SetupGuideModal
-        isOpen={isSetupGuideOpen}
-        onClose={() => setIsSetupGuideOpen(false)}
-        profile={profile}
-        onSaveProfile={handleSaveProfile}
-        targetRace={targetRace}
-        suuntoConfig={suuntoConfig}
-        onOpenSuuntoTab={() => setActiveTab('zonesense')}
-        onOpenBackup={() => setIsBackupModalOpen(true)}
-      />
+      {isSetupGuideOpen && (
+        <SetupGuideModal
+          isOpen={isSetupGuideOpen}
+          onClose={() => setIsSetupGuideOpen(false)}
+          profile={profile}
+          onSaveProfile={handleSaveProfile}
+          targetRace={targetRace}
+          suuntoConfig={suuntoConfig}
+          onOpenSuuntoTab={() => setActiveTab('zonesense')}
+          onOpenBackup={() => setIsBackupModalOpen(true)}
+          onSyncSuunto={handleSyncSuunto}
+          isSyncingSuunto={isSyncingSuunto}
+        />
+      )}
 
       <AddWorkoutModal
         isOpen={isAddWorkoutModalOpen}

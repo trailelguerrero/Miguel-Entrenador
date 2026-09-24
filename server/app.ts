@@ -210,6 +210,13 @@ ${(coachMemory.coachNotebookNotes || []).map((n: string) => `  * ${n}`).join('\n
 - Disponibilidad: 4 días/semana (3 entre semana + tirada larga fin de semana). Sin gimnasio (solo peso corporal y aire libre).
 - Estado Biométrico Hoy (Suunto HRV/Sueño): ${currentReadiness ? JSON.stringify(currentReadiness) : 'Pendiente de sincronizar o check-in'}
 - Origen de Datos: ${athleteProfile?.dataSource || 'Registro / Suunto'}
+- VO2máx (Suunto): ${athleteProfile?.vo2Max ?? 'No disponible'}
+- HRV nocturna de referencia: ${athleteProfile?.baselineHrv ? athleteProfile.baselineHrv + ' ms' : 'Pendiente'}
+- Origen de cada dato del perfil (Suunto = calculado de su reloj; Manual = lo ha puesto o corregido el atleta): ${
+      athleteProfile?.fieldSources && Object.keys(athleteProfile.fieldSources).length
+        ? Object.entries(athleteProfile.fieldSources).map(([k, v]) => `${k}=${v === 'suunto' ? 'Suunto' : 'Manual'}`).join(', ')
+        : 'todo manual'
+    }
 ${ultraExpContext}
 ${advProfileContext}
 ${athleteHistoryDoc?.content ? `
