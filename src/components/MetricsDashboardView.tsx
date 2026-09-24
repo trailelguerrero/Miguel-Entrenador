@@ -49,6 +49,7 @@ import { ACWRVisualization } from './ACWRVisualization';
 import { calculateACWRSummary } from '../utils/acwrCalculations';
 import { HRVLoadOverreachingView } from './HRVLoadOverreachingView';
 import { HRVPredictiveRegressionCard } from './HRVPredictiveRegressionCard';
+import { WeeklyTssVsHrvWidget } from './WeeklyTssVsHrvWidget';
 
 interface MetricsDashboardViewProps {
   profile: AthleteProfile;
@@ -589,11 +590,18 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
           </div>
           <div className="pt-2 border-t border-zinc-800/80 flex items-center justify-between gap-1 text-[11px]">
             <button
-              onClick={() => setActiveMetricsTab('hrv_load')}
+              onClick={() => {
+                const el = document.getElementById('weekly-tss-hrv-widget');
+                if (el) {
+                  el.scrollIntoView({ behavior: 'smooth' });
+                } else {
+                  setActiveMetricsTab('hrv_load');
+                }
+              }}
               className="text-zinc-400 hover:text-zinc-200 transition font-semibold cursor-pointer"
-              title="Ver correlación semanal de carga y HRV"
+              title="Ver widget de Carga Semanal vs HRV 7d"
             >
-              HRV vs Carga
+              Carga vs HRV 7d
             </button>
             <span className="text-zinc-600">•</span>
             <button
@@ -631,6 +639,35 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
         </div>
 
       </div>
+
+      {/* WIDGET VISUAL: CARGA SEMANAL (TSS) VS MEDIA MÓVIL HRV 7D (INTENSIDAD VS RECUPERACIÓN) */}
+      {(activeMetricsTab === 'all' || activeMetricsTab === 'hrv_load') && (
+        <div id="weekly-tss-hrv-widget" className="space-y-4 animate-in fade-in">
+          {activeMetricsTab === 'hrv_load' && (
+            <div className="flex items-center justify-between bg-zinc-900 border border-zinc-800 p-4 rounded-2xl">
+              <span className="text-xs font-bold text-rose-400 uppercase tracking-wider flex items-center gap-2">
+                <Heart className="w-4 h-4" />
+                Vista Enfocada: Carga Semanal (TSS) vs Media Móvil HRV 7d
+              </span>
+              <button 
+                onClick={() => setActiveMetricsTab('all')} 
+                className="px-3 py-1 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs font-bold text-zinc-300 border border-zinc-700 transition cursor-pointer"
+              >
+                ← Volver a Vista General
+              </button>
+            </div>
+          )}
+          <WeeklyTssVsHrvWidget
+            workouts={workouts}
+            checkIns={checkIns}
+            pmcData={pmcData}
+            profile={profile}
+            onScheduleDeload={onScheduleDeload}
+            onNavigateTab={onNavigateTab}
+            onSelectMetricsTab={(tab) => setActiveMetricsTab(tab as any)}
+          />
+        </div>
+      )}
 
       {/* PERFORMANCE MANAGEMENT CHART (PMC) & TRAINING STRESS METRICS */}
       {(activeMetricsTab === 'all' || activeMetricsTab === 'pmc') && (
@@ -886,22 +923,15 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
         </div>
       )}
 
-      {/* 7-DAY ROLLING HRV rMSSD VS WEEKLY TRAINING LOAD (OVERREACHING MONITOR) */}
-      {(activeMetricsTab === 'all' || activeMetricsTab === 'hrv_load') && (
+      {/* 7-DAY ROLLING HRV rMSSD VS WEEKLY TRAINING LOAD (OVERREACHING MONITOR & QUADRANTS) */}
+      {activeMetricsTab === 'hrv_load' && (
         <div id="hrv-overreaching-section" className="space-y-4 animate-in fade-in">
-          {activeMetricsTab === 'hrv_load' && (
-            <div className="flex items-center justify-between bg-zinc-900 border border-zinc-800 p-4 rounded-2xl">
-              <span className="text-xs font-bold text-rose-400 uppercase tracking-wider">
-                Vista Enfocada: Tendencia HRV 7d vs Carga Semanal (Fatiga y Recuperación)
-              </span>
-              <button 
-                onClick={() => setActiveMetricsTab('all')} 
-                className="px-3 py-1 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs font-bold text-zinc-300 border border-zinc-700 transition cursor-pointer"
-              >
-                ← Volver a Vista General
-              </button>
-            </div>
-          )}
+          <div className="flex items-center justify-between bg-zinc-900 border border-zinc-800 p-4 rounded-2xl">
+            <span className="text-xs font-bold text-rose-400 uppercase tracking-wider flex items-center gap-2">
+              <Layers className="w-4 h-4" />
+              Desglose Clínico Detallado: Matriz de 4 Cuadrantes & Registro de Episodios
+            </span>
+          </div>
           <HRVLoadOverreachingView
             workouts={workouts}
             checkIns={checkIns}
