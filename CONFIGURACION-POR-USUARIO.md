@@ -59,15 +59,15 @@ La app usa Gemini (de Google) para que "Miguel" converse contigo, genere planes,
 
 1. Entra en **https://vercel.com** e inicia sesión.
 2. Arriba a la derecha pulsa **Add New… → Project**.
-3. En la lista **Import Git Repository**, busca `Entrenador` y pulsa **Import**.
-   - Si no aparece, pulsa **Adjust GitHub App Permissions**, da acceso al repositorio `trailelguerrero/Entrenador` y vuelve.
+3. En la lista **Import Git Repository**, busca `Miguel-Entrenador` y pulsa **Import**.
+   - Si no aparece, pulsa **Adjust GitHub App Permissions**, da acceso al repositorio `trailelguerrero/Miguel-Entrenador` y vuelve.
 4. En la pantalla de configuración:
-   - **Project Name**: `entrenador`.
+   - **Project Name**: `miguel`.
    - **Framework Preset**, **Build Command** y **Output Directory**: no los toques. Vercel los lee de `vercel.json`.
    - Despliega **Environment Variables** y añade ya `GEMINI_API_KEY` con tu clave (paso 2). Así te ahorras el redespliegue del paso 3.3.
 5. Pulsa **Deploy** y espera a que termine (1–2 min).
 
-Si el proyecto `entrenador` ya existe, ábrelo desde el equipo **"trailelguerrero-3582's projects"**. Cada `git push` a la rama `main` lo vuelve a desplegar automáticamente.
+Si el proyecto `miguel` ya existe (ya está creado: https://miguel-seven-sage.vercel.app), ábrelo desde el equipo **"trailelguerrero-3582's projects"**. Cada `git push` a la rama `main` lo vuelve a desplegar automáticamente.
 
 ### 3.2 Variables de entorno
 
@@ -91,7 +91,7 @@ Si el proyecto `entrenador` ya existe, ábrelo desde el equipo **"trailelguerrer
 
 ### 3.4 La URL de tu app
 
-- En la pestaña **Overview** del proyecto, en **Domains**, verás la URL pública. Será algo como `https://entrenador-xxxx.vercel.app`.
+- En la pestaña **Overview** del proyecto, en **Domains**, verás la URL pública. La de esta app es `https://miguel-seven-sage.vercel.app`.
 - Esa es la dirección que abres en el navegador o en el móvil. Si quieres, puedes instalarla como app desde el propio navegador (menú → "Instalar app" / "Añadir a pantalla de inicio").
 
 ### 3.5 Si al abrir la app te pide iniciar sesión en Vercel
@@ -238,6 +238,48 @@ Si la conexión caduca, la app te avisa ("Reconecta Suunto") y el estado pasa a 
 
 Los tokens de Suunto se guardan **solo en tu navegador**. Si borras los datos del navegador o usas otro dispositivo, tendrás que conectar de nuevo.
 
+### Desconectar Suunto
+
+Puedes desconectar tu cuenta cuando quieras desde cualquiera de estos sitios:
+
+- **Indicador `● IA ● Suunto`** de la barra superior → **Desconectar Suunto**.
+- **Historial (.MD)** → tarjeta "Extracción Suunto Cloud" → **Desconectar Suunto**.
+- **Suunto & ZoneSense** → pestaña "Conexión Suunto & Claude MCP" → **Desconectar**.
+
+**Qué hace:**
+- Borra los tokens de conexión con Suunto de este navegador. El indicador de Suunto pasa a gris ("No conectado").
+- **Se conservan** los entrenos ya importados, los check-ins y tu perfil.
+- Para volver a conectar, pulsa **Conectar Suunto** otra vez.
+
+### Perfil automático desde Suunto
+
+Al sincronizar, la app **calcula tu perfil de atleta con tus datos de Suunto**, en vez de que lo rellenes tú. Son reglas fijas, sin IA: si no hay datos suficientes para un campo, ese campo no se toca. Después Miguel te resume en el chat qué ha tomado y qué conviene revisar.
+
+| Campo | De dónde sale |
+|---|---|
+| FC máxima | La FC máxima configurada en tu Suunto. Si no está, la más alta registrada en 90 días. |
+| Umbral aeróbico (AeT) | El umbral de Suunto ZoneSense, si tu reloj lo calcula. Si no, el límite superior de tu Zona 2 de FC en Suunto. |
+| Umbral anaeróbico (AnT) | El umbral de ZoneSense. Si no, el límite superior de tu Zona 4 de FC en Suunto. |
+| Déficit aeróbico (ADS) | Diferencia AeT–AnT mayor de 20 bpm o del 10 % (misma regla que la ficha). |
+| FC en reposo | Mediana de tu FC mínima nocturna (últimos 28 días, sin siestas). |
+| HRV de referencia | Media de tu HRV nocturna (últimos 28 días). |
+| VO2máx | El último estimado por tu Suunto. |
+| Volumen semanal | Horas de entreno de las últimas 4 semanas / 4. |
+| Días de entreno por semana | Media de días con entreno por semana (últimas 4 semanas). |
+| Día de tirada larga | Sábado o domingo, según dónde cayó más veces tu carrera más larga de cada semana (90 días). |
+
+**En la Guía de Setup** (botón 🧭 de la barra superior): en el paso 1 y en el paso 4 tienes **"Sincronizar y rellenar desde Suunto"**. Al pulsarlo, los campos de la guía que vienen de Suunto se rellenan solos con tus datos reales (con su etiqueta SUUNTO) y tú completas el resto: experiencia en ultra, lesiones, calor, preferencias… Si conectas Suunto desde la guía sin haberla terminado, al volver se abre sola para continuar.
+
+**Siguen siendo manuales**, porque Suunto no los comparte: nombre, edad, altura, peso, peso objetivo y lesiones.
+
+**Etiquetas en la ficha** (botón **Atleta** de la barra superior):
+
+- **SUUNTO:** el valor viene de tu reloj. Pasa el ratón por encima (o mantén pulsado en el móvil) para ver cómo se calculó. Se actualiza en cada sincronización.
+- **MANUAL:** lo has cambiado tú, a mano o con el test de deriva. Suunto **ya no lo toca**.
+- **↺ usar Suunto (valor):** aparece junto a un campo manual. Vuelve a poner el valor de Suunto y el campo pasa otra vez a "Suunto". Pulsa **Guardar Perfil** para confirmarlo.
+
+> Si los umbrales AeT/AnT que salen no te cuadran, lo más probable es que tus zonas de FC en la App Suunto sean las de fábrica. Ajústalas en la App Suunto y vuelve a sincronizar, o haz el test de deriva en "Fisiología & Drift": ese valor queda como manual.
+
 ---
 
 ## 7. Opcional: el connector de Suunto en claude.ai
@@ -257,8 +299,8 @@ El mismo servidor MCP de Suunto que usa la app puedes usarlo en claude.ai para p
 Solo si quieres ejecutar la app en tu ordenador:
 
 ```bash
-git clone https://github.com/trailelguerrero/Entrenador.git
-cd Entrenador
+git clone https://github.com/trailelguerrero/Miguel-Entrenador.git
+cd Miguel-Entrenador
 npm install
 cp .env.example .env     # y edita .env: pon tu GEMINI_API_KEY (y, si quieres, las variables de Experiential de la sección 5)
 npm run dev
@@ -318,7 +360,29 @@ El banner desaparece solo con la siguiente respuesta correcta. También puedes c
 | `SUUNTO_AUTH` | La conexión con Suunto caducó | Pulsa **Conectar Suunto** (sección 6) |
 | `SUUNTO_UNAVAILABLE` | El servidor MCP de Suunto no responde | Comprueba `https://mcp-ten-kappa.vercel.app` y el proyecto `mcp` en Vercel |
 
-### 9.2 Problemas comunes
+### 9.2 Instalar la app en el móvil y forzar la versión nueva
+
+**Instalar en Android (Chrome):**
+1. Abre la URL de la app en **Chrome**.
+2. Si aparece el botón **Instalar App** (o el icono ⬇ en la barra superior), púlsalo.
+3. Si no aparece: menú **⋮** de Chrome → **"Instalar aplicación"** o **"Añadir a pantalla de inicio"** → **Instalar**.
+4. Justo después de desinstalarla, Chrome puede tardar en volver a ofrecerla. Cierra Chrome del todo (quítalo de las apps recientes), abre la página de nuevo, espera unos segundos y repite el paso 3.
+
+**Instalar en iPhone (Safari):** botón **Compartir** → **"Añadir a la pantalla de inicio"** → **Añadir**.
+
+**Comprobar qué versión estás viendo:** pulsa el indicador `● IA ● Suunto` y mira abajo del panel **"Versión de la app"**. Compárala con el último despliegue en Vercel (Deployments → commit).
+
+**Si el móvil sigue mostrando una versión antigua** (no puedes hacer zoom con dos dedos, faltan botones…) aunque hayas cerrado y abierto la app:
+
+1. ⚠️ **Antes, haz una copia de tus datos.** Tus entrenos, tu perfil y el chat se guardan solo en el navegador. Usa **Buscar → "Copia de Seguridad"** y descarga el `.json`.
+2. En Chrome (Android): menú **⋮** → **Configuración** → **Configuración de sitios** → **Todos los sitios** → busca `miguel-seven-sage.vercel.app` → **Borrar y restablecer**.
+3. Abre la URL de nuevo, restaura la copia (Buscar → Copia de Seguridad → Restaurar) y vuelve a pulsar **Conectar Suunto**.
+
+**Zoom mientras tanto:** en Chrome (Android), menú **⋮** → **Configuración** → **Accesibilidad** → activa **"Forzar zoom"**. Así el zoom funciona en cualquier web.
+
+### 9.3 Problemas comunes
+
+> **¿No ves un cambio recién publicado en el móvil** (p. ej. un botón nuevo, o no puedes hacer zoom con dos dedos)? La app instalada guarda una copia para funcionar sin conexión. Desde esta versión se actualiza y recarga sola al abrirla o al volver a ella. Si aun así ves la versión anterior: cierra la app del todo (quítala de las apps recientes) y ábrela otra vez. Si sigue igual, en el navegador abre la URL y recarga; en último caso, desinstala el icono y vuelve a añadirlo a la pantalla de inicio.
 
 | Síntoma | Causa probable | Solución |
 |---|---|---|
@@ -333,4 +397,5 @@ El banner desaparece solo con la siguiente respuesta correcta. También puedes c
 | Miguel tarda y da error en planes largos | Tiempo máximo de la función (60 s) | Vuelve a intentarlo; si pasa siempre, mira los logs (3.6) |
 | "Reconecta Suunto" / "La conexión con Suunto caducó" | Tokens de Suunto vencidos | Pulsa **Conectar Suunto** (sección 6) |
 | "No se pudo conectar Suunto … rechazó el registro" | El servidor MCP de Suunto no responde | Comprueba que `https://mcp-ten-kappa.vercel.app` abre y dice "Suunto MCP server activo"; si no, revisa el proyecto `mcp` en Vercel |
+| No aparece un botón nuevo o no funciona el zoom en el móvil | La app instalada muestra la versión guardada | Cierra la app del todo y vuelve a abrirla (ver nota arriba) |
 | La app muestra datos de ejemplo | Datos de prueba activos | Pulsa **Datos Prueba** en la barra superior para limpiarlos; tus entrenos reales se conservan |

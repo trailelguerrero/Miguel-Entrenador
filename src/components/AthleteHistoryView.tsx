@@ -30,6 +30,7 @@ interface AthleteHistoryViewProps {
   suuntoConfig: SuuntoIntegrationConfig;
   onSyncSuunto: () => Promise<string>;
   isSyncingSuunto: boolean;
+  onDisconnectSuunto: () => void;
 }
 
 export const AthleteHistoryView: React.FC<AthleteHistoryViewProps> = ({
@@ -40,6 +41,7 @@ export const AthleteHistoryView: React.FC<AthleteHistoryViewProps> = ({
   suuntoConfig,
   onSyncSuunto,
   isSyncingSuunto,
+  onDisconnectSuunto,
 }) => {
   const [markdownContent, setMarkdownContent] = useState<string>(
     historyDoc?.content || StorageService.getHistoryMarkdownTemplate()
@@ -239,6 +241,15 @@ export const AthleteHistoryView: React.FC<AthleteHistoryViewProps> = ({
               <RefreshCw className={`w-4 h-4 ${isSyncingSuunto ? 'animate-spin' : ''}`} />
               <span>{isSyncingSuunto ? 'Sincronizando con Suunto...' : 'Sincronizar Historial con Suunto'}</span>
             </button>
+
+            {suuntoConfig.connected && (
+              <button
+                onClick={onDisconnectSuunto}
+                className="w-full py-2 rounded-xl bg-zinc-900 hover:bg-red-950/60 border border-red-500/30 text-red-300 font-bold text-xs transition-all"
+              >
+                Desconectar Suunto
+              </button>
+            )}
           </div>
 
           <div className="border-t border-zinc-800 pt-4 space-y-2 text-xs text-zinc-400">

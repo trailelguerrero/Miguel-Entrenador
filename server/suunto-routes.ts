@@ -13,11 +13,13 @@
 import type { Express, Request, Response } from 'express';
 import { createHash, randomBytes } from 'node:crypto';
 import type { SuuntoAuth } from '../src/types/index.js';
+import { deriveProfileFromSuunto } from './suunto-profile.js';
 import { mapSuuntoCheckIns, mapSuuntoWorkouts, SuuntoRecoveryDay, SuuntoSleepSession, SuuntoWorkoutRow } from './suunto-map.js';
 
 const MCP_URL = (process.env.SUUNTO_MCP_URL || 'https://mcp-ten-kappa.vercel.app').replace(/\/+$/, '');
 const OAUTH_COOKIE = 'suunto_oauth';
 const MAX_SYNC_DAYS = 28; // límite de la 247 Data API de Suunto
+const PROFILE_WORKOUT_DAYS = 90; // historial de workouts para calcular el perfil
 
 class ReconnectNeededError extends Error {}
 
@@ -244,9 +246,21 @@ export function registerSuuntoRoutes(app: Express) {
       const to = isoDate(new Date(Date.now() + 24 * 3600 * 1000));
       const from = isoDate(new Date(Date.now() - (rangeDays - 1) * 24 * 3600 * 1000));
 
+      // Workouts: 90 días para calcular el perfil (día de tirada larga, FC máx…);
+      // al calendario solo van los del rango pedido. Sueño/recovery: máx. 28 días.
+      const profileFrom = isoDate(new Date(Date.now() - (PROFILE_WORKOUT_DAYS - 1) * 24 * 3600 * 1000));
+      const fetchWorkouts = async (token: string) => {
+        try {
+          return await callMcpTool(token, 'suunto_list_workouts_summary', { from: profileFrom, to });
+        } catch (err) {
+          // MCP antiguo (máx. 28 días en este tool): se usa el rango corto
+          if (err instanceof ReconnectNeededError || !/rango máximo/i.test((err as Error).message)) throw err;
+          return callMcpTool(token, 'suunto_list_workouts_summary', { from, to });
+        }
+      };
       const fetchAll = (token: string) =>
         Promise.all([
-          callMcpTool(token, 'suunto_list_workouts_summary', { from, to }),
+          fetchWorkouts(token),
           callMcpTool(token, 'suunto_get_sleep', { from, to }),
           callMcpTool(token, 'suunto_get_recovery', { from, to }),
         ]);
@@ -262,8 +276,12 @@ export function registerSuuntoRoutes(app: Express) {
       }
 
       const [workoutRows, sleepRows, recoveryRows] = results as [SuuntoWorkoutRow[], SuuntoSleepSession[], SuuntoRecoveryDay[]];
-      const workouts = mapSuuntoWorkouts(Array.isArray(workoutRows) ? workoutRows : []);
-      const checkIns = mapSuuntoCheckIns(Array.isArray(sleepRows) ? sleepRows : [], Array.isArray(recoveryRows) ? recoveryRows : []);
+      const allWorkoutRows = Array.isArray(workoutRows) ? workoutRows : [];
+      const sleepList = Array.isArray(sleepRows) ? sleepRows : [];
+      const fromMs = Date.parse(from);
+      const workouts = mapSuuntoWorkouts(allWorkoutRows.filter((w) => w.startTime >= fromMs));
+      const checkIns = mapSuuntoCheckIns(sleepList, Array.isArray(recoveryRows) ? recoveryRows : []);
+      const profileFromSuunto = deriveProfileFromSuunto(allWorkoutRows, sleepList);
 
       res.json({
         success: true,
@@ -272,6 +290,7 @@ export function registerSuuntoRoutes(app: Express) {
         checkIns,
         lastSync: new Date().toISOString(),
         newAuth: refreshed ? auth : undefined,
+        profileFromSuunto,
       });
     } catch (err: any) {
       if (err instanceof ReconnectNeededError) {

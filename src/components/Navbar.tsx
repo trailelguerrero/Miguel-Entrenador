@@ -42,6 +42,7 @@ interface NavbarProps {
   onOpenCommandPalette: () => void;
   onOpenBackup: () => void;
   onOpenSetupGuide: () => void;
+  onDisconnectSuunto?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -59,6 +60,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenCommandPalette,
   onOpenBackup,
   onOpenSetupGuide,
+  onDisconnectSuunto,
 }) => {
   const [selectedHub, setSelectedHub] = useState<'all' | 'training' | 'metrics' | 'strategy' | 'coach'>('all');
   // Calculate days remaining until target race
@@ -140,7 +142,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Right Actions: Backup, Test Data, Check-in, Profile */}
           <div className="flex items-center space-x-2 shrink-0">
             {/* Estado de las APIs (IA / Suunto) */}
-            <ApiStatusIndicator onGoToSuunto={() => setActiveTab('zonesense')} />
+            <ApiStatusIndicator onGoToSuunto={() => setActiveTab('zonesense')} onDisconnectSuunto={onDisconnectSuunto} />
 
             {/* Guía de Setup Paso a Paso */}
             <button
@@ -161,7 +163,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             {/* Backup / Export JSON */}
             <button
               onClick={onOpenBackup}
-              className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 text-xs text-emerald-400 hover:text-emerald-300 font-semibold transition cursor-pointer"
+              className="hidden sm:flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 text-xs text-emerald-400 hover:text-emerald-300 font-semibold transition cursor-pointer"
               title="Copia de Seguridad & Portabilidad (.JSON)"
             >
               <Download className="w-3.5 h-3.5" />

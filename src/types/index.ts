@@ -437,6 +437,39 @@ export interface AthleteProfile {
   advancedPhysiologicalProfile?: AdvancedPhysiologicalProfile;
   setupCompleted?: boolean;
   setupStep?: number;
+
+  // Perfil automático desde Suunto (ver src/utils/suuntoProfile.ts)
+  vo2Max?: number;
+  /** Origen de cada campo que Suunto puede rellenar: si es 'manual', Suunto no lo pisa. */
+  fieldSources?: Partial<Record<SuuntoProfileField, 'suunto' | 'manual'>>;
+  /** Últimos valores calculados desde Suunto (para "volver a Suunto"). */
+  suuntoValues?: SuuntoProfileValues;
+  /** Explicación de cómo se calculó cada valor. */
+  suuntoEvidence?: Partial<Record<SuuntoProfileField, string>>;
+  suuntoProfileUpdatedAt?: string;
+}
+
+/** Campos del perfil que se calculan a partir de los datos de Suunto. */
+export const SUUNTO_PROFILE_FIELDS = [
+  'maxHr',
+  'aetHr',
+  'antHr',
+  'hasAds',
+  'restingHr',
+  'baselineHrv',
+  'vo2Max',
+  'currentWeeklyVolumeHours',
+  'availableDaysPerWeek',
+  'preferredLongRunDay',
+] as const;
+
+export type SuuntoProfileField = (typeof SUUNTO_PROFILE_FIELDS)[number];
+
+export type SuuntoProfileValues = Partial<Pick<AthleteProfile, SuuntoProfileField>>;
+
+export interface SuuntoProfileSuggestion {
+  values: SuuntoProfileValues;
+  evidence: Partial<Record<SuuntoProfileField, string>>;
 }
 
 // 5. Performance Summary & Mesocycle Progression Types

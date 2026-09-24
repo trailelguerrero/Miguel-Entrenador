@@ -24,7 +24,7 @@ import { interpretDfaAlpha1, explainZoneSenseDecoupling } from '../utils/zoneSen
 interface ZoneSenseSuuntoViewProps {
   profile: AthleteProfile;
   suuntoConfig: SuuntoIntegrationConfig;
-  onUpdateSuuntoConfig: (config: SuuntoIntegrationConfig) => void;
+  onDisconnectSuunto: () => void;
   onSyncSuunto: () => Promise<string>;
   isSyncingSuunto: boolean;
 }
@@ -32,7 +32,7 @@ interface ZoneSenseSuuntoViewProps {
 export const ZoneSenseSuuntoView: React.FC<ZoneSenseSuuntoViewProps> = ({
   profile,
   suuntoConfig,
-  onUpdateSuuntoConfig,
+  onDisconnectSuunto,
   onSyncSuunto,
   isSyncingSuunto,
 }) => {
@@ -76,10 +76,6 @@ export const ZoneSenseSuuntoView: React.FC<ZoneSenseSuuntoViewProps> = ({
     setNotification({ message, type: message.startsWith('Fallo') ? 'error' : 'success' });
   };
 
-  const handleDisconnect = () => {
-    if (!confirm('¿Desconectar la cuenta Suunto de esta app? Los entrenos ya importados se conservan.')) return;
-    onUpdateSuuntoConfig({ ...suuntoConfig, auth: undefined, connected: false, syncStatus: undefined });
-  };
 
   // Connector para claude.ai (Settings → Connectors → Add custom connector)
   const mcpConfigSnippet = SUUNTO_MCP_CONNECTOR_URL;
@@ -555,7 +551,7 @@ export const ZoneSenseSuuntoView: React.FC<ZoneSenseSuuntoViewProps> = ({
                       {isSyncingSuunto ? 'Sincronizando…' : 'Sincronizar ahora (últimos 28 días)'}
                     </button>
                     <button
-                      onClick={handleDisconnect}
+                      onClick={onDisconnectSuunto}
                       className="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-bold text-xs border border-zinc-700"
                     >
                       Desconectar

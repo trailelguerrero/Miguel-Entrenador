@@ -32,6 +32,7 @@ import {
   DocumentedHeatTolerance,
   TrainingPreferencesQuestionnaire
 } from '../types';
+import { SuuntoAutoFillNotice, useSuuntoSources } from './SuuntoSourceTag';
 
 interface AthleteProfileModalProps {
   isOpen: boolean;
@@ -41,6 +42,7 @@ interface AthleteProfileModalProps {
   targetRace: TargetRace;
   onOpenSetupGuide?: () => void;
   onOpenBackup?: () => void;
+  suuntoConnected?: boolean;
 }
 
 export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
@@ -51,6 +53,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
   targetRace,
   onOpenSetupGuide,
   onOpenBackup,
+  suuntoConnected,
 }) => {
   if (!isOpen) return null;
 
@@ -202,6 +205,18 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
     );
   };
 
+  // Etiquetas Suunto / Manual en los campos que se calculan desde Suunto
+  const { sources, SourceTag } = useSuuntoSources(profile, {
+    restingHr: [restingHr, setRestingHr],
+    maxHr: [maxHr, setMaxHr],
+    aetHr: [aetHr, setAetHr],
+    antHr: [antHr, setAntHr],
+    baselineHrv: [baselineHrv, setBaselineHrv],
+    availableDaysPerWeek: [availableDays, setAvailableDays],
+    preferredLongRunDay: [longRunDay, setLongRunDay],
+    currentWeeklyVolumeHours: [volumeHours, setVolumeHours],
+  });
+
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -272,6 +287,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
         coachInitialInterviewCompleted: true,
       },
       advancedPhysiologicalProfile: builtAdvProfile,
+      fieldSources: sources,
     };
 
     onSaveProfile(updated);
@@ -396,6 +412,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
 
         {/* Form Body */}
         <form onSubmit={handleSave} className="p-6 space-y-5 overflow-y-auto flex-1 text-xs">
+          <SuuntoAutoFillNotice profile={profile} suuntoConnected={suuntoConnected} />
           
           {/* ================= TAB: PERFIL FISIOLÓGICO AVANZADO ================= */}
           {activeTab === 'advanced_physiology' && (
@@ -1024,7 +1041,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <div>
-                    <label className="text-[11px] text-zinc-400">FC Reposo</label>
+                    <label className="text-[11px] text-zinc-400 flex flex-wrap items-center">FC Reposo<SourceTag field="restingHr" /></label>
                     <input
                       type="number"
                       value={restingHr}
@@ -1034,7 +1051,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
                   </div>
 
                   <div>
-                    <label className="text-[11px] text-zinc-400">FC Máxima Real</label>
+                    <label className="text-[11px] text-zinc-400 flex flex-wrap items-center">FC Máxima Real<SourceTag field="maxHr" /></label>
                     <input
                       type="number"
                       value={maxHr}
@@ -1044,7 +1061,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
                   </div>
 
                   <div>
-                    <label className="text-[11px] text-zinc-400">Umbral AeT (VT1)</label>
+                    <label className="text-[11px] text-zinc-400 flex flex-wrap items-center">Umbral AeT (VT1)<SourceTag field="aetHr" /></label>
                     <input
                       type="number"
                       value={aetHr}
@@ -1054,7 +1071,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
                   </div>
 
                   <div>
-                    <label className="text-[11px] text-zinc-400">Umbral AnT (VT2)</label>
+                    <label className="text-[11px] text-zinc-400 flex flex-wrap items-center">Umbral AnT (VT2)<SourceTag field="antHr" /></label>
                     <input
                       type="number"
                       value={antHr}
@@ -1080,6 +1097,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
                   <label className="text-zinc-300 font-bold flex items-center space-x-1.5">
                     <Heart className="w-4 h-4 text-red-400" />
                     <span>Línea Base HRV Nocturna rMSSD (ms)</span>
+                    <SourceTag field="baselineHrv" />
                   </label>
                   <span className="text-zinc-400 font-bold">{baselineHrv} ms</span>
                 </div>
@@ -1188,20 +1206,22 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
               {/* Rutina & Disponibilidad */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="text-xs text-zinc-400">Días Disponibles a la Semana</label>
+                  <label className="text-xs text-zinc-400 flex flex-wrap items-center">Días Disponibles a la Semana<SourceTag field="availableDaysPerWeek" /></label>
                   <select
                     value={availableDays}
                     onChange={(e) => setAvailableDays(Number(e.target.value))}
                     className="w-full mt-1 bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-100"
                   >
-                    <option value={4}>4 días (3 entre semana + 1 fin de semana)</option>
-                    <option value={5}>5 días (4 entre semana + 1 fin de semana)</option>
-                    <option value={3}>3 días (2 entre semana + 1 fin de semana)</option>
+                    {[1, 2, 3, 4, 5, 6, 7].map((n) => (
+                      <option key={n} value={n}>
+                        {n === 4 ? '4 días (3 entre semana + 1 fin de semana)' : n === 5 ? '5 días (4 entre semana + 1 fin de semana)' : n === 3 ? '3 días (2 entre semana + 1 fin de semana)' : `${n} ${n === 1 ? 'día' : 'días'}`}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
                 <div>
-                  <label className="text-xs text-zinc-400">Día de Tirada Larga de Montaña</label>
+                  <label className="text-xs text-zinc-400 flex flex-wrap items-center">Día de Tirada Larga de Montaña<SourceTag field="preferredLongRunDay" /></label>
                   <select
                     value={longRunDay}
                     onChange={(e) => setLongRunDay(e.target.value as 'saturday' | 'sunday')}
@@ -1212,6 +1232,24 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
                   </select>
                 </div>
               </div>
+
+              <div>
+                <label className="text-xs text-zinc-400 flex flex-wrap items-center">Volumen Semanal Actual (horas)<SourceTag field="currentWeeklyVolumeHours" /></label>
+                <input
+                  type="number"
+                  step="0.5"
+                  min="0"
+                  value={volumeHours}
+                  onChange={(e) => setVolumeHours(Number(e.target.value))}
+                  className="w-full mt-1 bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-100"
+                />
+              </div>
+
+              {profile.vo2Max && (
+                <p className="text-[11px] text-zinc-400" title={profile.suuntoEvidence?.vo2Max}>
+                  VO2máx: <strong className="text-zinc-200">{profile.vo2Max}</strong> <span className="text-cyan-400">(Suunto)</span>
+                </p>
+              )}
 
               {/* Target Race reminder */}
               <div className="bg-zinc-900/60 p-4 rounded-2xl border border-amber-900/30 flex items-center space-x-3 text-xs">

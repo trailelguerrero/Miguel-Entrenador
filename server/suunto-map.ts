@@ -21,6 +21,12 @@ export interface SuuntoWorkoutRow {
   timeInAerobicZoneMs: number | null;
   timeInAnaerobicZoneMs: number | null;
   timeInVo2MaxZoneMs: number | null;
+  // Perfil configurado en Suunto (MCP ≥ "add profile fields")
+  userMaxHR?: number | null;
+  hrZoneLowerLimits?: { z2: number | null; z3: number | null; z4: number | null; z5: number | null } | null;
+  zoneSenseAerobicThreshold?: number | null;
+  zoneSenseAnaerobicThreshold?: number | null;
+  vo2Max?: number | null;
 }
 
 /** Fila de la tool `suunto_get_sleep`. */

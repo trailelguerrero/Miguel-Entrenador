@@ -35,9 +35,11 @@ const PROVIDER_LABEL: Record<string, string> = {
 
 interface Props {
   onGoToSuunto: () => void;
+  /** Presente solo si hay una cuenta Suunto conectada. */
+  onDisconnectSuunto?: () => void;
 }
 
-export const ApiStatusIndicator: React.FC<Props> = ({ onGoToSuunto }) => {
+export const ApiStatusIndicator: React.FC<Props> = ({ onGoToSuunto, onDisconnectSuunto }) => {
   const status = useApiStatus();
   const [open, setOpen] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -176,7 +178,20 @@ export const ApiStatusIndicator: React.FC<Props> = ({ onGoToSuunto }) => {
                 Ir a Conexión Suunto
               </button>
             )}
+            {onDisconnectSuunto && (
+              <button
+                onClick={() => {
+                  setOpen(false);
+                  onDisconnectSuunto();
+                }}
+                className="w-full py-2 rounded-xl bg-zinc-900 hover:bg-red-950/60 text-red-300 font-bold border border-red-500/30"
+              >
+                Desconectar Suunto
+              </button>
+            )}
           </div>
+
+          <p className="border-t border-zinc-800 pt-2 text-[10px] text-zinc-500">Versión de la app: {__APP_VERSION__}</p>
         </div>
       )}
     </div>
