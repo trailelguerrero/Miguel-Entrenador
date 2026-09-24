@@ -1,0 +1,11 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+
+# Service worker generado por vite-plugin-pwa en modo dev
+dev-dist/

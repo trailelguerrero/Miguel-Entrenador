@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0c0a09"/>
+      <stop offset="100%" stop-color="#1c1917"/>
+    </linearGradient>
+    <linearGradient id="mountain" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10b981"/>
+      <stop offset="100%" stop-color="#059669"/>
+    </linearGradient>
+    <linearGradient id="peak" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34d399"/>
+      <stop offset="100%" stop-color="#10b981"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="100" fill="url(#bg)"/>
+  <!-- Mountain silhouette -->
+  <polygon points="256,90 390,340 122,340" fill="url(#peak)"/>
+  <polygon points="340,190 440,360 240,360" fill="url(#mountain)" opacity="0.8"/>
+  <polygon points="172,190 280,360 64,360" fill="#047857" opacity="0.9"/>
+  <!-- ZoneSense Pulse wave -->
+  <path d="M 90,390 L 190,390 L 220,330 L 256,430 L 290,350 L 320,390 L 422,390" fill="none" stroke="#34d399" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
