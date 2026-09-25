@@ -61,14 +61,14 @@ export function deriveProfileFromSuunto(
   )?.hrZoneLowerLimits;
   if (validHr(zsAet)) {
     values.aetHr = Math.round(zsAet);
-    evidence.aetHr = 'Umbral aeróbico medido por Suunto ZoneSense (DFA a1).';
+    evidence.aetHr = 'FC del umbral aeróbico según Suunto ZoneSense.';
   } else if (zones && validHr(zones.z3)) {
     values.aetHr = zones.z3;
     evidence.aetHr = `Inicio de tu Zona 3 de FC para carrera en Suunto (${zones.z3} bpm).`;
   }
   if (validHr(zsAnt)) {
     values.antHr = Math.round(zsAnt);
-    evidence.antHr = 'Umbral anaeróbico medido por Suunto ZoneSense (DFA a1).';
+    evidence.antHr = 'FC del umbral anaeróbico según Suunto ZoneSense.';
   } else if (zones && validHr(zones.z5)) {
     values.antHr = zones.z5;
     evidence.antHr = `Inicio de tu Zona 5 de FC para carrera en Suunto (${zones.z5} bpm).`;

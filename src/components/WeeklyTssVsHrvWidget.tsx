@@ -912,7 +912,7 @@ export const WeeklyTssVsHrvWidget: React.FC<WeeklyTssVsHrvWidgetProps> = ({
             onClick={() => onNavigateTab?.('zonesense')}
             className="px-3 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-zinc-950 text-xs font-bold transition cursor-pointer flex items-center gap-1"
           >
-            <span>Ver ZoneSense DFA a1</span>
+            <span>Ver ZoneSense</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </button>
         </div>

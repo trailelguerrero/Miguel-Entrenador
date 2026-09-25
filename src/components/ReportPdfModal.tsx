@@ -1,4 +1,5 @@
 import { localDateKey } from '../utils/trainingLoad';
+import { StorageService } from '../services/storage';
 import React, { useRef } from 'react';
 import { 
   X, 
@@ -18,7 +19,6 @@ import {
   Zap
 } from 'lucide-react';
 import { AthleteProfile, TargetRace, Workout, DailyCheckIn, PMCDataPoint } from '../types';
-import { formatZoneSenseWithBpm } from '../utils/zoneSense';
 
 interface ReportPdfModalProps {
   isOpen: boolean;
@@ -72,6 +72,9 @@ export const ReportPdfModal: React.FC<ReportPdfModalProps> = ({
   const aerobicPct30d = zsMinutes > 0
     ? Math.round(zsWorkouts.reduce((acc, w) => acc + (w.actualDurationMin || 0) * w.zoneSenseBreakdown!.aerobicPct, 0) / zsMinutes)
     : null;
+
+  // Reglas reales de la memoria de Miguel (no textos fijos)
+  const learnedRules = StorageService.getCoachMemory().insights.slice(0, 3).map(i => i.ruleForFuturePlans);
 
   // Handle browser native print (PDF export)
   const handlePrint = () => {
@@ -238,84 +241,20 @@ export const ReportPdfModal: React.FC<ReportPdfModalProps> = ({
               </p>
             </div>
 
-            {/* Physiological & ZoneSense Thresholds Table with BPM */}
-            <div className="space-y-2">
+            {/* ZoneSense (colores, sin pulsaciones) y zonas de FC del reloj, por separado */}
+            <div className="space-y-2 text-xs">
               <h4 className="text-xs font-bold text-zinc-300 print:text-zinc-800 uppercase tracking-wider flex items-center space-x-1.5">
                 <Activity className="w-4 h-4 text-emerald-400 print:text-emerald-700" />
-                <span>Umbrales Fisiológicos & Suunto ZoneSense (DFA a1 Traducido a BPM)</span>
+                <span>Intensidad: Suunto ZoneSense y zonas de FC</span>
               </h4>
-
-              <table className="w-full text-xs text-left border-collapse border border-zinc-800 print:border-zinc-300">
-                <thead>
-                  <tr className="bg-zinc-900 print:bg-zinc-100 text-zinc-400 print:text-zinc-700 font-bold">
-                    <th className="p-2.5 border border-zinc-800 print:border-zinc-300">Zona Fisiológica</th>
-                    <th className="p-2.5 border border-zinc-800 print:border-zinc-300">Suunto ZoneSense (DFA a1)</th>
-                    <th className="p-2.5 border border-zinc-800 print:border-zinc-300">Rango de Pulsaciones (BPM)</th>
-                    <th className="p-2.5 border border-zinc-800 print:border-zinc-300">Régimen Metabólico</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-800 print:divide-zinc-200">
-                  <tr className="bg-zinc-950/40 print:bg-white">
-                    <td className="p-2.5 border border-zinc-800 print:border-zinc-300 font-bold text-emerald-400 print:text-emerald-700">
-                      Zona 1 (Regenerativo)
-                    </td>
-                    <td className="p-2.5 border border-zinc-800 print:border-zinc-300 font-mono">
-                      DFA a1 &gt; 0.85
-                    </td>
-                    <td className="p-2.5 border border-zinc-800 print:border-zinc-300 font-mono font-bold text-emerald-300 print:text-emerald-800">
-                      &lt; 130 bpm
-                    </td>
-                    <td className="p-2.5 border border-zinc-800 print:border-zinc-300 text-zinc-400 print:text-zinc-600">
-                      Rebote parasimpático, lactato basal, recuperación de glucógeno
-                    </td>
-                  </tr>
-
-                  <tr className="bg-zinc-950/40 print:bg-white">
-                    <td className="p-2.5 border border-zinc-800 print:border-zinc-300 font-bold text-emerald-400 print:text-emerald-700">
-                      Zona 2 (Aeróbico Puro / AeT)
-                    </td>
-                    <td className="p-2.5 border border-zinc-800 print:border-zinc-300 font-mono">
-                      DFA a1 &ge; 0.75
-                    </td>
-                    <td className="p-2.5 border border-zinc-800 print:border-zinc-300 font-mono font-bold text-emerald-300 print:text-emerald-800">
-                      130 - {profile.aetHr} bpm
-                    </td>
-                    <td className="p-2.5 border border-zinc-800 print:border-zinc-300 text-zinc-400 print:text-zinc-600">
-                      FatMax (máxima oxidación de grasas), multiplicación mitocondrial
-                    </td>
-                  </tr>
-
-                  <tr className="bg-zinc-950/40 print:bg-white">
-                    <td className="p-2.5 border border-zinc-800 print:border-zinc-300 font-bold text-amber-400 print:text-amber-700">
-                      Zona 3 (Transición / Tempo)
-                    </td>
-                    <td className="p-2.5 border border-zinc-800 print:border-zinc-300 font-mono">
-                      0.75 &gt; DFA a1 &ge; 0.50
-                    </td>
-                    <td className="p-2.5 border border-zinc-800 print:border-zinc-300 font-mono font-bold text-amber-300 print:text-amber-800">
-                      {profile.aetHr + 1} - {profile.antHr} bpm
-                    </td>
-                    <td className="p-2.5 border border-zinc-800 print:border-zinc-300 text-zinc-400 print:text-zinc-600">
-                      Gasto acelerado de glucógeno muscular y pérdida de fractalidad
-                    </td>
-                  </tr>
-
-                  <tr className="bg-zinc-950/40 print:bg-white">
-                    <td className="p-2.5 border border-zinc-800 print:border-zinc-300 font-bold text-red-400 print:text-red-700">
-                      Zona 4 / 5 (Anaeróbico / AnT)
-                    </td>
-                    <td className="p-2.5 border border-zinc-800 print:border-zinc-300 font-mono">
-                      DFA a1 &lt; 0.50
-                    </td>
-                    <td className="p-2.5 border border-zinc-800 print:border-zinc-300 font-mono font-bold text-red-300 print:text-red-800">
-                      &gt; {profile.antHr} bpm
-                    </td>
-                    <td className="p-2.5 border border-zinc-800 print:border-zinc-300 text-zinc-400 print:text-zinc-600">
-                      Glucólisis anaeróbica rápida, acumulación de lactato &gt;4.0 mmol/L
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+              <p className="text-zinc-300 print:text-zinc-700">
+                ZoneSense (banda de pecho) clasifica la intensidad en verde (aeróbico), amarillo (entre umbrales) y rojo (sobre el umbral anaeróbico)
+                respecto a la línea base de cada entreno; no equivale a pulsaciones fijas.
+                {aerobicPct30d !== null ? <> Últimos 30 días: <strong>{aerobicPct30d}%</strong> del tiempo con ZoneSense en verde.</> : ' Sin datos de ZoneSense en los últimos 30 días.'}
+              </p>
+              <p className="text-zinc-400 print:text-zinc-600">
+                Zonas de FC del reloj (respaldo sin banda): umbral aeróbico {profile.aetHr || '—'} ppm · umbral anaeróbico {profile.antHr || '—'} ppm · FC máx {profile.maxHr || '—'} ppm.
+              </p>
             </div>
 
             {/* Key Training Metrics Grid */}
@@ -398,7 +337,7 @@ export const ReportPdfModal: React.FC<ReportPdfModalProps> = ({
                   Reglas de Aprendizaje Acumuladas por Miguel:
                 </span>
                 <p className="text-[11px] text-zinc-400 print:text-zinc-600">
-                  1. Blindar sóleos con excéntricos 3-1-1 • 2. Prohibido superar {profile.aetHr} bpm en rodajes • 3. Priorizar DFA a1 sobre pulso estático en días de calor.
+                  {learnedRules.length > 0 ? learnedRules.map((r, i) => `${i + 1}. ${r}`).join(' • ') : 'Miguel aún no ha registrado aprendizajes.'}
                 </p>
               </div>
 

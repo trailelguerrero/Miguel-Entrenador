@@ -209,7 +209,7 @@ export const WeeklyFatigueHrvWidget: React.FC<WeeklyFatigueHrvWidgetProps> = ({
       suggestedVolumeReductionPct: 45,
       coachMiguelPrescription: {
         maxHeartRateCap: 130, // Strict Z1 recovery, well below AeT 142
-        zoneSenseTarget: 'DFA a1 > 0.85 (Regenerativo puro: < 130 bpm)',
+        zoneSenseTarget: 'Regenerativo (verde, muy suave)',
         weeklyVolumeHours: 3.2, // ~45% reduction from ~5.8h
         prohibitedElements: [
           'Tiradas > 75 minutos o ritmos tempo Z3/Z4',

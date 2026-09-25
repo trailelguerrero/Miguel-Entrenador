@@ -29,7 +29,7 @@ export const AddWorkoutModal: React.FC<AddWorkoutModalProps> = ({
   const [distanceKm, setDistanceKm] = useState(10);
   const [elevationGainM, setElevationGainM] = useState(300);
   const [zoneSenseTarget, setZoneSenseTarget] = useState<Workout['zoneSenseTarget']>(
-    'DFA a1 > 0.75 (Aeróbico puro)'
+    'ZoneSense verde (aeróbico)'
   );
   const [mainSet, setMainSet] = useState(
     'Rodaje continuo a ritmo suave, respiración nasal constante. En las subidas camina si tus pulsaciones rozan tu AeT.'
@@ -173,10 +173,10 @@ export const AddWorkoutModal: React.FC<AddWorkoutModalProps> = ({
               onChange={(e) => setZoneSenseTarget(e.target.value as any)}
               className="w-full mt-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-100"
             >
-              <option value="DFA a1 > 0.75 (Aeróbico puro)">DFA a1 &gt; 0.75 (Aeróbico puro / Z1-Z2)</option>
-              <option value="DFA a1 0.75 - 0.50 (Transición)">DFA a1 0.75 - 0.50 (Transición / Tempo)</option>
-              <option value="DFA a1 < 0.50 (Anaeróbico)">DFA a1 &lt; 0.50 (Anaeróbico)</option>
-              <option value="Regenerativo">Regenerativo</option>
+              <option value="ZoneSense verde (aeróbico)">ZoneSense verde (aeróbico)</option>
+              <option value="Regenerativo (verde, muy suave)">Regenerativo (verde, muy suave)</option>
+              <option value="ZoneSense amarillo (entre umbrales)">ZoneSense amarillo (entre umbrales)</option>
+              <option value="ZoneSense rojo (sobre umbral anaeróbico)">ZoneSense rojo (sobre umbral anaeróbico)</option>
             </select>
           </div>
 

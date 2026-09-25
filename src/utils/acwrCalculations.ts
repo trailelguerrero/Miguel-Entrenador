@@ -242,7 +242,7 @@ export function calculateACWRSummary(
     actionableSteps.push('Evita saltar de golpe de 35 a 70 km semanales; reparte la carga en 4 días.');
     actionableSteps.push('Introduce sesiones de fuerza excéntrica para preparar los sóleos.');
   } else if (latestPoint.acwr <= 1.30) {
-    coachTacticalAdvice = `Excelente dosificación: Ratio ACWR en ${latestPoint.acwr.toFixed(2)} (Sweet Spot de Gabbett). Estás construyendo fitness mitocondrial sólido para Transvulcania 73K sin saturar el sistema nervioso. La regla de oro aquí es la regularidad: no te dejes llevar por la euforia acelerando en las cuestas; continúa vigilando que tu DFA a1 se mantenga en Zona 2 (&ge; 0.75).`;
+    coachTacticalAdvice = `Excelente dosificación: Ratio ACWR en ${latestPoint.acwr.toFixed(2)} (Sweet Spot de Gabbett). Estás construyendo fitness mitocondrial sólido para Transvulcania 73K sin saturar el sistema nervioso. La regla de oro aquí es la regularidad: no te dejes llevar por la euforia acelerando en las cuestas; continúa vigilando que ZoneSense se mantenga en verde en los rodajes.`;
     actionableSteps.push('Continúa con el plan previsto sin modificaciones bruscas.');
     actionableSteps.push('Prioriza la hidratación con 500-650 mg/h de sodio en tiradas de fin de semana.');
     actionableSteps.push('Monitorea que tu HRV nocturna se mantenga dentro del rango basal.');

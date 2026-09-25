@@ -47,7 +47,7 @@ export const SuuntoExportModal: React.FC<Props> = ({ isOpen, onClose, workout, p
         targetHrRange: [profile.aetHr - 15, profile.aetHr],
         suuntoVibrationAlert: true,
         vibrateIfHrExceeds: profile.aetHr,
-        notes: 'En pendientes >12% cambia a power-hiking para salvaguardar DFA a1 > 0.75.',
+        notes: 'Si en subida ZoneSense pasa a amarillo, cambia a power-hiking.',
       },
       {
         stepName: '3. Enfriamiento y Vuelta a la Calma',

@@ -25,7 +25,7 @@ import {
   DailyCheckIn 
 } from '../types';
 import { StorageService } from '../services/storage';
-import { formatZoneSenseWithBpm } from '../utils/zoneSense';
+import { describeZoneSenseTarget } from '../utils/zoneSense';
 import { calculateWorkoutTss } from '../utils/pmcCalculations';
 
 interface FartlekGeneratorModalProps {
@@ -81,14 +81,14 @@ export const FartlekGeneratorModal: React.FC<FartlekGeneratorModalProps> = ({
           repNumber: i,
           fastDurationMinutes: 1.5,
           fastPaceLabel: 'Zancada ágil y fluida',
-          fastTargetHrMax: 132,
-          fastZoneSense: 'DFA a1 > 0.85 (Regenerativo)',
+          fastTargetHrMax: 0,
+          fastZoneSense: 'ZoneSense verde, muy cómodo',
           fastCadenceTarget: '175-180 ppm',
           fastTacticalCue: 'Aumenta solo la cadencia de pies, respiración 100% nasal. No fuerces la zancada.',
           recoveryDurationMinutes: 3.5,
           recoveryPaceLabel: 'Trote muy suave o caminata activa',
-          recoveryTargetHrMax: 122,
-          recoveryDescription: 'Baja pulsaciones a zona de relajación completa. Sensación de esfuerzo 2/10.',
+          recoveryTargetHrMax: 0,
+          recoveryDescription: 'Recupera hasta sentirte completamente relajado. Sensación de esfuerzo 2/10.',
         });
       }
 
@@ -99,15 +99,15 @@ export const FartlekGeneratorModal: React.FC<FartlekGeneratorModalProps> = ({
         totalDurationMin: durationMinutes,
         estimatedDistanceKm: durationMinutes === 45 ? 6.5 : durationMinutes === 60 ? 8.5 : 10.5,
         estimatedElevationGainM: 120,
-        targetHrMin: 115,
-        targetHrMax: 132,
-        zoneSenseTarget: 'Regenerativo',
+        targetHrMin: 0,
+        targetHrMax: 0,
+        zoneSenseTarget: 'Regenerativo (verde, muy suave)',
         description: 'Fartlek de descarga adaptado a tu estado de fatiga acumulada. Prohibido acumular lactato.',
-        whyThisFitsAthlete: `Tu HRV actual o el momento de la temporada exigen descarga activa. Con un AeT de ${aet} bpm, este estímulo activa la circulación y la economía neuromuscular sin estresar el sistema simpático ni los depósitos de glucógeno.`,
-        uphillAthleteScienceNote: 'Scott Johnston: "Durante una semana de descarga, el volumen debe reducirse un 40-50% y la intensidad no debe superar el umbral aeróbico bajo para permitir el rebote parasimpático."',
+        whyThisFitsAthlete: `Tu HRV actual o el momento de la temporada exigen descarga activa. Este estímulo activa la circulación y la economía neuromuscular sin estresar el sistema simpático ni los depósitos de glucógeno.`,
+        uphillAthleteScienceNote: '',
         warmup: '12 min de trote muy lento sobre terreno blando + movilidad suave de cadera y tobillos.',
         mainSetStructured: reps,
-        mainSetSummary: `${repsCount} bloques de [1'30" zancada ágil < 132 bpm / 3'30" trote muy suave < 122 bpm]. 100% respiración nasal.`,
+        mainSetSummary: `${repsCount} bloques de [1'30" zancada ágil / 3'30" trote muy suave], todo en ZoneSense verde y muy cómodo. 100% respiración nasal.`,
         cooldown: '10 min caminando descalzo sobre césped o trote a paso de caminata.',
         postWorkoutEccentricRoutine: '3 series de 10 elevaciones de sóleo en escalón (tempo 3-1-1) sin peso para mantener elasticidad tendinosa.',
         nutritionAdvice: 'Hidratación con 500 ml de agua con sales. No se requieren geles de alta concentración.',
@@ -123,35 +123,35 @@ export const FartlekGeneratorModal: React.FC<FartlekGeneratorModalProps> = ({
           repNumber: i,
           fastDurationMinutes: 3,
           fastPaceLabel: 'Ritmo Vivo Sub-AeT',
-          fastTargetHrMax: aet - 2, // 140 bpm
-          fastZoneSense: 'DFA a1 0.75 - 0.80 (Aeróbico Óptimo)',
+          fastTargetHrMax: aet,
+          fastZoneSense: 'ZoneSense verde (sin tocar el amarillo)',
           fastCadenceTarget: '176-182 ppm',
-          fastTacticalCue: `Rodaje vivo y alegre pero con límite innegociable en ${aet - 2} bpm. Si la pendiente te hace rozar los ${aet} bpm, acorta la zancada.`,
+          fastTacticalCue: `Rodaje vivo y alegre sin salir del verde de ZoneSense${aet ? ` (sin banda: sin pasar de ${aet} ppm)` : ''}. Si ves el amarillo, acorta la zancada.`,
           recoveryDurationMinutes: 2,
           recoveryPaceLabel: 'Trote suave Z1',
-          recoveryTargetHrMax: 128,
-          recoveryDescription: 'Permite que el pulso caiga por debajo de 128 bpm antes del siguiente cambio de ritmo.',
+          recoveryTargetHrMax: 0,
+          recoveryDescription: 'Recupera al trote suave antes del siguiente cambio de ritmo.',
         });
       }
 
       return {
         id: `fartlek-ads-${Date.now()}`,
-        title: `Fartlek Aeróbico Sub-AeT: Calibración DFA a1 (${repsCount}x3' / 2')`,
+        title: `Fartlek Aeróbico en verde (${repsCount}x3' / 2')`,
         workoutType: 'easy_run',
         totalDurationMin: durationMinutes,
         estimatedDistanceKm: durationMinutes === 45 ? 7.8 : durationMinutes === 60 ? 10.5 : 13.2,
         estimatedElevationGainM: 280,
-        targetHrMin: 122,
+        targetHrMin: 0,
         targetHrMax: aet,
-        zoneSenseTarget: 'DFA a1 > 0.75 (Aeróbico puro)',
+        zoneSenseTarget: 'ZoneSense verde (aeróbico)',
         description: `Entrenamiento de cambios de ritmo aeróbicos para revertir el ADS (Aerobic Deficiency Syndrome). Enfoque en densidad mitocondrial sin fatiga por lactato.`,
         whyThisFitsAthlete: `Con un AeT de ${aet} bpm y un AnT de ${ant} bpm (spread de ${ant - aet} bpm), cualquier trabajo a intensidades anaeróbicas bloquea la oxidación de grasas (FatMax). Este fartlek enseña a tu organismo a sostener velocidad de crucero sin entrar en glucólisis ácida.`,
-        uphillAthleteScienceNote: 'Training for the Uphill Athlete (Capítulo 4): "Los fartleks aeróbicos en atletas con ADS deben mantenerse estrictamente por debajo de VT1 (AeT). La variación de ritmo mejora el reclutamiento de fibras lentas de tipo I sin desencadenar acidosis metabólica."',
-        warmup: '15 min de rodaje continuo muy suave en Z1 (<128 bpm) + 4 aceleraciones progresivas de 15s en llano.',
+        uphillAthleteScienceNote: '',
+        warmup: '15 min de rodaje continuo muy suave (ZoneSense toma aquí tu línea base del día) + 4 aceleraciones progresivas de 15s en llano.',
         mainSetStructured: reps,
-        mainSetSummary: `${repsCount} repeticiones de [3 min ritmo vivo a 136-140 bpm (DFA a1 > 0.75) + 2 min recuperación al trote suave < 128 bpm].`,
+        mainSetSummary: `${repsCount} repeticiones de [3 min ritmo vivo en ZoneSense verde + 2 min recuperación al trote suave].`,
         cooldown: '10 min de trote suave regenerativo + estiramientos suaves.',
-        postWorkoutEccentricRoutine: '3 series de 12 repeticiones de sóleo en escalón (tempo 3-1-1) para proteger la inserción del gemelo izquierdo.',
+        postWorkoutEccentricRoutine: '3 series de 12 repeticiones de sóleo en escalón (tempo 3-1-1).',
         nutritionAdvice: 'Llevar 1 bidón de 500 ml de agua con sales (400 mg Na+). Tomar un trago largo en cada recuperación de 2 minutos.',
       };
     }
@@ -164,14 +164,14 @@ export const FartlekGeneratorModal: React.FC<FartlekGeneratorModalProps> = ({
           repNumber: i,
           fastDurationMinutes: 2.5,
           fastPaceLabel: 'Subida Uphill con Bastones (Power-Hiking)',
-          fastTargetHrMax: aet, // Cap en 142 bpm
-          fastZoneSense: 'DFA a1 > 0.72 (Control Sub-Umbral)',
+          fastTargetHrMax: aet,
+          fastZoneSense: 'ZoneSense verde (sin tocar el amarillo)',
           fastCadenceTarget: '65-70 pasos dobles/min con bastones',
           fastTacticalCue: 'Clava los bastones a la altura del talón delantero e impulsa con el dorsal. Si la pendiente supera el 12%, zancada amplia sin saltar.',
           recoveryDurationMinutes: 2.5,
           recoveryPaceLabel: 'Bajada al paso o trote suave amortiguado',
-          recoveryTargetHrMax: 125,
-          recoveryDescription: 'Desciende trotando con pisada corta de mediopié sin frenar de golpe. Pulso < 125 bpm.',
+          recoveryTargetHrMax: 0,
+          recoveryDescription: 'Desciende trotando con pisada corta de mediopié sin frenar de golpe.',
         });
       }
 
@@ -182,15 +182,15 @@ export const FartlekGeneratorModal: React.FC<FartlekGeneratorModalProps> = ({
         totalDurationMin: durationMinutes,
         estimatedDistanceKm: durationMinutes === 45 ? 6.8 : durationMinutes === 60 ? 9.2 : 11.5,
         estimatedElevationGainM: 450,
-        targetHrMin: 120,
-        targetHrMax: aet + 2,
-        zoneSenseTarget: 'DFA a1 > 0.75 (Aeróbico puro)',
+        targetHrMin: 0,
+        targetHrMax: aet,
+        zoneSenseTarget: 'ZoneSense verde (aeróbico)',
         description: 'Fartlek específico en pendiente para trabajar potencia aeróbica en cuádriceps y gemelos simulando los pinares de Fuencaliente.',
-        whyThisFitsAthlete: `En Transvulcania subes +2.400m seguidos hasta Las Deseadas. Este fartlek fortalece la cadena posterior sin disparar el pulso por encima de tu AeT de ${aet} bpm, respetando la regla aprendida de transición inmediata a bastones en pendientes pronunciadas.`,
-        uphillAthleteScienceNote: 'Scott Johnston: "La fuerza-resistencia en cuestas sub-AeT desarrolla la capacidad de los capilares sanguíneos en el vasto lateral sin agotar el glucógeno hepático."',
-        warmup: '15 min de aproximación al pie de la cuesta al trote muy suave (<125 bpm).',
+        whyThisFitsAthlete: `Transvulcania tiene subidas muy largas. Este fartlek trabaja la subida con bastones sin salir del verde de ZoneSense.`,
+        uphillAthleteScienceNote: '',
+        warmup: '15 min de aproximación al pie de la cuesta al trote muy suave (ZoneSense fija tu línea base del día).',
         mainSetStructured: reps,
-        mainSetSummary: `${repsCount} series de [2 min 30s de subida activa con bastones a pulso sub-AeT 138-142 bpm + 2 min 30s de descenso suave amortiguado].`,
+        mainSetSummary: `${repsCount} series de [2 min 30s de subida activa con bastones en ZoneSense verde + 2 min 30s de descenso suave amortiguado].`,
         cooldown: '10 min de trote en llano + 5 min de marcha relajada.',
         postWorkoutEccentricRoutine: '3 series de 10 Step-Downs excéntricos en escalón (tempo 3-1-1) por pierna para preparar la bajada de El Time.',
         nutritionAdvice: '40g de carbohidratos en gel o barrita energética a los 35 minutos + 600 ml de electrolitos.',
@@ -206,12 +206,12 @@ export const FartlekGeneratorModal: React.FC<FartlekGeneratorModalProps> = ({
         fastDurationMinutes: 4,
         fastPaceLabel: 'Ritmo de Cresta / Falsos Llanos',
         fastTargetHrMax: aet,
-        fastZoneSense: 'DFA a1 > 0.75',
+        fastZoneSense: 'ZoneSense verde (sin tocar el amarillo)',
         fastCadenceTarget: '178-184 ppm',
         fastTacticalCue: 'Zancada reactiva y mirada 5 metros por delante para anticipar piedras y terreno volcánico suelto.',
         recoveryDurationMinutes: 2,
         recoveryPaceLabel: 'Trote suave regenerativo',
-        recoveryTargetHrMax: 128,
+        recoveryTargetHrMax: 0,
         recoveryDescription: 'Recuperación al trote regular en terreno llano o sendero cómodo.',
       });
     }
@@ -223,15 +223,15 @@ export const FartlekGeneratorModal: React.FC<FartlekGeneratorModalProps> = ({
       totalDurationMin: durationMinutes,
       estimatedDistanceKm: durationMinutes === 45 ? 7.5 : durationMinutes === 60 ? 10.0 : 12.8,
       estimatedElevationGainM: 380,
-      targetHrMin: 122,
+      targetHrMin: 0,
       targetHrMax: aet,
-      zoneSenseTarget: 'DFA a1 > 0.75 (Aeróbico puro)',
+      zoneSenseTarget: 'ZoneSense verde (aeróbico)',
       description: 'Fartlek en terreno técnico y variado para automatizar la cadencia rápida y la estabilidad de tobillo bajo fatiga.',
-      whyThisFitsAthlete: `Simula los cambios de pendiente entre El Pilar y el Pico de la Nieve. Automatiza un apoyo de mediopié ágil manteniendo tu corazón en el rango óptimo de 136-141 bpm.`,
-      uphillAthleteScienceNote: 'Steve House: "El fartlek en terreno irregular es la mejor herramienta de economía de carrera para ultra-trail, siempre que se respete la barrera aeróbica."',
+      whyThisFitsAthlete: `Cambios de pendiente como los de la cresta de Transvulcania, sin salir del verde de ZoneSense.`,
+      uphillAthleteScienceNote: '',
       warmup: '15 min de carrera suave en sendero + ejercicios de técnica de tobillo (skipping bajo y talones a glúteo).',
       mainSetStructured: reps,
-      mainSetSummary: `${repsCount} bloques de [4 min a ritmo de cresta vivo < 142 bpm + 2 min de trote suave recuperador < 128 bpm].`,
+      mainSetSummary: `${repsCount} bloques de [4 min a ritmo de cresta vivo en ZoneSense verde + 2 min de trote suave recuperador].`,
       cooldown: '10 min de trote muy relajado.',
       postWorkoutEccentricRoutine: '3 series de sóleo excéntrico en escalón 3-1-1 + estiramientos de psoas.',
       nutritionAdvice: '500 ml de agua con sales y 1 gel isotónico a mitad de sesión.',
@@ -240,8 +240,7 @@ export const FartlekGeneratorModal: React.FC<FartlekGeneratorModalProps> = ({
 
   // Handler to add the generated fartlek to Calendar
   const handleAddToCalendar = () => {
-    const estAvgHr = Math.round((fartlekPlan.targetHrMin + fartlekPlan.targetHrMax) / 2);
-    const tssResult = calculateWorkoutTss(fartlekPlan.totalDurationMin, estAvgHr, profile.antHr || undefined);
+    const tssResult = calculateWorkoutTss(fartlekPlan.totalDurationMin, undefined, profile.antHr || undefined);
 
     const workoutToAdd: Workout = {
       id: `workout-fartlek-${Date.now()}`,
@@ -253,8 +252,8 @@ export const FartlekGeneratorModal: React.FC<FartlekGeneratorModalProps> = ({
       plannedElevationGainM: fartlekPlan.estimatedElevationGainM,
       plannedTss: tssResult.tss,
       intensityFactor: tssResult.intensityFactor,
-      targetHrMin: fartlekPlan.targetHrMin,
-      targetHrMax: fartlekPlan.targetHrMax,
+      targetHrMin: fartlekPlan.targetHrMin || undefined,
+      targetHrMax: fartlekPlan.targetHrMax || undefined,
       zoneSenseTarget: fartlekPlan.zoneSenseTarget,
       description: fartlekPlan.description,
       personalizedReasoning: fartlekPlan.whyThisFitsAthlete,
@@ -330,7 +329,7 @@ export const FartlekGeneratorModal: React.FC<FartlekGeneratorModalProps> = ({
               <p className="leading-relaxed text-stone-400 text-[11px]">
                 Tu perfil presenta <strong>ADS activo</strong> (separación de {ant - aet} bpm entre AeT {aet} bpm y AnT {ant} bpm). 
                 Los fartleks tradicionales de pista a ritmo de VO2max inundan el músculo de ácido láctico y frenan la biogénesis mitocondrial. 
-                Los fartleks generados aquí son <strong>estrictamente aeróbicos sub-AeT o de potencia neuromuscular en cuesta</strong>, respetando tu reloj Suunto con DFA a1 &gt; 0.75.
+                Los fartleks generados aquí son <strong>estrictamente aeróbicos sub-AeT o de potencia neuromuscular en cuesta</strong>, en ZoneSense verde (con banda de pecho).
               </p>
             </div>
           </div>
@@ -404,7 +403,7 @@ export const FartlekGeneratorModal: React.FC<FartlekGeneratorModalProps> = ({
                 onChange={(e) => setFocus(e.target.value as any)}
                 className="w-full bg-stone-900 border border-stone-750 rounded-xl px-2.5 py-1.5 text-xs text-stone-100 font-medium"
               >
-                <option value="ads_reversal_aet_control">Calibración DFA a1 & Control Sub-AeT</option>
+                <option value="ads_reversal_aet_control">Aeróbico en verde (control sub-AeT)</option>
                 <option value="uphill_cadence_poles">Cuestas Uphill & Zancada con Bastones</option>
                 <option value="transvulcania_rolling_crest">Cresta & Terreno Volcánico Rompepiernas</option>
                 <option value="recovery_dynamic">Regenerativo Dinámico (Descarga)</option>
@@ -470,7 +469,7 @@ export const FartlekGeneratorModal: React.FC<FartlekGeneratorModalProps> = ({
                   ⛰️ +{fartlekPlan.estimatedElevationGainM} m
                 </span>
                 <span className="px-2.5 py-1 rounded-lg bg-stone-900 border border-stone-750 font-mono text-xs text-cyan-400 font-bold">
-                  ❤️ Máx: {fartlekPlan.targetHrMax} bpm
+                  {fartlekPlan.targetHrMax > 0 ? `❤️ Sin banda: máx ${fartlekPlan.targetHrMax} ppm` : '🟢 ZoneSense verde'}
                 </span>
               </div>
             </div>
@@ -478,22 +477,21 @@ export const FartlekGeneratorModal: React.FC<FartlekGeneratorModalProps> = ({
             {/* Target Biomarkers */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
               <div className="bg-stone-900 p-3 rounded-xl border border-stone-800 space-y-1">
-                <span className="text-[10px] text-stone-400 font-bold uppercase block">Límite Cardíaco Estricto</span>
+                <span className="text-[10px] text-stone-400 font-bold uppercase block">Solo si no llevas banda (zonas de FC)</span>
                 <div className="flex items-baseline gap-2">
                   <span className="text-xl font-black text-amber-400 font-mono">
-                    &le; {fartlekPlan.targetHrMax} bpm
+                    {fartlekPlan.targetHrMax > 0 ? <>&le; {fartlekPlan.targetHrMax} ppm</> : 'Sin umbral de FC en tu perfil'}
                   </span>
-                  <span className="text-[11px] text-stone-400">(AeT = {aet} bpm)</span>
                 </div>
-                <p className="text-[10px] text-stone-400">Si el pulso sube a {aet + 1} bpm, pasa a caminata rápida de inmediato.</p>
+                <p className="text-[10px] text-stone-400">Referencia de respaldo por FC (tu umbral aeróbico). Con banda de pecho manda ZoneSense.</p>
               </div>
 
               <div className="bg-stone-900 p-3 rounded-xl border border-stone-800 space-y-1">
-                <span className="text-[10px] text-stone-400 font-bold uppercase block">Objetivo Suunto ZoneSense & FC</span>
+                <span className="text-[10px] text-stone-400 font-bold uppercase block">Objetivo Suunto ZoneSense (banda de pecho)</span>
                 <span className="text-sm font-black text-emerald-400 font-mono block">
-                  {formatZoneSenseWithBpm(fartlekPlan.zoneSenseTarget, aet, ant)}
+                  {describeZoneSenseTarget(fartlekPlan.zoneSenseTarget)}
                 </span>
-                <p className="text-[10px] text-stone-400">El índice DFA a1 debe permanecer en color verde (&lt; {aet} bpm) en tu pantalla Suunto.</p>
+                <p className="text-[10px] text-stone-400">Los colores de ZoneSense no equivalen a una FC fija: se miden contra tu línea base del día (primeros ~10 min suaves).</p>
               </div>
             </div>
 
@@ -531,7 +529,7 @@ export const FartlekGeneratorModal: React.FC<FartlekGeneratorModalProps> = ({
                         <div className="font-bold text-stone-100 flex items-center gap-2">
                           <span>{rep.fastDurationMinutes} min {rep.fastPaceLabel}</span>
                           <span className="text-[10px] font-mono text-amber-400 font-semibold bg-stone-950 px-1.5 py-0.5 rounded border border-stone-800">
-                            &le; {rep.fastTargetHrMax} bpm
+                            {rep.fastZoneSense}{rep.fastTargetHrMax > 0 ? ` · sin banda ≤ ${rep.fastTargetHrMax} ppm` : ''}
                           </span>
                         </div>
                         <p className="text-[11px] text-stone-400 mt-0.5">{rep.fastTacticalCue}</p>
@@ -540,7 +538,7 @@ export const FartlekGeneratorModal: React.FC<FartlekGeneratorModalProps> = ({
 
                     <div className="sm:text-right shrink-0 font-mono text-[11px] text-stone-400 pl-8 sm:pl-0">
                       <div>Recup: <strong className="text-cyan-400">{rep.recoveryDurationMinutes} min</strong> trote Z1</div>
-                      <div className="text-[10px] text-stone-500">&lt; {rep.recoveryTargetHrMax} bpm</div>
+                      {rep.recoveryTargetHrMax > 0 && <div className="text-[10px] text-stone-500">&lt; {rep.recoveryTargetHrMax} ppm</div>}
                     </div>
                   </div>
                 ))}
@@ -572,9 +570,11 @@ export const FartlekGeneratorModal: React.FC<FartlekGeneratorModalProps> = ({
                 </strong>
                 {fartlekPlan.whyThisFitsAthlete}
               </div>
-              <div className="pt-2 border-t border-stone-800/80 text-[11px] text-stone-400 italic">
-                📖 {fartlekPlan.uphillAthleteScienceNote}
-              </div>
+              {fartlekPlan.uphillAthleteScienceNote && (
+                <div className="pt-2 border-t border-stone-800/80 text-[11px] text-stone-400 italic">
+                  📖 {fartlekPlan.uphillAthleteScienceNote}
+                </div>
+              )}
             </div>
           </div>
 

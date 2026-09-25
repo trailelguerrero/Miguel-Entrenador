@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import { Workout, AthleteProfile, WorkoutType, CoachLearnedInsight } from '../types';
 import { parseFitFile, ParsedFitResult } from '../utils/fitParser';
-import { formatZoneSenseWithBpm } from '../utils/zoneSense';
+import { describeZoneSenseTarget } from '../utils/zoneSense';
 import { calculateWorkoutTss } from '../utils/pmcCalculations';
 import { getWorkoutLoad } from '../utils/trainingLoad';
 import { SuuntoExportModal } from './SuuntoExportModal';
@@ -368,7 +368,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
               </div>
               <div className="text-xs font-bold text-emerald-400 mt-0.5 font-mono">
                 {workout.zoneSenseTarget
-                  ? formatZoneSenseWithBpm(workout.zoneSenseTarget, profile.aetHr, profile.antHr)
+                  ? describeZoneSenseTarget(workout.zoneSenseTarget)
                   : 'Sin objetivo (actividad importada de Suunto)'}
               </div>
               {profile.aetHr > 0 && (

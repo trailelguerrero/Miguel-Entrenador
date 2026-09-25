@@ -409,7 +409,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         <span className="font-bold text-zinc-300">Leyenda Uphill:</span>
         <div className="flex items-center space-x-1.5">
           <span className="w-3 h-3 rounded-full bg-emerald-500/40 border border-emerald-500"></span>
-          <span>Aeróbico Z1/Z2 (DFA a1 &gt; 0.75)</span>
+          <span>Aeróbico (ZoneSense verde)</span>
         </div>
         <div className="flex items-center space-x-1.5">
           <span className="w-3 h-3 rounded-full bg-amber-500/40 border border-amber-500"></span>

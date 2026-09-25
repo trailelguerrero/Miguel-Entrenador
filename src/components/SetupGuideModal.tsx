@@ -569,7 +569,7 @@ export const SetupGuideModal: React.FC<SetupGuideModalProps> = ({
                   <span>Fisiología Uphill Athlete & Jason Koop</span>
                 </div>
                 <p className="text-zinc-300 leading-relaxed">
-                  Para no caer en la <em>zona basura</em> de fatiga sin adaptación, calculamos tus dos umbrales clave. En ultra trail, el <strong>Umbral Aeróbico (AeT / VT1 / DFA a1 &ge; 0.75)</strong> es tu techo de combustible de grasas: por encima de él, quemas glucógeno escaso.
+                  Para no caer en la <em>zona basura</em> de fatiga sin adaptación, calculamos tus dos umbrales clave. En ultra trail, el <strong>Umbral Aeróbico (AeT / VT1)</strong> es tu techo de combustible de grasas: por encima de él, quemas glucógeno escaso.
                 </p>
               </div>
 
@@ -602,7 +602,7 @@ export const SetupGuideModal: React.FC<SetupGuideModalProps> = ({
                     onChange={(e) => setAetHr(Number(e.target.value))}
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-emerald-400 font-bold"
                   />
-                  <span className="text-[10px] text-zinc-500 mt-1 block">DFA a1 &ge; 0.75 / Test deriva</span>
+                  <span className="text-[10px] text-zinc-500 mt-1 block">Zonas de FC del reloj / Test de deriva</span>
                 </div>
                 <div>
                   <label className="text-zinc-400 font-semibold flex flex-wrap items-center mb-1">Umbral AnT (VT2 / LTHR)<SourceTag field="antHr" /></label>
@@ -612,7 +612,7 @@ export const SetupGuideModal: React.FC<SetupGuideModalProps> = ({
                     onChange={(e) => setAntHr(Number(e.target.value))}
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-amber-400 font-bold"
                   />
-                  <span className="text-[10px] text-zinc-500 mt-1 block">DFA a1 = 0.50</span>
+                  <span className="text-[10px] text-zinc-500 mt-1 block">Zonas de FC del reloj</span>
                 </div>
               </div>
 

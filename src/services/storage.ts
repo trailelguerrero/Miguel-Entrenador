@@ -535,7 +535,7 @@ export const StorageService = {
       role: 'assistant',
       content: `¡Hola! Soy Miguel, tu entrenador de Trail Running. Vamos juntos a por esa Transvulcania en 2027.
 
-Aquí no vamos a perder el tiempo con modas ni con kilometraje basura. Nuestro manual de cabecera es *Training for the Uphill Athlete* y nuestra brújula en cada entreno será tu Suunto con ZoneSense (DFA a1) y tu HRV nocturna.
+Aquí no vamos a perder el tiempo con modas ni con kilometraje basura. Nuestro manual de cabecera es *Training for the Uphill Athlete* y nuestra brújula en cada entreno será tu Suunto con ZoneSense (con banda de pecho) y tu HRV nocturna.
 
 Organizamos la semana en 3 sesiones entre semana (2 si toca aflojar) y la tirada larga el sábado o el domingo, con trabajo de fuerza en casa y al aire libre sin máquinas. 
 
@@ -671,41 +671,37 @@ Puedes revisar tus umbrales (AeT y AnT) en tu perfil, registrar tu test de deriv
     return memory;
   },
 
+  // Plantilla VACÍA: solo encabezados y huecos para rellenar. Nada de datos de
+  // ejemplo, porque lo que se guarda aquí Miguel lo trata como historial real.
   getHistoryMarkdownTemplate(): string {
     return `# HISTORIAL DEL ATLETA & MÉTRICAS SUUNTO
-*Documento de referencia para el entrenador Miguel (Metodología Uphill Athlete)*
+*Documento de referencia para el entrenador Miguel. Rellena solo lo que sepas; deja en blanco lo que no.*
 
-## 1. Perfil y Datos Fisiológicos Reales
-- **Nombre:** [Tu Nombre o Apodo]
-- **Edad:** 36
-- **Reloj Suunto:** Suunto Race / Suunto Vertical
-- **Banda de Frecuencia Cardíaca:** Suunto Smart Sensor (pecho)
-- **Frecuencia Cardíaca en Reposo:** 46 bpm (promedio 30 días en Suunto)
-- **Frecuencia Cardíaca Máxima:** 183 bpm (alcanzada en test de campo en cuesta)
-- **Umbral Aeróbico (AeT / VT1):** 142 bpm (verificado con test de deriva <3.5%)
-- **Umbral Anaeróbico (AnT / LT2):** 167 bpm (determinado en subida sostenida de 30 min)
+## 1. Perfil y datos fisiológicos
+- **Nombre:**
+- **Edad:**
+- **Reloj Suunto:**
+- **Banda de pecho (necesaria para ZoneSense):**
+- **FC en reposo:**
+- **FC máxima (y cómo se midió):**
+- **Umbral aeróbico por FC (y cómo se midió):**
+- **Umbral anaeróbico por FC (y cómo se midió):**
 
-## 2. Observaciones Suunto ZoneSense (DFA alpha-1)
-- **Comportamiento en Rodaje Z1/Z2:** Con ritmo suave en llano y subidas moderadas, el DFA a1 se mantiene estable en 0.78 - 0.88.
-- **Punto de Quiebre (Decoupling):** En cuanto la pendiente supera el 12% y trato de trotar en lugar de caminar rápido (power-hiking), el DFA a1 cae de 0.76 a 0.58 en menos de 90 segundos.
-- **HRV Nocturna (Línea Base Suunto):** Promedio rMSSD de 52 ms en semanas normales. Cuando baja de 40 ms suelo acusar fatiga o mal descanso.
+## 2. Observaciones con Suunto ZoneSense
+- (Qué ves en tus sesiones: cuándo pasa de verde a amarillo, en qué terreno o a qué hora de la tirada.)
 
-## 3. Historial de Carga y Carreras Previas
-- **Años practicando Trail Running:** 3 años.
-- **Volumen Semanal Típico:** 35 a 48 km / 1.500m a 2.400m D+ repartidos en 4 días.
-- **Carreras Completadas:**
-  - 2024: Trail 28K (+1.600m D+) - Tiempo: 3h 42m. Sensaciones: Buenas hasta el km 22, calambres en bajada técnica.
-  - 2025: Maratón de Montaña 42K (+2.500m D+) - Tiempo: 5h 50m. Sensaciones: Gestión adecuada de ritmo, fatiga acusada en cuádriceps en los últimos 800m negativos.
-- **Objetivo Principal A:** Transvulcania 2027 (73 km, +4.350m D+, -4.057m D-).
+## 3. Historial de carga y carreras previas
+- **Años practicando trail running:**
+- **Volumen semanal típico (km / D+ / días):**
+- **Carreras completadas (año, distancia, desnivel, tiempo, sensaciones):**
+- **Objetivo principal:** Transvulcania 2027
 
-## 4. Lesiones y Puntos Débiles Fisiológicos
-- Tendencia a sobrecarga en sóleo/gemelo izquierdo en entrenamientos con exceso de subida por asfalto.
-- Fatiga excéntrica en cuádriceps en descensos continuados de más de 1.000m D-.
-- Disponibilidad: Sin gimnasio. Todo entrenamiento de fuerza se realiza en casa con peso corporal o al aire libre (escaleras, bordillos, cuestas).
+## 4. Lesiones y puntos débiles
+-
 
-## 5. Nutrición & Hidratación Habitual
-- Tolerancia estomacal: 45-55 gramos de carbohidratos por hora en esfuerzo.
-- Sales/Electrolitos: 1 cápsula de sales cada 60-75 min en condiciones de calor (>22°C).
+## 5. Nutrición e hidratación habitual
+- **Carbohidratos por hora que toleras:**
+- **Sales / electrolitos:**
 `;
   },
 

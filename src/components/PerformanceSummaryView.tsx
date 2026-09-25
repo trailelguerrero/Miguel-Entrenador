@@ -181,7 +181,7 @@ export const PerformanceSummaryView: React.FC<PerformanceSummaryViewProps> = ({
             <div className="bg-zinc-950/80 border border-emerald-900/40 p-3 rounded-2xl">
               <div className="text-[10px] text-emerald-400 uppercase font-bold">Base Aeróbica</div>
               <div className="text-lg font-black text-emerald-400">{globalAerobicPct !== null ? `${globalAerobicPct}%` : '—'}</div>
-              <div className="text-[10px] text-zinc-400">{globalAerobicPct !== null ? 'Bajo AeT (ZoneSense) · 12 sem.' : 'Sin datos ZoneSense'}</div>
+              <div className="text-[10px] text-zinc-400">{globalAerobicPct !== null ? 'En verde (ZoneSense) · 12 sem.' : 'Sin datos ZoneSense'}</div>
             </div>
 
             <div className="bg-zinc-950/80 border border-zinc-800 p-3 rounded-2xl">
@@ -322,7 +322,7 @@ export const PerformanceSummaryView: React.FC<PerformanceSummaryViewProps> = ({
                           <span className="text-zinc-200">{w.distanceKm} km</span>
                           <span className="text-amber-400">+{w.elevationGainM} m D+</span>
                           <span className="text-zinc-400">{w.tss} TSS</span>
-                          <span className="text-emerald-400">{w.aerobicPct !== null ? `${w.aerobicPct}% bajo AeT` : 'sin ZoneSense'}</span>
+                          <span className="text-emerald-400">{w.aerobicPct !== null ? `${w.aerobicPct}% en verde` : 'sin ZoneSense'}</span>
                           <span className="text-zinc-500">{(w.durationMin / 60).toFixed(1)} h</span>
                         </div>
                       </div>
@@ -348,7 +348,7 @@ export const PerformanceSummaryView: React.FC<PerformanceSummaryViewProps> = ({
                         <div className="mt-3 pt-2 border-t border-zinc-800/60 flex items-center space-x-2 text-[10px]">
                           <span className="text-zinc-500 w-16">ZoneSense:</span>
                           <div className="flex-1 flex h-2 rounded-full overflow-hidden bg-zinc-900">
-                            <div style={{ width: `${(w.zoneSense.aerobicMin / zsTotal) * 100}%` }} className="bg-emerald-500" title="Bajo AeT" />
+                            <div style={{ width: `${(w.zoneSense.aerobicMin / zsTotal) * 100}%` }} className="bg-emerald-500" title="Verde (aeróbico)" />
                             <div style={{ width: `${(w.zoneSense.transitionMin / zsTotal) * 100}%` }} className="bg-amber-500" title="Entre AeT y AnT" />
                             <div style={{ width: `${(w.zoneSense.anaerobicMin / zsTotal) * 100}%` }} className="bg-red-500" title="Sobre AnT" />
                           </div>
@@ -389,9 +389,9 @@ export const PerformanceSummaryView: React.FC<PerformanceSummaryViewProps> = ({
                   <h4 className="text-xs font-bold text-zinc-300 uppercase tracking-wider">Tiempo en zonas ZoneSense (Suunto)</h4>
                   {selectedWeek.zoneSense.trackedMin > 0 ? (
                     ([
-                      { label: `Bajo AeT (≤ ${profile.aetHr || '—'} bpm)`, min: selectedWeek.zoneSense.aerobicMin, bar: 'bg-emerald-400', text: 'text-emerald-400' },
-                      { label: `Entre AeT y AnT`, min: selectedWeek.zoneSense.transitionMin, bar: 'bg-amber-400', text: 'text-amber-400' },
-                      { label: `Sobre AnT (> ${profile.antHr || '—'} bpm)`, min: selectedWeek.zoneSense.anaerobicMin, bar: 'bg-red-400', text: 'text-red-400' },
+                      { label: 'Verde · aeróbico', min: selectedWeek.zoneSense.aerobicMin, bar: 'bg-emerald-400', text: 'text-emerald-400' },
+                      { label: 'Amarillo · entre umbrales', min: selectedWeek.zoneSense.transitionMin, bar: 'bg-amber-400', text: 'text-amber-400' },
+                      { label: 'Rojo · sobre umbral anaeróbico', min: selectedWeek.zoneSense.anaerobicMin, bar: 'bg-red-400', text: 'text-red-400' },
                     ]).map((z) => (
                       <div key={z.label} className="space-y-1">
                         <div className="flex items-center justify-between text-xs">
@@ -460,7 +460,7 @@ export const PerformanceSummaryView: React.FC<PerformanceSummaryViewProps> = ({
                     </div>
                   </div>
                   <div className="bg-zinc-900/50 p-3 rounded-xl border border-zinc-800/60 text-xs flex items-center justify-between">
-                    <span className="text-zinc-400 text-[11px]">Bajo AeT (ZoneSense):</span>
+                    <span className="text-zinc-400 text-[11px]">En verde (ZoneSense):</span>
                     <span className="text-emerald-400 font-bold text-[11px]">{b.aerobicPct !== null ? `${b.aerobicPct}%` : 'sin datos'}</span>
                   </div>
                   <div className="text-[11px] text-zinc-500">D+ total del bloque: <strong className="text-zinc-300">+{b.totalGainM} m</strong></div>

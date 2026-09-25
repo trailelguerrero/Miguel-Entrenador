@@ -390,7 +390,7 @@ export function calculateHRVLoadCorrelation(
     riskAssessment = 'Riesgo Elevado de Sobreentrenamiento Simpático (35-45%)';
     coachVerdict = `¡Atención fisiológica! Tu media móvil de HRV 7d ha caído a ${latest.hrv7dAvg} ms (${hrvDeltaFromBaselinePct}% por debajo de tu línea base de ${baselineHrv} ms) mientras sostienes una carga semanal alta de ${latest.weeklyTss} TSS (${latest.weeklyKm} km). Esta divergencia es el signo clínico clásico de Sobre-esfuerzo No Funcional (NFOR): tus ramas parasimpáticas no dan abasto para reparar el tejido muscular y el tono cardíaco. Insistir con entrenamientos de intensidad o tiradas de desnivel provocará un estancamiento severo de cara a Transvulcania.`;
     actionableRecommendations.push('Programa de inmediato 3-4 días de descarga activa o descanso absoluto.');
-    actionableRecommendations.push('Limita toda actividad de carrera estrictamente a Zona 1 regenerativa (< 130 bpm, DFA a1 > 0.85).');
+    actionableRecommendations.push('Limita toda actividad de carrera a rodajes regenerativos: ZoneSense en verde y muy cómodo.');
     actionableRecommendations.push('Suprime temporalmente los descensos rápidos para evitar inflamación excéntrica.');
     actionableRecommendations.push('Prioriza higiene de sueño (> 8 horas) y reposición con carbohidratos complejos y sales.');
   } else if (latest.status === 'functional_overreaching') {
@@ -420,7 +420,7 @@ export function calculateHRVLoadCorrelation(
     statusBorderColor = 'border-emerald-500/30';
     riskAssessment = 'Mínimo Riesgo de Sobreentrenamiento (< 5%)';
     coachVerdict = `Equilibrio autonómico perfecto. Con ${latest.weeklyTss} TSS de carga semanal acumulada, tu media móvil de HRV 7d (${latest.hrv7dAvg} ms) se sitúa firmemente en el Sweet Spot de tu banda normal (${swcLower} - ${swcUpper} ms). Tu sistema nervioso autónomo digiere la carga de subida sin estrés simpático crónico. Continúa con el plan previsto hacia Transvulcania.`;
-    actionableRecommendations.push('Continúa con los 4 días semanales respetando los umbrales de DFA a1.');
+    actionableRecommendations.push('Continúa con la estructura 3 + tirada larga manteniendo los rodajes en ZoneSense verde.');
     actionableRecommendations.push('Mantén la ingesta de 55-60 g/h de carbohidratos en salidas superiores a 90 minutos.');
     actionableRecommendations.push('Monitorea tu check-in matutino para consolidar la tendencia.');
   }

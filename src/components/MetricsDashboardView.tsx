@@ -35,7 +35,7 @@ import {
   PMCDataPoint, 
   SuuntoIntegrationConfig 
 } from '../types';
-import { formatZoneSenseWithBpm } from '../utils/zoneSense';
+import { describeZoneSenseTarget } from '../utils/zoneSense';
 import { ReportPdfModal } from './ReportPdfModal';
 import { 
   getTsbZoneDiagnosis, 
@@ -142,9 +142,8 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
   const anaerobicPct = zsPct('anaerobicPct');
   const zoneDistribution = [
     {
-      zone: 'Aeróbico (< AeT)',
-      dfaLabel: 'DFA a1 ≥ 0.75',
-      bpmRange: `≤ ${profile.aetHr} bpm`,
+      zone: 'Verde · Aeróbico',
+      dfaLabel: 'Bajo el umbral aeróbico del día',
       pct: aerobicPct,
       hours: zsHours(aerobicPct),
       color: 'bg-emerald-500',
@@ -152,9 +151,8 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
       description: 'Tiempo por debajo del umbral aeróbico según ZoneSense',
     },
     {
-      zone: 'Transición (AeT – AnT)',
-      dfaLabel: '0.75 > a1 ≥ 0.50',
-      bpmRange: `${profile.aetHr + 1} - ${profile.antHr} bpm`,
+      zone: 'Amarillo · Entre umbrales',
+      dfaLabel: 'Entre umbral aeróbico y anaeróbico del día',
       pct: transitionPct,
       hours: zsHours(transitionPct),
       color: 'bg-amber-500',
@@ -162,9 +160,8 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
       description: 'Tiempo entre umbral aeróbico y anaeróbico según ZoneSense',
     },
     {
-      zone: 'Anaeróbico (> AnT)',
-      dfaLabel: 'DFA a1 < 0.50',
-      bpmRange: `> ${profile.antHr} bpm`,
+      zone: 'Rojo · VO2máx',
+      dfaLabel: 'Sobre el umbral anaeróbico del día',
       pct: anaerobicPct,
       hours: zsHours(anaerobicPct),
       color: 'bg-red-500',
@@ -329,7 +326,7 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
           }`}
         >
           <Activity className="w-4 h-4 text-emerald-400" />
-          <span>Zonas DFA a1 & Fisiología</span>
+          <span>Zonas ZoneSense & Fisiología</span>
         </button>
       </div>
 
@@ -408,7 +405,7 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
           <div className="bg-zinc-950 p-3 rounded-xl border border-zinc-800 space-y-1">
             <span className="text-[10px] text-zinc-400 font-bold uppercase block">3. Datos Leídos por Miguel</span>
             <div className="font-semibold text-amber-400">
-              DFA a1, Decoupling, FC & D+
+              ZoneSense, FC & D+
             </div>
             <p className="text-[11px] text-zinc-500">
               Análisis segundo a segundo de la correlación fractal de la HRV sin inventar nada.
@@ -424,7 +421,7 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
         <div 
           className="bg-zinc-900 border border-zinc-800 p-5 rounded-3xl space-y-3 cursor-pointer hover:border-zinc-700 transition"
           onClick={() => setActiveMetricsTab('zones')}
-          title="Ver desglose completo de Zonas Fisiológicas & DFA a1"
+          title="Ver desglose de tiempo en zonas ZoneSense"
         >
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Umbral Aeróbico (AeT)</span>
@@ -438,7 +435,7 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
               <span className="text-xs text-zinc-400 font-bold">bpm</span>
             </div>
             <div className="text-xs font-bold text-zinc-200 mt-1">
-              {formatZoneSenseWithBpm('DFA a1 > 0.75 (Aeróbico puro)', profile.aetHr, profile.antHr)}
+              {describeZoneSenseTarget('ZoneSense verde (aeróbico)')}
             </div>
           </div>
           <div className="pt-2 border-t border-zinc-800/80 text-[11px] text-zinc-400 flex items-center justify-between">
@@ -910,7 +907,7 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
         </div>
       )}
 
-      {/* Physiological Zones & Time Breakdown (with explicit BPM for DFA a1) */}
+      {/* Tiempo en zonas ZoneSense (sin traducir a pulsaciones) */}
       {(activeMetricsTab === 'all' || activeMetricsTab === 'zones') && (
         <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 sm:p-8 space-y-6 shadow-xl animate-in fade-in">
           {activeMetricsTab === 'zones' && (
@@ -933,7 +930,7 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
               <span>Distribución en Zonas Fisiológicas & Suunto ZoneSense</span>
             </h3>
             <p className="text-xs text-zinc-400 mt-0.5">
-              Cada umbral de DFA a1 traducido exactamente a pulsaciones cardíacas individuales (AeT: {profile.aetHr} bpm, AnT: {profile.antHr} bpm)
+              Tiempo en los colores de Suunto ZoneSense (con banda de pecho). No equivalen a pulsaciones fijas: se miden contra tu línea base de cada entreno.
             </p>
           </div>
 
@@ -951,7 +948,7 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
               key={idx}
               className={`${z.color} transition-all relative group`}
               style={{ width: `${z.pct}%` }}
-              title={`${z.zone}: ${z.pct}% (${z.bpmRange})`}
+              title={`${z.zone}: ${z.pct}%`}
             />
           ))}
         </div>
@@ -968,12 +965,7 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
                   {item.pct}%
                 </span>
               </div>
-
-              {/* Exact BPM & DFA a1 */}
               <div className="space-y-0.5">
-                <div className="text-sm font-black text-zinc-100 font-mono">
-                  {item.bpmRange}
-                </div>
                 <div className="text-xs font-mono text-zinc-400">
                   {item.dfaLabel}
                 </div>
@@ -998,7 +990,7 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
               Cumplimiento de la Regla de Oro (Training for the Uphill Athlete):
             </span>
             <p className="leading-relaxed">
-              Actualmente mantienes un <strong>{totalAerobicPct}%</strong> de tu entrenamiento estrictamente por debajo de tu AeT (&lt; {profile.aetHr} bpm con DFA a1 &ge; 0.75). Esto garantiza la reversión activa del <strong>Síndrome de Deficiencia Aeróbica (ADS)</strong>, maximiza la densidad mitocondrial de las fibras lentas tipo I y protege tus articulaciones de cara al volumen de Transvulcania.
+              Actualmente mantienes un <strong>{totalAerobicPct}%</strong> del tiempo registrado con ZoneSense en verde (por debajo del umbral aeróbico de cada día). Esto garantiza la reversión activa del <strong>Síndrome de Deficiencia Aeróbica (ADS)</strong>, maximiza la densidad mitocondrial de las fibras lentas tipo I y protege tus articulaciones de cara al volumen de Transvulcania.
             </p>
           </div>
         </div>
@@ -1149,7 +1141,7 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
                   <strong>¡No necesitas configurar ninguna API si no quieres!</strong> Solo descarga el archivo <code>.fit</code> de tu sesión desde la app móvil de Suunto (opción <em>"Exportar entrenamiento como .FIT"</em>) y arrástralo en la pestaña <em>"Suunto & ZoneSense" &gt; "Analizador de Archivos .FIT"</em>.
                 </p>
                 <p className="text-zinc-400 text-[11px] pt-1 border-t border-zinc-800">
-                  El sistema extrae directamente la frecuencia cardíaca exacta, la curva <strong>DFA a1 de ZoneSense</strong>, la cadencia, el desnivel y la deriva cardíaca (decoupling) para que Miguel te analice la sesión de inmediato.
+                  El sistema extrae directamente la frecuencia cardíaca exacta, la cadencia, el desnivel y la deriva cardíaca (decoupling) para que Miguel te analice la sesión de inmediato.
                 </p>
               </div>
             </div>

@@ -10,7 +10,11 @@
 //   el segundo valor más alto (se descarta el pico mayor por si es un
 //   artefacto del sensor). A la baja no se puede deducir: una carrera suave
 //   no demuestra que la FC máx haya bajado.
-// - Umbral aeróbico / anaeróbico (ZoneSense): ≥ 4 lecturas en las últimas
+// - Umbral aeróbico / anaeróbico: ZoneSense NO equivale a una FC fija (se mide
+//   contra la línea base de cada entreno), pero registra la FC a la que detectó
+//   cada umbral ESE día. Esa FC varía de un día a otro; solo su tendencia de
+//   semanas sirve para ajustar las zonas de FC del reloj, que son la
+//   referencia de respaldo cuando no se lleva banda. Criterio: ≥ 4 lecturas en las últimas
 //   4 semanas y ≥ 4 en las 4 anteriores; la mediana de AMBOS periodos debe
 //   separarse del valor del reloj en el mismo sentido y ≥ 3 ppm.
 import type { SuuntoWorkoutRow } from './suunto-map.js';
@@ -118,7 +122,7 @@ export function computeWatchZoneAdvice(rows: SuuntoWorkoutRow[], now = Date.now(
         current,
         suggested: t.recent,
         direction: t.recent > current ? 'up' : 'down',
-        evidence: `ZoneSense lo sitúa en ${t.previous} ppm (mediana de ${t.nPrev} carreras, hace 5-8 semanas) y en ${t.recent} ppm (mediana de ${t.nRecent} carreras, últimas 4 semanas); tu reloj tiene ${current}.`,
+        evidence: `FC a la que ZoneSense detectó el umbral (varía cada día): mediana ${t.previous} ppm en ${t.nPrev} carreras de hace 5-8 semanas y ${t.recent} ppm en ${t.nRecent} carreras de las últimas 4; tus zonas de FC del reloj tienen ${current}. Afecta solo a las zonas de FC (respaldo sin banda); ZoneSense se ajusta solo.`,
       });
     }
   }

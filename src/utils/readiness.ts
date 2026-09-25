@@ -28,7 +28,7 @@ export function computeReadiness(input: {
       hrvDropPct,
       status: 'moderate',
       suggestedAction: 'maintain',
-      coachAdvice: `Recuperación intermedia (HRV con variación del ${hrvDropPct}%). Puedes entrenar, pero no te pases de pulsaciones en las cuestas. ZoneSense debe mantenerse estrictamente en DFA a1 > 0.75.`,
+      coachAdvice: `Recuperación intermedia (HRV con variación del ${hrvDropPct}%). Puedes entrenar, pero no te pases de pulsaciones en las cuestas. Con banda de pecho, mantén ZoneSense en verde.`,
     };
   }
   return {
