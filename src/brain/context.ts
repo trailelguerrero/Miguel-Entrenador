@@ -21,6 +21,8 @@ export interface BrainCheckInSummary {
   sleepHours: number;
   recoveryPct?: number;
   status: string;
+  /** true si HRV/sueño vienen de Suunto (dato REAL); si no, los declaró el atleta. */
+  fromSuunto: boolean;
 }
 
 export interface BrainContext {
@@ -83,6 +85,7 @@ export function buildBrainContext(
       sleepHours: c.sleepHours,
       recoveryPct: c.readinessScore,
       status: c.status,
+      fromSuunto: c.source === 'suunto',
     })),
     todayReadiness,
   };
@@ -103,5 +106,7 @@ export function summarizeWeekWorkouts(workouts: Workout[], monday: string, antHr
       fromSuunto: !!w.suuntoWorkoutKey,
       durationMin: w.completed ? w.actualDurationMin : w.plannedDurationMin,
       tss: w.completed ? getWorkoutLoad(w, antHr)?.tss : undefined,
+      /** 'suunto' = TSS REAL de Suunto; 'estimated' = calculado por fórmula. */
+      tssSource: w.completed ? getWorkoutLoad(w, antHr)?.source : undefined,
     }));
 }

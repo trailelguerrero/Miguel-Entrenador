@@ -294,9 +294,41 @@ export interface CoachLearnedInsight {
   category: 'physiology_zonesense' | 'fatigue_recovery' | 'biomechanics_injury' | 'nutrition_hydration' | 'terrain_technique';
   observation: string; // What Miguel has verified about the athlete
   ruleForFuturePlans: string; // Dynamic rule applied to next training generations
-  confidenceScore: number; // 0 - 100%
+  /** % de evidencias a favor (lo calcula src/brain/memory.ts, no la IA). */
+  confidenceScore: number;
   learnedFromDate: string;
   sourceEvent: string; // e.g. "Análisis FIT de Tirada Larga" o "Feedback Post-sesión" o "Check-in Matutino"
+  /** Estado calculado a partir de las evidencias (src/brain/memory.ts). */
+  status?: InsightStatus;
+  evidence?: InsightEvidence[];
+  lastEvidenceAt?: string;
+}
+
+export type InsightStatus = 'observation' | 'hypothesis' | 'provisional_rule' | 'consolidated_rule' | 'refuted' | 'expired';
+
+export interface InsightEvidence {
+  date: string; // YYYY-MM-DD
+  source: 'workout_analysis' | 'athlete_note' | 'chat' | 'legacy';
+  /** true = apoya el aprendizaje; false = lo contradice. */
+  supports: boolean;
+  summary: string;
+  /** Sesión, nota o conversación de origen (una misma fuente cuenta una sola vez). */
+  refId?: string;
+}
+
+/** Evidencia propuesta desde el chat, pendiente de que el atleta la confirme. */
+export interface PendingMemoryEvidence {
+  id: string;
+  date: string;
+  refId: string;
+  item: {
+    insightId: string | null;
+    supports: boolean;
+    summary: string;
+    category?: CoachLearnedInsight['category'];
+    observation?: string;
+    hypothesis?: string;
+  };
 }
 
 export interface CoachLearnedMemory {
@@ -312,6 +344,8 @@ export interface CoachLearnedMemory {
     athleteOutcome?: string;
   }>;
   coachNotebookNotes: string[]; // Notes written by Miguel or athlete to Miguel
+  /** Evidencias extraídas del chat que el atleta aún no ha confirmado. */
+  pendingEvidence?: PendingMemoryEvidence[];
 }
 
 export interface WeightEntry {

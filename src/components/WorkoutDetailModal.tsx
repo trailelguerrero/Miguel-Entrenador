@@ -39,7 +39,6 @@ interface WorkoutDetailModalProps {
   onAskMiguel: (workout: Workout) => void;
   onAnalyzeWorkout: (workout: Workout, fitData?: any, athleteFeedback?: any) => Promise<any>;
   profile: AthleteProfile;
-  onAddNewInsight?: (insight: Omit<CoachLearnedInsight, 'id'>) => void;
 }
 
 export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
@@ -51,7 +50,6 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
   onAskMiguel,
   onAnalyzeWorkout,
   profile,
-  onAddNewInsight,
 }) => {
   if (!isOpen || !workout) return null;
 
@@ -85,7 +83,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
   const [isParsingFit, setIsParsingFit] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [coachAnalysis, setCoachAnalysis] = useState(workout.coachFeedback || '');
-  const [learnedInsight, setLearnedInsight] = useState<any>(null);
+  const [memoryChanges, setMemoryChanges] = useState<string[]>([]);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
 
   // Handle FIT File Upload
@@ -151,12 +149,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
         feedbackText = analysisResult;
       } else if (analysisResult && typeof analysisResult === 'object') {
         feedbackText = analysisResult.feedback || '';
-        if (analysisResult.newLearnedInsight) {
-          setLearnedInsight(analysisResult.newLearnedInsight);
-          if (onAddNewInsight) {
-            onAddNewInsight(analysisResult.newLearnedInsight);
-          }
-        }
+        setMemoryChanges(Array.isArray(analysisResult.memoryChanges) ? analysisResult.memoryChanges : []);
       }
 
       setCoachAnalysis(feedbackText);
@@ -789,17 +782,19 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                       {coachAnalysis}
                     </p>
 
-                    {learnedInsight && (
+                    {memoryChanges.length > 0 && (
                       <div className="mt-3 bg-emerald-950/40 border border-emerald-500/40 rounded-xl p-3">
                         <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-300 mb-1">
                           <Brain className="w-4 h-4 text-emerald-400" />
-                          <span>Nuevo Aprendizaje Grabado en la Memoria de Miguel:</span>
+                          <span>Evidencias anotadas en la memoria de Miguel:</span>
                         </div>
-                        <p className="text-xs text-stone-200 mb-1">
-                          <strong>Observación:</strong> {learnedInsight.observation}
-                        </p>
-                        <p className="text-xs text-emerald-300 font-mono">
-                          <strong>Regla para siguientes planes:</strong> {learnedInsight.ruleForFuturePlans}
+                        <ul className="text-xs text-stone-200 space-y-0.5 list-disc pl-4">
+                          {memoryChanges.map((c, i) => (
+                            <li key={i}>{c}</li>
+                          ))}
+                        </ul>
+                        <p className="text-[11px] text-stone-400 mt-1">
+                          Una sesión es una evidencia: solo pasa a regla si se repite (3 o más).
                         </p>
                       </div>
                     )}

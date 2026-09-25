@@ -11,7 +11,8 @@ import {
   Mountain, 
   Activity, 
   HelpCircle,
-  ShieldCheck
+  ShieldCheck,
+  Brain
 } from 'lucide-react';
 import { ChatMessage, AthleteProfile, DailyCheckIn, TargetRace, Workout } from '../types';
 
@@ -24,6 +25,8 @@ interface CoachChatProps {
   targetRace: TargetRace;
   recentWorkouts: Workout[];
   onClearHistory: () => void;
+  /** Extrae evidencias de la conversación; quedan pendientes de confirmar en la Memoria. Devuelve cuántas. */
+  onExtractEvidence?: () => Promise<number>;
   activeWorkoutContext?: Workout | null;
 }
 
@@ -36,9 +39,25 @@ export const CoachChat: React.FC<CoachChatProps> = ({
   targetRace,
   recentWorkouts,
   onClearHistory,
+  onExtractEvidence,
   activeWorkoutContext,
 }) => {
   const [inputText, setInputText] = useState('');
+  const [extracting, setExtracting] = useState(false);
+  const [extractMsg, setExtractMsg] = useState<string | null>(null);
+  const handleExtract = async () => {
+    if (!onExtractEvidence || extracting) return;
+    setExtracting(true);
+    setExtractMsg(null);
+    try {
+      const n = await onExtractEvidence();
+      setExtractMsg(n > 0 ? `${n} evidencia(s) pendiente(s) de confirmar en Memoria de Miguel.` : 'No he encontrado hechos nuevos que anotar en esta conversación.');
+    } catch {
+      setExtractMsg(null);
+    } finally {
+      setExtracting(false);
+    }
+  };
   const [isSpeaking, setIsSpeaking] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -135,6 +154,17 @@ export const CoachChat: React.FC<CoachChatProps> = ({
             </div>
           )}
 
+          {onExtractEvidence && messages.some((m) => m.role === 'user') && (
+            <button
+              onClick={handleExtract}
+              disabled={extracting}
+              className="px-2.5 py-1.5 text-xs text-emerald-300 rounded-lg bg-zinc-800 border border-zinc-700 hover:bg-zinc-700 flex items-center gap-1.5 disabled:opacity-50"
+              title="Miguel propone lo que le has contado como evidencias; tú las confirmas en su Memoria"
+            >
+              <Brain className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">{extracting ? 'Leyendo…' : 'Anotar en memoria'}</span>
+            </button>
+          )}
           <button
             onClick={onClearHistory}
             className="p-2 text-zinc-400 hover:text-zinc-200 rounded-lg hover:bg-zinc-800"
@@ -144,6 +174,10 @@ export const CoachChat: React.FC<CoachChatProps> = ({
           </button>
         </div>
       </div>
+
+      {extractMsg && (
+        <div className="px-6 py-2 text-xs text-emerald-300 bg-emerald-950/30 border-b border-emerald-900/40">{extractMsg}</div>
+      )}
 
       {/* Messages Scroll Area */}
       <div className="flex-1 overflow-y-auto p-6 space-y-4">

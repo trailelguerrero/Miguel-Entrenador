@@ -5,7 +5,9 @@ import { ZONESENSE_PROMPT_RULES, describeBreakdown } from '../src/brain/zonesens
 import { describeDataWindows } from '../src/brain/dataWindows.js';
 import { describeIntensityPrescription, resolveIntensityPrescription } from '../src/brain/intensity.js';
 import { describeReadiness, evaluateReadiness, type ReadinessState } from '../src/brain/readiness.js';
-import { describeLoadHistory } from '../src/utils/trainingLoad.js';
+import { describeLoadHistory, localDateKey } from '../src/utils/trainingLoad.js';
+import { PROVENANCE_PROMPT_RULES, tag } from '../src/brain/provenance.js';
+import { describeMemoryForPrompt, sanitizeEvidenceItems, MAX_EVIDENCE_PER_EVENT } from '../src/brain/memory.js';
 import { sanitizeAdaptation, sanitizePlanWorkouts } from './brain/validate.js';
 
 // App Express con todas las rutas /api/*. No escucha en ningún puerto:
@@ -93,15 +95,27 @@ function formatWatchZones(a: any): string {
 function formatLoadContext(lc: any): string {
   if (!lc) return '- Sin datos de carga ni recuperación.';
   const lines: string[] = [];
-  if (lc.ctl != null) lines.push(`- CTL ${lc.ctl} · ATL ${lc.atl} · TSB ${lc.tsb}${lc.weeklyTss != null ? ` · TSS últimos 7 días ${lc.weeklyTss}` : ''}`);
+  if (lc.ctl != null) lines.push(`- ${tag('derived')} CTL ${lc.ctl} · ATL ${lc.atl} · TSB ${lc.tsb}${lc.weeklyTss != null ? ` · TSS últimos 7 días ${lc.weeklyTss}` : ''}`);
   if (lc.loadHistory) lines.push(`- ${describeLoadHistory(lc.loadHistory)}`);
   for (const c of lc.recentCheckIns || []) {
-    lines.push(`- ${c.date}: HRV ${c.hrvRmssd} ms (referencia ${c.hrvBaseline} ms), sueño ${c.sleepHours} h${c.recoveryPct != null ? `, Recovery Suunto ${c.recoveryPct}%` : ''}, semáforo ${c.status}`);
+    lines.push(`- ${c.date}: ${c.fromSuunto ? `${tag('real')} (Suunto)` : `${tag('real')} (declarado por el atleta)`} HRV ${c.hrvRmssd} ms (referencia ${c.hrvBaseline} ms), sueño ${c.sleepHours} h${c.recoveryPct != null ? `, Recovery Suunto ${c.recoveryPct}%` : ''}, semáforo ${tag('derived')} ${c.status}`);
   }
-  if (lc.todayReadiness) lines.push(describeReadiness(lc.todayReadiness as ReadinessState));
+  if (lc.todayReadiness) lines.push(`${tag('derived')} ${describeReadiness(lc.todayReadiness as ReadinessState)}`);
   lines.push(`- ${describeDataWindows()}`);
   return lines.join('\n');
 }
+
+// Formato común de EVIDENCIAS para la memoria (el estado lo calcula src/brain/memory.ts)
+const EVIDENCE_JSON_SPEC = `"evidence": [
+    {
+      "insightId": "id de un aprendizaje de la memoria (el que va entre corchetes) si esto lo APOYA o lo CONTRADICE; null si es un hallazgo nuevo",
+      "supports": true o false (false = contradice ese aprendizaje),
+      "summary": "Qué ocurrió, con el dato que lo respalda (hecho, no regla)",
+      "category": "solo si insightId es null: physiology_zonesense | fatigue_recovery | biomechanics_injury | nutrition_hydration | terrain_technique",
+      "observation": "solo si insightId es null: hallazgo en una frase",
+      "hypothesis": "solo si insightId es null: qué habría que vigilar para confirmarlo (hipótesis, no regla)"
+    }
+  ]  (máximo ${MAX_EVIDENCE_PER_EVENT}; lista vacía [] si no hay nada que aporte evidencia real. No inventes evidencias: solo lo que muestran los datos o dice el atleta)`;
 
 const MIGUEL_SYSTEM_INSTRUCTION = `
 Eres Miguel, un entrenador de Trail Running y Ultra Trail de élite. Eres el entrenador personal y amigo cercano del atleta.
@@ -141,7 +155,7 @@ Tus pilares fundamentales son:
    - Cada pupilo es un mundo biológico único. Odias las plantillas prefabricadas, planes enlatados y tablas genéricas de revista.
    - Cada sesión que prescribes responde con precisión quirúrgica al estado de este atleta hoy: sus adaptaciones fisiológicas previas, sus puntos débiles registrados en su perfil o historial (nunca supongas lesiones que no consten), sus métricas reales de ZoneSense y su evolución de carga.
    - En cada sesión justificas exactamente el motivo personalizado ("Por qué para ti hoy") y qué regla aprendida de sesiones pasadas estás aplicando.
-   - Aprendes de forma acumulativa pero prudente: una sola sesión es una observación, no una regla. Solo aplicas como regla lo que se ha repetido varias veces; lo demás lo vigilas y lo comentas como hipótesis.
+   - Aprendes de forma acumulativa pero prudente. El ESTADO de cada aprendizaje lo calcula el código a partir de evidencias: 1 = observación, 2 = hipótesis (se vigila), 3 o más = regla provisional (se aplica), 5 o más sin contradicciones = consolidada; cada evidencia en contra lo baja un nivel y caduca a los 90 días sin evidencias. Solo aplicas como regla lo que llega en "REGLAS QUE SE APLICAN"; lo que llega "A VIGILAR" lo comentas como hipótesis, nunca como regla.
 
 8. MONITORIZACIÓN DE PESO ÓPTIMO Y BIOMECÁNICA VERTICAL:
    - Monitorizas la altura, peso actual y peso objetivo de carrera que figuren en sus datos (si no hay objetivo, no lo supongas).
@@ -153,6 +167,8 @@ Tus pilares fundamentales son:
    - Sin evidencia del atleta NO des cifras concretas (g/h, ml/h, mg/h) como si fueran suyas: dilo, da el rango general como orientación explícitamente genérica y propón cómo medirlo (test de sudoración, progresión de gut training).
    - Nunca superes la tolerancia de carbohidratos registrada; progresa desde ella.
    - Analizas la tolerancia digestiva reportada tras cada sesión y la usas como evidencia.
+
+10. ${PROVENANCE_PROMPT_RULES}
 `;
 
 // 1. Interactive Chat with Miguel
@@ -166,12 +182,8 @@ app.post('/api/chat', async (req: Request, res: Response) => {
     }));
 
     const memoryContext = coachMemory ? `
-[CUADERNO DE MEMORIA Y APRENDIZAJE ACUMULADO DE MIGUEL]:
 - Diagnóstico general personalizado: ${coachMemory.overallPhilosophySummary || 'En proceso'}
-- Reglas y hallazgos descubiertos sobre este atleta:
-${(coachMemory.insights || []).map((i: any, idx: number) => `  ${idx + 1}. [${i.category}] ${i.observation} -> REGLA: ${i.ruleForFuturePlans}`).join('\n')}
-- Notas internas de Miguel:
-${(coachMemory.coachNotebookNotes || []).map((n: string) => `  * ${n}`).join('\n')}
+${describeMemoryForPrompt(coachMemory, localDateKey())}
 ` : '';
 
     const ultraExp = athleteProfile?.ultraExperience;
@@ -291,7 +303,7 @@ app.post('/api/generate-plan', async (req: Request, res: Response) => {
     const intensity = resolveIntensityPrescription(athleteProfile);
     const weekSessions = Array.isArray(existingWorkouts) && existingWorkouts.length
       ? existingWorkouts
-          .map((w: any) => `- ${w.date} · ${w.title} (${w.type}) · ${w.status}${w.adapted ? ', adaptada' : ''}${w.fromSuunto ? ', de Suunto' : ''}${w.durationMin ? ` · ${w.durationMin} min` : ''}${w.tss != null ? ` · ${w.tss} TSS` : ''}`)
+          .map((w: any) => `- ${w.date} · ${w.title} (${w.type}) · ${w.status}${w.adapted ? ', adaptada' : ''}${w.fromSuunto ? ', de Suunto' : ''}${w.durationMin ? ` · ${w.durationMin} min` : ''}${w.tss != null ? ` · ${w.tss} TSS ${w.tssSource === 'suunto' ? tag('real') : tag('estimated')}` : ''}`)
           .join('\n')
       : '- No hay sesiones en esta semana todavía.';
     const nutritionLine = [
@@ -301,11 +313,7 @@ app.post('/api/generate-plan', async (req: Request, res: Response) => {
     ].join('; ');
 
     const memoryContext = coachMemory ? `
-[APRENDIZAJES ACUMULADOS SOBRE ESTE ATLETA]:
-- Reglas y adaptaciones previas descubiertas:
-${(coachMemory.insights || []).map((i: any) => `  * [${i.category}] ${i.observation} -> APLICAR REGLA: ${i.ruleForFuturePlans}`).join('\n')}
-- Notas del cuaderno de Miguel:
-${(coachMemory.coachNotebookNotes || []).map((n: string) => `  * ${n}`).join('\n')}
+${describeMemoryForPrompt(coachMemory, localDateKey())}
 ` : '';
 
     const prompt = `
@@ -488,8 +496,7 @@ app.post('/api/analyze-workout', async (req: Request, res: Response) => {
     const { workout, fitMetrics, athleteProfile, athleteFeedback, coachMemory, athleteHistoryDoc } = req.body;
 
     const memoryContext = coachMemory ? `
-[APRENDIZAJES PREVIOS DE MIGUEL SOBRE EL ATLETA]:
-${(coachMemory.insights || []).map((i: any) => `  * [${i.category}] ${i.observation}`).join('\n')}
+${describeMemoryForPrompt(coachMemory, localDateKey())}
 ` : '';
 
     const prompt = `
@@ -527,15 +534,10 @@ ${athleteHistoryDoc?.content ? `
 ${athleteHistoryDoc.content}
 """` : ''}
 
-Como Coach Miguel, realiza una evaluación honesta y sin rodeos, y genera un aprendizaje para tu memoria en formato JSON:
+Como Coach Miguel, realiza una evaluación honesta y sin rodeos. Después anota como EVIDENCIAS lo que esta sesión muestra (hechos con su dato, no reglas). Responde en JSON:
 {
   "feedback": "Texto de Miguel hablando como entrenador amigo y directo: evalúa cumplimiento de ZoneSense/AeT, avisa si corrió de más en subidas, analiza sensaciones musculares y da pautas de recuperación para Transvulcania 2027.",
-  "newLearnedInsight": {
-    "category": "physiology_zonesense | fatigue_recovery | biomechanics_injury | nutrition_hydration | terrain_technique",
-    "observation": "Qué ha ocurrido en ESTA sesión concreta (hecho observado, con el dato que lo respalda)",
-    "ruleForFuturePlans": "Qué vigilar en próximas sesiones para confirmarlo o descartarlo (hipótesis, no regla)",
-    "confidenceScore": número 0-100 (una sola sesión: confianza baja)
-  }
+  ${EVIDENCE_JSON_SPEC}
 }
 `;
 
@@ -546,7 +548,8 @@ Como Coach Miguel, realiza una evaluación honesta y sin rodeos, y genera un apr
     });
 
     const parsed = parseModelJson(text);
-    res.json(parsed);
+    // Evidencias validadas en código (ids existentes, categorías válidas, máximo por sesión)
+    res.json({ feedback: parsed.feedback, evidence: sanitizeEvidenceItems(parsed.evidence, coachMemory) });
   } catch (err) {
     sendAiError(res, '/api/analyze-workout', err);
   }
@@ -565,13 +568,12 @@ app.post('/api/coach-memory/extract-insight', async (req: Request, res: Response
 El atleta o el entrenador acaba de registrar una observación clave:
 "${noteText}"
 
-Extrae un aprendizaje permanente estructurado en JSON para el cuaderno de Miguel:
+${describeMemoryForPrompt(currentMemory, localDateKey())}
+
+Esto es UNA evidencia aportada por el atleta, no una regla permanente. Anótala en JSON:
 {
-  "category": "physiology_zonesense | fatigue_recovery | biomechanics_injury | nutrition_hydration | terrain_technique",
-  "observation": "Resumen conciso del hallazgo sobre el cuerpo o hábitos del atleta",
-  "ruleForFuturePlans": "Regla práctica que Miguel debe aplicar en futuras prescripciones de entrenamiento",
-  "confidenceScore": 90,
-  "miguelConfirmation": "Mensaje corto de Miguel confirmando que ha anotado este aprendizaje en su libreta."
+  ${EVIDENCE_JSON_SPEC},
+  "miguelConfirmation": "Mensaje corto de Miguel diciendo qué ha anotado y que lo convertirá en regla solo si se repite."
 }
 `;
 
@@ -582,9 +584,44 @@ Extrae un aprendizaje permanente estructurado en JSON para el cuaderno de Miguel
     });
 
     const parsed = parseModelJson(text);
-    res.json(parsed);
+    res.json({ miguelConfirmation: parsed.miguelConfirmation, evidence: sanitizeEvidenceItems(parsed.evidence, currentMemory) });
   } catch (err) {
     sendAiError(res, '/api/coach-memory/extract-insight', err);
+  }
+});
+
+// 5b. Evidencias de una conversación con Miguel (quedan PENDIENTES hasta que el atleta las confirme)
+app.post('/api/coach-memory/extract-chat-evidence', async (req: Request, res: Response) => {
+  try {
+    const { messages, currentMemory } = req.body;
+    const turns = (Array.isArray(messages) ? messages : []).slice(-30);
+    const athleteTurns = turns.filter((m: any) => m?.role === 'user');
+    if (athleteTurns.length === 0) return res.json({ evidence: [] });
+
+    const prompt = `
+Lee esta conversación entre el atleta y Miguel y extrae SOLO lo que el ATLETA ha contado sobre su cuerpo, sus sensaciones, su recuperación, su nutrición o el terreno (hechos que él afirma). Lo que dice Miguel son consejos, NO evidencias.
+
+[CONVERSACIÓN]
+${turns.map((m: any) => `${m.role === 'user' ? 'ATLETA' : 'MIGUEL'}: ${String(m.content ?? '').slice(0, 1500)}`).join('\n')}
+
+${describeMemoryForPrompt(currentMemory, localDateKey())}
+
+Responde en JSON:
+{
+  ${EVIDENCE_JSON_SPEC}
+}
+`;
+
+    const text = await runAi(res, {
+      system: MIGUEL_SYSTEM_INSTRUCTION,
+      input: prompt,
+      json: true,
+    });
+
+    const parsed = parseModelJson(text);
+    res.json({ evidence: sanitizeEvidenceItems(parsed.evidence, currentMemory) });
+  } catch (err) {
+    sendAiError(res, '/api/coach-memory/extract-chat-evidence', err);
   }
 });
 
