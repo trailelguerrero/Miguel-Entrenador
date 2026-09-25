@@ -202,10 +202,10 @@ export const ReportPdfModal: React.FC<ReportPdfModalProps> = ({
                 </span>
                 <div className="text-sm font-black text-zinc-100 print:text-zinc-900">{profile.name}</div>
                 <div className="text-zinc-400 print:text-zinc-600 grid grid-cols-2 gap-x-2">
-                  <span>Edad: <strong>{profile.age || 36} años</strong></span>
-                  <span>Altura: <strong>{profile.heightCm || 176} cm</strong></span>
-                  <span>Peso Actual: <strong>{profile.weightKg || 71.5} kg</strong></span>
-                  <span>Objetivo: <strong>{profile.targetRaceWeightKg || 67.5} kg</strong></span>
+                  <span>Edad: <strong>{profile.age || '—'} años</strong></span>
+                  <span>Altura: <strong>{profile.heightCm || '—'} cm</strong></span>
+                  <span>Peso Actual: <strong>{profile.weightKg || '—'} kg</strong></span>
+                  <span>Objetivo: <strong>{profile.targetRaceWeightKg || '—'} kg</strong></span>
                 </div>
               </div>
 

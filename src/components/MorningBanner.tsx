@@ -38,7 +38,7 @@ export const MorningBanner: React.FC<MorningBannerProps> = ({
                 </span>
               </h4>
               <p className="text-xs text-zinc-400">
-                Calibra tus parámetros clave de ultra trail: entrevista de montaña (50 años), umbrales AeT/AnT, objetivo Transvulcania y datos de Suunto.
+                Calibra tus parámetros clave de ultra trail: entrevista de montaña, umbrales AeT/AnT, objetivo Transvulcania y datos de Suunto.
               </p>
             </div>
           </div>

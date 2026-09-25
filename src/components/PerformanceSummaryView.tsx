@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   BarChart3, 
   TrendingUp, 
@@ -23,12 +23,12 @@ import {
 } from 'lucide-react';
 import { 
   AthleteProfile, 
-  WeeklyPerformanceSummary, 
-  MesocycleProgressionSummary, 
   WeightEntry,
-  WeeklyZoneDistribution,
-  DailyCheckIn
+  DailyCheckIn,
+  Workout
 } from '../types';
+import { buildWeeklySummaries, buildFourWeekBlocks } from '../utils/weeklySummaries';
+import { localDateKey } from '../utils/trainingLoad';
 import { StorageService } from '../services/storage';
 import { WeeklyFatigueHrvWidget } from './WeeklyFatigueHrvWidget';
 
@@ -36,6 +36,7 @@ interface PerformanceSummaryViewProps {
   profile: AthleteProfile;
   onUpdateProfile: (profile: AthleteProfile) => void;
   checkIns?: DailyCheckIn[];
+  workouts?: Workout[];
   onScheduleDeload?: (startDate: string) => void;
   onOpenFartlekGenerator?: () => void;
 }
@@ -44,16 +45,14 @@ export const PerformanceSummaryView: React.FC<PerformanceSummaryViewProps> = ({
   profile,
   onUpdateProfile,
   checkIns = StorageService.getCheckIns(),
+  workouts = StorageService.getWorkouts(),
   onScheduleDeload,
   onOpenFartlekGenerator,
 }) => {
   // State
-  const [weeklySummaries, setWeeklySummaries] = useState<WeeklyPerformanceSummary[]>(
-    StorageService.getWeeklySummaries()
-  );
-  const [mesocycles, setMesocycles] = useState<MesocycleProgressionSummary[]>(
-    StorageService.getMesocycleProgression()
-  );
+  // Semanas y bloques de 4 semanas calculados con los entrenos completados reales
+  const weeklySummaries = useMemo(() => buildWeeklySummaries(workouts, 12, profile.antHr), [workouts, profile.antHr]);
+  const blocks = useMemo(() => buildFourWeekBlocks(weeklySummaries), [weeklySummaries]);
   const [weightHistory, setWeightHistory] = useState<WeightEntry[]>(
     StorageService.getWeightHistory()
   );
@@ -61,16 +60,16 @@ export const PerformanceSummaryView: React.FC<PerformanceSummaryViewProps> = ({
     weeklySummaries[weeklySummaries.length - 1]?.weekId || ''
   );
   const [isWeightModalOpen, setIsWeightModalOpen] = useState(false);
-  const [newWeightKg, setNewWeightKg] = useState<number>(profile.weightKg || 71.5);
-  const [newBodyFatPct, setNewBodyFatPct] = useState<number>(14.5);
+  const [newWeightKg, setNewWeightKg] = useState<number>(profile.weightKg || 0);
+  const [newBodyFatPct, setNewBodyFatPct] = useState<number>(0);
   const [newWeightNotes, setNewWeightNotes] = useState('');
   const [activeSubTab, setActiveSubTab] = useState<
     'fatigue_hrv' | 'volume_zones' | 'mesocycles' | 'weight_tracker' | 'coach_nutrition'
   >('fatigue_hrv');
 
   // Sweat Rate Calculator state
-  const [preRunWeight, setPreRunWeight] = useState<number>(71.5);
-  const [postRunWeight, setPostRunWeight] = useState<number>(70.8);
+  const [preRunWeight, setPreRunWeight] = useState<number>(profile.weightKg || 0);
+  const [postRunWeight, setPostRunWeight] = useState<number>(profile.weightKg || 0);
   const [fluidsConsumedMl, setFluidsConsumedMl] = useState<number>(1200);
   const [durationHours, setDurationHours] = useState<number>(2.0);
   const [tempCelsius, setTempCelsius] = useState<number>(24);
@@ -78,27 +77,29 @@ export const PerformanceSummaryView: React.FC<PerformanceSummaryViewProps> = ({
   // Derived calculations for selected week
   const selectedWeek = weeklySummaries.find(w => w.weekId === selectedWeekId) || weeklySummaries[weeklySummaries.length - 1];
 
-  // Aggregates
-  const totalKm = weeklySummaries.reduce((acc, w) => acc + w.totalDistanceKm, 0);
-  const totalElevationGain = weeklySummaries.reduce((acc, w) => acc + w.totalElevationGainM, 0);
-  const totalElevationLoss = weeklySummaries.reduce((acc, w) => acc + w.totalElevationLossM, 0);
-  const totalHours = (weeklySummaries.reduce((acc, w) => acc + w.totalDurationMin, 0) / 60).toFixed(1);
+  // Aggregates (últimas 12 semanas)
+  const totalKm = weeklySummaries.reduce((acc, w) => acc + w.distanceKm, 0);
+  const totalElevationGain = weeklySummaries.reduce((acc, w) => acc + w.elevationGainM, 0);
+  const totalElevationLoss = weeklySummaries.reduce((acc, w) => acc + w.elevationLossM, 0);
+  const totalHours = (weeklySummaries.reduce((acc, w) => acc + w.durationMin, 0) / 60).toFixed(1);
 
-  // Global Zone Distribution
-  const totalZ1Min = weeklySummaries.reduce((acc, w) => acc + w.zoneDistribution.zone1Min, 0);
-  const totalZ2Min = weeklySummaries.reduce((acc, w) => acc + w.zoneDistribution.zone2Min, 0);
-  const totalZ3Min = weeklySummaries.reduce((acc, w) => acc + w.zoneDistribution.zone3Min, 0);
-  const totalZ4Min = weeklySummaries.reduce((acc, w) => acc + w.zoneDistribution.zone4Min, 0);
-  const totalZ5Min = weeklySummaries.reduce((acc, w) => acc + w.zoneDistribution.zone5Min, 0);
-  const allMinutes = totalZ1Min + totalZ2Min + totalZ3Min + totalZ4Min + totalZ5Min || 1;
-  const globalAerobicPct = (((totalZ1Min + totalZ2Min) / allMinutes) * 100).toFixed(1);
+  // % bajo AeT según ZoneSense (solo entrenos que traen ese dato)
+  const zsTracked = weeklySummaries.reduce((acc, w) => acc + w.zoneSense.trackedMin, 0);
+  const zsAerobic = weeklySummaries.reduce((acc, w) => acc + w.zoneSense.aerobicMin, 0);
+  const globalAerobicPct = zsTracked > 0 ? ((zsAerobic / zsTracked) * 100).toFixed(1) : null;
 
-  // Weight metrics
-  const heightM = (profile.heightCm || 176) / 100;
-  const currentBmi = (profile.weightKg / (heightM * heightM)).toFixed(1);
-  const weightDeltaToTarget = Number((profile.weightKg - (profile.targetRaceWeightKg || 67.5)).toFixed(1));
-  const estimatedTransvulcaniaKcal = Math.round(Math.max(0, weightDeltaToTarget) * 9.81 * 4.35 / 0.23);
-  const estimatedTransvulcaniaMinutes = Math.round(Math.max(0, weightDeltaToTarget) * 6.5);
+  // Weight metrics (misma fuente que el resto de la app: último pesaje)
+  const sortedWeights = [...weightHistory].sort((a, b) => a.date.localeCompare(b.date));
+  const currentWeight = sortedWeights.length > 0 ? sortedWeights[sortedWeights.length - 1].weightKg : (profile.weightKg || 0);
+  const startWeight = sortedWeights.length > 0 ? sortedWeights[0].weightKg : currentWeight;
+  const latestBodyFat = [...sortedWeights].reverse().find(e => e.bodyFatPct != null)?.bodyFatPct;
+  const heightM = (profile.heightCm || 0) / 100;
+  const currentBmi = currentWeight > 0 && heightM > 0 ? (currentWeight / (heightM * heightM)).toFixed(1) : '—';
+  const targetWeight = profile.targetRaceWeightKg || 0;
+  const weightDeltaToTarget = targetWeight > 0 ? Number((currentWeight - targetWeight).toFixed(1)) : 0;
+  const weightProgressPct = targetWeight > 0 && startWeight > targetWeight
+    ? Math.min(100, Math.max(0, Math.round(((startWeight - currentWeight) / (startWeight - targetWeight)) * 100)))
+    : 0;
 
   // Sweat rate calculation
   // Sweat Loss (L) = (Pre - Post) + Fluids consumed (L) - Urine (assume 0)
@@ -111,7 +112,7 @@ export const PerformanceSummaryView: React.FC<PerformanceSummaryViewProps> = ({
   const handleAddWeight = (e: React.FormEvent) => {
     e.preventDefault();
     const updated = StorageService.addWeightEntry({
-      date: new Date().toISOString().split('T')[0],
+      date: localDateKey(),
       weightKg: Number(newWeightKg),
       bodyFatPct: newBodyFatPct ? Number(newBodyFatPct) : undefined,
       notes: newWeightNotes.trim() || undefined,
@@ -158,8 +159,8 @@ export const PerformanceSummaryView: React.FC<PerformanceSummaryViewProps> = ({
               Evolución Metabólica & Potencia en Montaña
             </h1>
             <p className="text-xs sm:text-sm text-zinc-400 max-w-3xl leading-relaxed">
-              Supervisión de volumen semanal, desnivel positivo y negativo acumulado, tiempo en zonas cardíacas (Z1-Z5), 
-              reversión del ADS y monitorización del peso óptimo hacia los <strong>+4.350m de Transvulcania 2027</strong>.
+              Supervisión de volumen semanal, desnivel positivo y negativo acumulado, tiempo en zonas ZoneSense de Suunto 
+              y monitorización del peso óptimo hacia los <strong>+4.350m de Transvulcania 2027</strong>.
             </p>
           </div>
 
@@ -168,7 +169,7 @@ export const PerformanceSummaryView: React.FC<PerformanceSummaryViewProps> = ({
             <div className="bg-zinc-950/80 border border-zinc-800 p-3 rounded-2xl">
               <div className="text-[10px] text-zinc-400 uppercase font-bold">Volumen Total</div>
               <div className="text-lg font-black text-zinc-100">{totalKm.toFixed(0)} <span className="text-xs font-normal text-zinc-500">km</span></div>
-              <div className="text-[10px] text-zinc-500">{totalHours} horas acumuladas</div>
+              <div className="text-[10px] text-zinc-500">{totalHours} h · últimas 12 semanas</div>
             </div>
 
             <div className="bg-zinc-950/80 border border-zinc-800 p-3 rounded-2xl">
@@ -179,14 +180,14 @@ export const PerformanceSummaryView: React.FC<PerformanceSummaryViewProps> = ({
 
             <div className="bg-zinc-950/80 border border-emerald-900/40 p-3 rounded-2xl">
               <div className="text-[10px] text-emerald-400 uppercase font-bold">Base Aeróbica</div>
-              <div className="text-lg font-black text-emerald-400">{globalAerobicPct}%</div>
-              <div className="text-[10px] text-zinc-400">Target Uphill: &gt; 85%</div>
+              <div className="text-lg font-black text-emerald-400">{globalAerobicPct !== null ? `${globalAerobicPct}%` : '—'}</div>
+              <div className="text-[10px] text-zinc-400">{globalAerobicPct !== null ? 'Bajo AeT (ZoneSense) · 12 sem.' : 'Sin datos ZoneSense'}</div>
             </div>
 
             <div className="bg-zinc-950/80 border border-zinc-800 p-3 rounded-2xl">
               <div className="text-[10px] text-zinc-400 uppercase font-bold">Peso vs Óptimo</div>
-              <div className="text-lg font-black text-zinc-100">{profile.weightKg} <span className="text-xs font-normal text-zinc-500">kg</span></div>
-              <div className="text-[10px] text-amber-400">Meta: {profile.targetRaceWeightKg || 67.5} kg</div>
+              <div className="text-lg font-black text-zinc-100">{currentWeight || '—'} <span className="text-xs font-normal text-zinc-500">kg</span></div>
+              <div className="text-[10px] text-amber-400">Meta: {targetWeight || '—'} kg</div>
             </div>
           </div>
         </div>
@@ -204,9 +205,6 @@ export const PerformanceSummaryView: React.FC<PerformanceSummaryViewProps> = ({
             >
               <Battery className="w-4 h-4 text-amber-400" />
               <span>Tendencia de Fatiga & Descarga (HRV)</span>
-              <span className="px-1.5 py-0.5 rounded-full bg-red-500/20 text-red-400 text-[10px] font-mono border border-red-500/30 font-black">
-                Alerta
-              </span>
             </button>
 
             <button
@@ -230,7 +228,7 @@ export const PerformanceSummaryView: React.FC<PerformanceSummaryViewProps> = ({
               }`}
             >
               <Mountain className="w-4 h-4" />
-              <span>Evolución por Mesociclos & ADS</span>
+              <span>Evolución por Bloques de 4 Semanas</span>
             </button>
 
             <button
@@ -280,14 +278,12 @@ export const PerformanceSummaryView: React.FC<PerformanceSummaryViewProps> = ({
         />
       )}
 
-      {/* TAB 1: VOLUMEN & DISTRIBUCIÓN DE ZONAS */}
+      {/* TAB 1: VOLUMEN & DISTRIBUCIÓN DE ZONAS (datos reales de los entrenos completados) */}
       {activeSubTab === 'volume_zones' && (
         <div className="space-y-6">
-          
-          {/* Week Selection & Detail Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            
-            {/* Weekly Volume & D+ Progression Chart List */}
+
+            {/* Weekly Volume & D+ list */}
             <div className="lg:col-span-2 bg-zinc-900 border border-zinc-800 rounded-3xl p-6 space-y-5">
               <div className="flex items-center justify-between">
                 <div>
@@ -295,90 +291,78 @@ export const PerformanceSummaryView: React.FC<PerformanceSummaryViewProps> = ({
                     <BarChart3 className="w-4 h-4 text-amber-400" />
                     <span>Progresión Semanal de Kilómetros y Desnivel</span>
                   </h3>
-                  <p className="text-xs text-zinc-400 mt-0.5">Haz clic en una semana para analizar la descomposición en zonas</p>
+                  <p className="text-xs text-zinc-400 mt-0.5">Entrenos completados (Suunto o registrados). Haz clic en una semana para ver el detalle.</p>
                 </div>
-                <span className="text-xs text-zinc-500">{weeklySummaries.length} semanas registradas</span>
+                <span className="text-xs text-zinc-500">Últimas {weeklySummaries.length} semanas</span>
               </div>
 
-              {/* Interactive Weekly Volume Bars */}
               <div className="space-y-3">
-                {weeklySummaries.map((w) => {
-                  const isSelected = w.weekId === selectedWeekId;
-                  const maxKm = Math.max(...weeklySummaries.map(s => s.totalDistanceKm), 50);
-                  const maxGain = Math.max(...weeklySummaries.map(s => s.totalElevationGainM), 2000);
-                  const kmBarPct = Math.round((w.totalDistanceKm / maxKm) * 100);
-                  const gainBarPct = Math.round((w.totalElevationGainM / maxGain) * 100);
-
+                {[...weeklySummaries].reverse().map((w) => {
+                  const isSelected = w.weekId === selectedWeek?.weekId;
+                  const maxKm = Math.max(...weeklySummaries.map(x => x.distanceKm), 1);
+                  const maxGain = Math.max(...weeklySummaries.map(x => x.elevationGainM), 1);
+                  const zsTotal = w.zoneSense.trackedMin || 1;
                   return (
                     <div
                       key={w.weekId}
                       onClick={() => setSelectedWeekId(w.weekId)}
                       className={`p-4 rounded-2xl border transition-all cursor-pointer ${
-                        isSelected 
-                          ? 'bg-zinc-950 border-amber-500/80 shadow-lg ring-1 ring-amber-500/20' 
+                        isSelected
+                          ? 'bg-zinc-950 border-amber-500/80 shadow-lg ring-1 ring-amber-500/20'
                           : 'bg-zinc-950/60 border-zinc-800/80 hover:border-zinc-700'
                       }`}
                     >
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
                         <div className="flex items-center space-x-2">
-                          <span className={`w-2.5 h-2.5 rounded-full ${isSelected ? 'bg-amber-400 animate-pulse' : 'bg-zinc-600'}`} />
+                          <span className={`w-2.5 h-2.5 rounded-full ${isSelected ? 'bg-amber-400' : 'bg-zinc-600'}`} />
                           <span className="text-xs font-bold text-zinc-100">{w.weekLabel}</span>
-                          <span className="text-[11px] text-zinc-500">• {w.mesocycleName.split(':')[0]}</span>
+                          <span className="text-[11px] text-zinc-500">• {w.completedCount} entrenos</span>
                         </div>
-                        <div className="flex items-center space-x-4 text-xs font-semibold">
-                          <span className="text-zinc-200">{w.totalDistanceKm} km</span>
-                          <span className="text-amber-400">+{w.totalElevationGainM} m D+</span>
-                          <span className="text-emerald-400">{w.zoneDistribution.aerobicRatioPct}% Aeróbico</span>
-                          <span className="text-zinc-500">{(w.totalDurationMin / 60).toFixed(1)} h</span>
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs font-semibold">
+                          <span className="text-zinc-200">{w.distanceKm} km</span>
+                          <span className="text-amber-400">+{w.elevationGainM} m D+</span>
+                          <span className="text-zinc-400">{w.tss} TSS</span>
+                          <span className="text-emerald-400">{w.aerobicPct !== null ? `${w.aerobicPct}% bajo AeT` : 'sin ZoneSense'}</span>
+                          <span className="text-zinc-500">{(w.durationMin / 60).toFixed(1)} h</span>
                         </div>
                       </div>
 
-                      {/* Visual Bars for Km & Gain */}
                       <div className="space-y-1.5">
                         <div className="flex items-center space-x-2 text-[11px]">
                           <span className="w-16 text-zinc-400">Distancia:</span>
                           <div className="flex-1 bg-zinc-900 rounded-full h-2 overflow-hidden">
-                            <div 
-                              className="bg-gradient-to-r from-blue-500 to-indigo-500 h-full rounded-full transition-all duration-500"
-                              style={{ width: `${kmBarPct}%` }}
-                            />
+                            <div className="bg-gradient-to-r from-blue-500 to-indigo-500 h-full rounded-full" style={{ width: `${Math.round((w.distanceKm / maxKm) * 100)}%` }} />
                           </div>
-                          <span className="w-12 text-right text-zinc-300 font-mono">{w.totalDistanceKm}k</span>
+                          <span className="w-12 text-right text-zinc-300 font-mono">{w.distanceKm}k</span>
                         </div>
-
                         <div className="flex items-center space-x-2 text-[11px]">
                           <span className="w-16 text-zinc-400">Desnivel:</span>
                           <div className="flex-1 bg-zinc-900 rounded-full h-2 overflow-hidden">
-                            <div 
-                              className="bg-gradient-to-r from-amber-500 to-orange-500 h-full rounded-full transition-all duration-500"
-                              style={{ width: `${gainBarPct}%` }}
-                            />
+                            <div className="bg-gradient-to-r from-amber-500 to-orange-500 h-full rounded-full" style={{ width: `${Math.round((w.elevationGainM / maxGain) * 100)}%` }} />
                           </div>
-                          <span className="w-12 text-right text-amber-400 font-mono">+{w.totalElevationGainM}m</span>
+                          <span className="w-12 text-right text-amber-400 font-mono">+{w.elevationGainM}m</span>
                         </div>
                       </div>
 
-                      {/* Stacked Zone bar */}
-                      <div className="mt-3 pt-2 border-t border-zinc-800/60 flex items-center space-x-2 text-[10px]">
-                        <span className="text-zinc-500 w-16">Zonas Z1-Z5:</span>
-                        <div className="flex-1 flex h-2 rounded-full overflow-hidden bg-zinc-900">
-                          <div style={{ width: `${(w.zoneDistribution.zone1Min / w.zoneDistribution.totalDurationMin) * 100}%` }} className="bg-sky-500" title="Z1 Recuperación" />
-                          <div style={{ width: `${(w.zoneDistribution.zone2Min / w.zoneDistribution.totalDurationMin) * 100}%` }} className="bg-emerald-500" title="Z2 Base Aeróbica Sub-AeT" />
-                          <div style={{ width: `${(w.zoneDistribution.zone3Min / w.zoneDistribution.totalDurationMin) * 100}%` }} className="bg-amber-500" title="Z3 Tempo" />
-                          <div style={{ width: `${(w.zoneDistribution.zone4Min / w.zoneDistribution.totalDurationMin) * 100}%` }} className="bg-orange-500" title="Z4 Umbral" />
-                          <div style={{ width: `${(w.zoneDistribution.zone5Min / w.zoneDistribution.totalDurationMin) * 100}%` }} className="bg-red-500" title="Z5 Anaeróbico" />
+                      {w.zoneSense.trackedMin > 0 && (
+                        <div className="mt-3 pt-2 border-t border-zinc-800/60 flex items-center space-x-2 text-[10px]">
+                          <span className="text-zinc-500 w-16">ZoneSense:</span>
+                          <div className="flex-1 flex h-2 rounded-full overflow-hidden bg-zinc-900">
+                            <div style={{ width: `${(w.zoneSense.aerobicMin / zsTotal) * 100}%` }} className="bg-emerald-500" title="Bajo AeT" />
+                            <div style={{ width: `${(w.zoneSense.transitionMin / zsTotal) * 100}%` }} className="bg-amber-500" title="Entre AeT y AnT" />
+                            <div style={{ width: `${(w.zoneSense.anaerobicMin / zsTotal) * 100}%` }} className="bg-red-500" title="Sobre AnT" />
+                          </div>
                         </div>
-                        <span className="text-emerald-400 font-bold">{w.zoneDistribution.aerobicRatioPct}% Z1-Z2</span>
-                      </div>
+                      )}
                     </div>
                   );
                 })}
               </div>
             </div>
 
-            {/* Selected Week Zone Detail Panel */}
-            <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 space-y-5 flex flex-col justify-between">
-              <div className="space-y-4">
+            {/* Selected week detail */}
+            {selectedWeek && (
+              <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 space-y-5">
                 <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
                   <div>
                     <span className="text-[10px] text-amber-400 font-bold uppercase tracking-wider">Detalle de Semana</span>
@@ -386,304 +370,103 @@ export const PerformanceSummaryView: React.FC<PerformanceSummaryViewProps> = ({
                   </div>
                   <div className="text-right">
                     <div className="text-xs text-zinc-400">Total</div>
-                    <div className="text-sm font-black text-zinc-200">{(selectedWeek.totalDurationMin / 60).toFixed(1)} horas</div>
+                    <div className="text-sm font-black text-zinc-200">{(selectedWeek.durationMin / 60).toFixed(1)} horas</div>
                   </div>
                 </div>
 
-                {/* Zone Breakdown Metrics */}
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="bg-zinc-950 p-2.5 rounded-xl border border-zinc-800">
+                    <span className="text-[10px] text-zinc-500 block">D+ / D-</span>
+                    <strong className="text-zinc-200">+{selectedWeek.elevationGainM} / -{selectedWeek.elevationLossM} m</strong>
+                  </div>
+                  <div className="bg-zinc-950 p-2.5 rounded-xl border border-zinc-800">
+                    <span className="text-[10px] text-zinc-500 block">Carga</span>
+                    <strong className="text-zinc-200">{selectedWeek.tss} TSS</strong>
+                  </div>
+                </div>
+
                 <div className="space-y-3">
-                  <h4 className="text-xs font-bold text-zinc-300 uppercase tracking-wider">Desglose de Tiempo en Zonas</h4>
-
-                  {/* Z1 */}
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="flex items-center space-x-1.5 text-sky-400 font-bold">
-                        <span className="w-2.5 h-2.5 rounded-full bg-sky-400 inline-block" />
-                        <span>Z1: Recuperación Activa (&lt; {profile.aetHr - 15} bpm)</span>
-                      </span>
-                      <span className="text-zinc-300 font-mono">{selectedWeek.zoneDistribution.zone1Min} min ({Math.round((selectedWeek.zoneDistribution.zone1Min / selectedWeek.zoneDistribution.totalDurationMin) * 100)}%)</span>
-                    </div>
-                    <div className="w-full bg-zinc-950 rounded-full h-1.5 overflow-hidden">
-                      <div 
-                        className="bg-sky-400 h-full rounded-full" 
-                        style={{ width: `${(selectedWeek.zoneDistribution.zone1Min / selectedWeek.zoneDistribution.totalDurationMin) * 100}%` }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Z2 Base Aeróbica */}
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="flex items-center space-x-1.5 text-emerald-400 font-bold">
-                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 inline-block" />
-                        <span>Z2: Base Aeróbica Sub-AeT ({profile.aetHr - 15} - {profile.aetHr} bpm)</span>
-                      </span>
-                      <span className="text-emerald-400 font-mono font-bold">{selectedWeek.zoneDistribution.zone2Min} min ({Math.round((selectedWeek.zoneDistribution.zone2Min / selectedWeek.zoneDistribution.totalDurationMin) * 100)}%)</span>
-                    </div>
-                    <div className="w-full bg-zinc-950 rounded-full h-1.5 overflow-hidden">
-                      <div 
-                        className="bg-emerald-400 h-full rounded-full" 
-                        style={{ width: `${(selectedWeek.zoneDistribution.zone2Min / selectedWeek.zoneDistribution.totalDurationMin) * 100}%` }}
-                      />
-                    </div>
-                    <div className="text-[10px] text-zinc-500 pl-4">
-                      ZoneSense: {selectedWeek.zoneDistribution.zoneSenseAerobicMin} min con DFA &alpha;1 &ge; 0.75 (&lt; {profile.aetHr} bpm)
-                    </div>
-                  </div>
-
-                  {/* Z3 */}
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="flex items-center space-x-1.5 text-amber-400 font-bold">
-                        <span className="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block" />
-                        <span>Z3: Transición / Tempo ({profile.aetHr} - {profile.antHr - 10} bpm)</span>
-                      </span>
-                      <span className="text-zinc-300 font-mono">{selectedWeek.zoneDistribution.zone3Min} min ({Math.round((selectedWeek.zoneDistribution.zone3Min / selectedWeek.zoneDistribution.totalDurationMin) * 100)}%)</span>
-                    </div>
-                    <div className="w-full bg-zinc-950 rounded-full h-1.5 overflow-hidden">
-                      <div 
-                        className="bg-amber-400 h-full rounded-full" 
-                        style={{ width: `${(selectedWeek.zoneDistribution.zone3Min / selectedWeek.zoneDistribution.totalDurationMin) * 100}%` }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Z4 */}
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="flex items-center space-x-1.5 text-orange-400 font-bold">
-                        <span className="w-2.5 h-2.5 rounded-full bg-orange-400 inline-block" />
-                        <span>Z4: Umbral Anaeróbico AnT ({profile.antHr - 10} - {profile.antHr + 5} bpm)</span>
-                      </span>
-                      <span className="text-zinc-300 font-mono">{selectedWeek.zoneDistribution.zone4Min} min ({Math.round((selectedWeek.zoneDistribution.zone4Min / selectedWeek.zoneDistribution.totalDurationMin) * 100)}%)</span>
-                    </div>
-                    <div className="w-full bg-zinc-950 rounded-full h-1.5 overflow-hidden">
-                      <div 
-                        className="bg-orange-400 h-full rounded-full" 
-                        style={{ width: `${(selectedWeek.zoneDistribution.zone4Min / selectedWeek.zoneDistribution.totalDurationMin) * 100}%` }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Z5 */}
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="flex items-center space-x-1.5 text-red-400 font-bold">
-                        <span className="w-2.5 h-2.5 rounded-full bg-red-400 inline-block" />
-                        <span>Z5: Máxima Intensidad (&gt; {profile.antHr + 5} bpm)</span>
-                      </span>
-                      <span className="text-zinc-300 font-mono">{selectedWeek.zoneDistribution.zone5Min} min</span>
-                    </div>
-                    <div className="w-full bg-zinc-950 rounded-full h-1.5 overflow-hidden">
-                      <div 
-                        className="bg-red-400 h-full rounded-full" 
-                        style={{ width: `${(selectedWeek.zoneDistribution.zone5Min / selectedWeek.zoneDistribution.totalDurationMin) * 100}%` }}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Uphill Rule Compliance Box */}
-                <div className={`p-4 rounded-2xl border ${
-                  selectedWeek.zoneDistribution.aerobicRatioPct >= 85 
-                    ? 'bg-emerald-950/20 border-emerald-800/40 text-emerald-300' 
-                    : 'bg-amber-950/20 border-amber-800/40 text-amber-300'
-                }`}>
-                  <div className="flex items-center space-x-2 text-xs font-black uppercase">
-                    <CheckCircle2 className="w-4 h-4 shrink-0" />
-                    <span>Ratio Aeróbico: {selectedWeek.zoneDistribution.aerobicRatioPct}% en Z1-Z2</span>
-                  </div>
-                  <p className="text-[11px] text-zinc-400 mt-1 leading-relaxed">
-                    {selectedWeek.zoneDistribution.aerobicRatioPct >= 85
-                      ? 'Cumple con la regla Uphill Athlete (≥ 85%). Permite proliferación mitocondrial sin fatiga del sistema nervioso simpático.'
-                      : 'Atención: Ligero exceso de tiempo en Z3+. Miguel recalibrará las siguientes sesiones para forzar el paso a caminata en subida.'}
-                  </p>
+                  <h4 className="text-xs font-bold text-zinc-300 uppercase tracking-wider">Tiempo en zonas ZoneSense (Suunto)</h4>
+                  {selectedWeek.zoneSense.trackedMin > 0 ? (
+                    ([
+                      { label: `Bajo AeT (≤ ${profile.aetHr || '—'} bpm)`, min: selectedWeek.zoneSense.aerobicMin, bar: 'bg-emerald-400', text: 'text-emerald-400' },
+                      { label: `Entre AeT y AnT`, min: selectedWeek.zoneSense.transitionMin, bar: 'bg-amber-400', text: 'text-amber-400' },
+                      { label: `Sobre AnT (> ${profile.antHr || '—'} bpm)`, min: selectedWeek.zoneSense.anaerobicMin, bar: 'bg-red-400', text: 'text-red-400' },
+                    ]).map((z) => (
+                      <div key={z.label} className="space-y-1">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className={`font-bold ${z.text}`}>{z.label}</span>
+                          <span className="text-zinc-300 font-mono">{z.min} min ({Math.round((z.min / selectedWeek.zoneSense.trackedMin) * 100)}%)</span>
+                        </div>
+                        <div className="w-full bg-zinc-950 rounded-full h-1.5 overflow-hidden">
+                          <div className={`${z.bar} h-full rounded-full`} style={{ width: `${(z.min / selectedWeek.zoneSense.trackedMin) * 100}%` }} />
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-xs text-zinc-500">Ningún entreno de esta semana trae datos de ZoneSense.</p>
+                  )}
+                  {selectedWeek.zoneSense.trackedMin > 0 && selectedWeek.zoneSense.trackedMin < selectedWeek.durationMin && (
+                    <p className="text-[10px] text-zinc-500">
+                      ZoneSense cubre {selectedWeek.zoneSense.trackedMin} de {selectedWeek.durationMin} min de la semana.
+                    </p>
+                  )}
                 </div>
               </div>
-
-              {/* Coach Assessment Note */}
-              <div className="bg-zinc-950 p-4 rounded-2xl border border-zinc-800 text-xs space-y-1.5">
-                <div className="flex items-center space-x-1.5 text-amber-400 font-bold">
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>Evaluación Semanal de Miguel</span>
-                </div>
-                <p className="text-zinc-300 italic leading-relaxed text-[11px]">
-                  "{selectedWeek.coachWeeklyAssessment}"
-                </p>
-              </div>
-
-            </div>
-
+            )}
           </div>
-
-          {/* Global Multi-Zone Legend & Science Explanation */}
-          <div className="bg-zinc-900/60 border border-zinc-800 rounded-3xl p-6">
-            <h4 className="text-xs font-bold text-zinc-200 uppercase tracking-wider mb-4 flex items-center space-x-2">
-              <Info className="w-4 h-4 text-amber-400" />
-              <span>Modelo de Intensidad Uphill Athlete & Suunto ZoneSense</span>
-            </h4>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs text-zinc-400 leading-relaxed">
-              <div className="bg-zinc-950/80 p-4 rounded-2xl border border-zinc-800/80 space-y-1.5">
-                <span className="text-emerald-400 font-bold block">1. Umbral Aeróbico (AeT / VT1)</span>
-                <p>
-                  Corresponde a {profile.aetHr} bpm y DFA &alpha;1 &gt; 0.75. Es el límite superior donde las grasas son el combustible primario. 
-                  En Transvulcania, cualquier minuto por encima de este pulso en las subidas agota prematuramente el glucógeno hepático.
-                </p>
-              </div>
-
-              <div className="bg-zinc-950/80 p-4 rounded-2xl border border-zinc-800/80 space-y-1.5">
-                <span className="text-amber-400 font-bold block">2. Umbral Anaeróbico (AnT / VT2)</span>
-                <p>
-                  Situado en {profile.antHr} bpm. La diferencia de {profile.antHr - profile.aetHr} bpm respecto a tu AeT evidencia un leve Síndrome de Deficiencia Aeróbica (ADS) 
-                  que se va reduciendo progresivamente conforme expandes tu volumen en Z2.
-                </p>
-              </div>
-
-              <div className="bg-zinc-950/80 p-4 rounded-2xl border border-zinc-800/80 space-y-1.5">
-                <span className="text-indigo-400 font-bold block">3. Desacoplamiento &amp; Drift Test</span>
-                <p>
-                  Si la FC aumenta más del 3.5%-5% manteniendo velocidad constante en 60 min, la base aeróbica aún no es autosuficiente. 
-                  Tu progresión actual refleja un desacoplamiento descendente desde 6.8% hasta 4.2%.
-                </p>
-              </div>
-            </div>
-          </div>
-
         </div>
       )}
 
-      {/* TAB 2: EVOLUCIÓN POR MESOCICLOS & ADS */}
+      {/* TAB 2: EVOLUCIÓN POR BLOQUES DE 4 SEMANAS (datos reales) */}
       {activeSubTab === 'mesocycles' && (
         <div className="space-y-6">
           <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-              <div>
-                <h3 className="text-base font-black text-zinc-100 flex items-center space-x-2">
-                  <Mountain className="w-5 h-5 text-amber-400" />
-                  <span>Progresión de la Base Aeróbica a lo Largo de los Mesociclos</span>
-                </h3>
-                <p className="text-xs text-zinc-400 mt-1">
-                  Evolución del ritmo a umbral aeróbico constante ({profile.aetHr} bpm), porcentaje de volumen en base y reversión del ADS.
-                </p>
-              </div>
-              <div className="flex items-center space-x-2 bg-emerald-950/30 border border-emerald-800/50 px-3 py-1.5 rounded-xl text-xs text-emerald-400 font-bold">
-                <CheckCircle2 className="w-4 h-4" />
-                <span>ADS en vías de erradicación</span>
-              </div>
+            <div className="mb-6">
+              <h3 className="text-base font-black text-zinc-100 flex items-center space-x-2">
+                <Mountain className="w-5 h-5 text-amber-400" />
+                <span>Evolución por Bloques de 4 Semanas</span>
+              </h3>
+              <p className="text-xs text-zinc-400 mt-1">
+                Medias semanales de cada bloque de 4 semanas (el último termina en la semana actual). Calculado con tus entrenos completados.
+              </p>
             </div>
 
-            {/* Mesocycle Cards Grid */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-              {mesocycles.map((meso, idx) => (
-                <div 
-                  key={meso.id}
-                  className={`bg-zinc-950 border rounded-2xl p-5 space-y-4 flex flex-col justify-between ${
-                    idx === 1 
-                      ? 'border-amber-500/80 ring-1 ring-amber-500/30 shadow-xl' 
-                      : 'border-zinc-800'
+              {blocks.map((b, idx) => (
+                <div
+                  key={b.id}
+                  className={`bg-zinc-950 border rounded-2xl p-5 space-y-3 ${
+                    idx === blocks.length - 1 ? 'border-amber-500/80 ring-1 ring-amber-500/30' : 'border-zinc-800'
                   }`}
                 >
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider">
-                        {idx === 0 ? 'Fase Completada' : idx === 1 ? 'Mesociclo Activo' : 'Próxima Fase'}
-                      </span>
-                      <span className="text-xs text-zinc-500 font-mono">{meso.weeksCount} semanas</span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider">
+                      {idx === blocks.length - 1 ? 'Bloque actual' : 'Bloque anterior'}
+                    </span>
+                    <span className="text-xs text-zinc-500 font-mono">{b.weeksCount} semanas</span>
+                  </div>
+                  <h4 className="text-sm font-black text-zinc-100">{b.label}</h4>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="bg-zinc-900/80 p-2.5 rounded-xl border border-zinc-800/60">
+                      <span className="text-[10px] text-zinc-500 block">Media semanal</span>
+                      <strong className="text-zinc-200">{b.avgWeeklyKm} km</strong>
+                      <span className="text-[10px] text-amber-400 block">+{b.avgWeeklyGainM} m D+</span>
                     </div>
-
-                    <h4 className="text-sm font-black text-zinc-100">{meso.name}</h4>
-
-                    {/* Key Metrics */}
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      <div className="bg-zinc-900/80 p-2.5 rounded-xl border border-zinc-800/60">
-                        <span className="text-[10px] text-zinc-500 block">Media Semanal</span>
-                        <strong className="text-zinc-200">{meso.avgWeeklyDistanceKm} km</strong>
-                        <span className="text-[10px] text-amber-400 block">+{meso.avgWeeklyElevationGainM}m D+</span>
-                      </div>
-
-                      <div className="bg-zinc-900/80 p-2.5 rounded-xl border border-zinc-800/60">
-                        <span className="text-[10px] text-zinc-500 block">Base Aeróbica</span>
-                        <strong className="text-emerald-400 font-bold">{meso.aerobicBasePct}%</strong>
-                        <span className="text-[10px] text-zinc-400 block">{meso.avgWeeklyDurationHours}h / sem</span>
-                      </div>
-                    </div>
-
-                    {/* Drift Test & AeT Pace Evolution */}
-                    <div className="bg-zinc-900/50 p-3 rounded-xl border border-zinc-800/60 space-y-1.5 text-xs">
-                      <div className="flex items-center justify-between">
-                        <span className="text-zinc-400 text-[11px]">Ritmo a {profile.aetHr} bpm:</span>
-                        <span className="text-zinc-200 font-bold text-[11px]">{meso.aeTPaceEvolution}</span>
-                      </div>
-
-                      {meso.driftTestEvolutionPct !== undefined && (
-                        <div className="flex items-center justify-between">
-                          <span className="text-zinc-400 text-[11px]">Drift Test (Deriva):</span>
-                          <span className={`font-bold text-[11px] ${meso.driftTestEvolutionPct <= 5 ? 'text-emerald-400' : 'text-amber-400'}`}>
-                            {meso.driftTestEvolutionPct}% {meso.driftTestEvolutionPct <= 5 ? '(Normalizado)' : '(ADS presente)'}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Milestone badge */}
-                    <div className="text-[11px] text-zinc-300 bg-zinc-900/80 p-2.5 rounded-xl border border-zinc-800/60">
-                      <strong className="text-amber-400 block mb-0.5">Hito Fisiológico:</strong>
-                      {meso.keyMilestone}
+                    <div className="bg-zinc-900/80 p-2.5 rounded-xl border border-zinc-800/60">
+                      <span className="text-[10px] text-zinc-500 block">Horas / TSS semana</span>
+                      <strong className="text-zinc-200">{b.avgWeeklyHours} h</strong>
+                      <span className="text-[10px] text-zinc-400 block">{b.avgWeeklyTss} TSS</span>
                     </div>
                   </div>
-
-                  {/* Coach Directive */}
-                  <div className="pt-3 border-t border-zinc-800 text-[11px] text-zinc-400 italic">
-                    "{meso.coachNote}"
+                  <div className="bg-zinc-900/50 p-3 rounded-xl border border-zinc-800/60 text-xs flex items-center justify-between">
+                    <span className="text-zinc-400 text-[11px]">Bajo AeT (ZoneSense):</span>
+                    <span className="text-emerald-400 font-bold text-[11px]">{b.aerobicPct !== null ? `${b.aerobicPct}%` : 'sin datos'}</span>
                   </div>
+                  <div className="text-[11px] text-zinc-500">D+ total del bloque: <strong className="text-zinc-300">+{b.totalGainM} m</strong></div>
                 </div>
               ))}
             </div>
-
-            {/* Aerobic Base Expansion Visual Graph */}
-            <div className="mt-8 bg-zinc-950 p-6 rounded-2xl border border-zinc-800 space-y-4">
-              <h4 className="text-xs font-bold text-zinc-200 uppercase tracking-wider flex items-center space-x-2">
-                <TrendingUp className="w-4 h-4 text-emerald-400" />
-                <span>Velocidad de Crucero al Umbral AeT ({profile.aetHr} bpm)</span>
-              </h4>
-              <p className="text-xs text-zinc-400 leading-relaxed">
-                El verdadero marcador de una base aeróbica ensanchada en trail running no es subir el pulso, sino <strong>ir más rápido y subir pendientes más pronunciadas manteniendo las mismas pulsaciones de 142 bpm</strong> y quemando grasa intramuscular.
-              </p>
-
-              {/* Progress step bars */}
-              <div className="space-y-3 pt-2">
-                <div>
-                  <div className="flex justify-between text-xs mb-1">
-                    <span className="text-zinc-400">Mesociclo 1 (Inicio): 6:35 min/km @ 142 bpm</span>
-                    <span className="text-amber-400 font-mono font-bold">Deriva 6.8% (ADS)</span>
-                  </div>
-                  <div className="w-full bg-zinc-900 h-2.5 rounded-full overflow-hidden">
-                    <div className="bg-amber-500 h-full rounded-full" style={{ width: '60%' }} />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex justify-between text-xs mb-1">
-                    <span className="text-zinc-200 font-bold">Mesociclo 2 (Actual): 5:58 min/km @ 142 bpm (-37 seg/km de mejora)</span>
-                    <span className="text-emerald-400 font-mono font-bold">Deriva 4.2% (&lt; 5% Target)</span>
-                  </div>
-                  <div className="w-full bg-zinc-900 h-2.5 rounded-full overflow-hidden">
-                    <div className="bg-emerald-500 h-full rounded-full" style={{ width: '85%' }} />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex justify-between text-xs mb-1">
-                    <span className="text-zinc-500">Mesociclo 3 (Objetivo): 5:35 min/km en falso llano y 750m D+/h en ascenso continuo</span>
-                    <span className="text-zinc-500 font-mono">Deriva &lt; 3.5%</span>
-                  </div>
-                  <div className="w-full bg-zinc-900 h-2.5 rounded-full overflow-hidden">
-                    <div className="bg-zinc-700 h-full rounded-full" style={{ width: '100%' }} />
-                  </div>
-                </div>
-              </div>
-            </div>
-
           </div>
         </div>
       )}
@@ -713,28 +496,28 @@ export const PerformanceSummaryView: React.FC<PerformanceSummaryViewProps> = ({
 
               {/* Big Display */}
               <div className="flex items-baseline space-x-3">
-                <span className="text-4xl sm:text-5xl font-black text-zinc-100 tracking-tight">{profile.weightKg}</span>
+                <span className="text-4xl sm:text-5xl font-black text-zinc-100 tracking-tight">{currentWeight || '—'}</span>
                 <span className="text-base text-zinc-400 font-bold">kg actuales</span>
-                <span className="text-xs text-zinc-500 ml-auto font-mono">Altura: {profile.heightCm} cm</span>
+                <span className="text-xs text-zinc-500 ml-auto font-mono">Altura: {profile.heightCm || '—'} cm</span>
               </div>
 
               {/* Progress to target */}
               <div className="space-y-2">
                 <div className="flex justify-between text-xs">
-                  <span className="text-zinc-400">Meta Transvulcania:</span>
-                  <span className="text-emerald-400 font-bold">{profile.targetRaceWeightKg || 67.5} kg</span>
+                  <span className="text-zinc-400">Peso objetivo:</span>
+                  <span className="text-emerald-400 font-bold">{targetWeight || '—'} kg</span>
                 </div>
                 <div className="w-full bg-zinc-950 rounded-full h-3 overflow-hidden border border-zinc-800">
                   <div 
                     className="bg-gradient-to-r from-amber-500 to-emerald-500 h-full rounded-full transition-all duration-700"
                     style={{ 
-                      width: `${Math.min(100, Math.max(10, 100 - (weightDeltaToTarget / 10) * 100))}%` 
+                      width: `${weightProgressPct}%` 
                     }}
                   />
                 </div>
                 <div className="flex justify-between text-[11px] text-zinc-500">
-                  <span>Punto de partida (73.2 kg)</span>
-                  <span className="text-amber-400 font-semibold">{weightDeltaToTarget > 0 ? `-${weightDeltaToTarget} kg restantes` : '¡Peso óptimo conseguido!'}</span>
+                  <span>Primer pesaje: {startWeight || '—'} kg</span>
+                  <span className="text-amber-400 font-semibold">{targetWeight <= 0 ? 'Define tu peso objetivo' : weightDeltaToTarget > 0 ? `-${weightDeltaToTarget} kg restantes` : '¡Peso objetivo alcanzado!'}</span>
                 </div>
               </div>
 
@@ -743,13 +526,13 @@ export const PerformanceSummaryView: React.FC<PerformanceSummaryViewProps> = ({
                 <div className="bg-zinc-950 p-3 rounded-2xl border border-zinc-800 text-xs">
                   <span className="text-[10px] text-zinc-500 block uppercase">Índice Masa Corporal</span>
                   <strong className="text-zinc-200 text-base">{currentBmi}</strong>
-                  <span className="text-[10px] text-emerald-400 block">Normopeso atlético</span>
+                  <span className="text-[10px] text-zinc-400 block">peso / altura²</span>
                 </div>
 
                 <div className="bg-zinc-950 p-3 rounded-2xl border border-zinc-800 text-xs">
                   <span className="text-[10px] text-zinc-500 block uppercase">% Grasa Corporal</span>
-                  <strong className="text-zinc-200 text-base">{weightHistory[weightHistory.length - 1]?.bodyFatPct || 14.5}%</strong>
-                  <span className="text-[10px] text-zinc-400 block">Meta: 11.5 - 12.0%</span>
+                  <strong className="text-zinc-200 text-base">{latestBodyFat != null ? `${latestBodyFat}%` : '—'}</strong>
+                  <span className="text-[10px] text-zinc-400 block">{latestBodyFat != null ? 'Último pesaje con % grasa' : 'Sin registrar'}</span>
                 </div>
               </div>
             </div>
@@ -762,32 +545,11 @@ export const PerformanceSummaryView: React.FC<PerformanceSummaryViewProps> = ({
                   <span>Impacto Biomecánico &amp; Fisiológico en Transvulcania</span>
                 </div>
                 <h3 className="text-lg font-black text-zinc-100 mt-1">
-                  ¿Por qué cada kilogramo optimizado vale oro en La Palma?
+                  Peso y desnivel
                 </h3>
                 <p className="text-xs text-zinc-300 mt-2 leading-relaxed">
-                  Para elevar 1 kg de masa verticalmente a lo largo de los <strong className="text-amber-400">+4.350 metros</strong> de desnivel positivo de Transvulcania (desde el nivel del mar en Fuencaliente hasta los 2.426m del Roque de los Muchachos y subida final):
+                  Cada kilo de más hay que subirlo durante todo el desnivel positivo de la carrera. La app no calcula kcal ni minutos ahorrados por kilo: no hay un dato validado para ti.
                 </p>
-              </div>
-
-              {/* Energy Calculation Display */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="bg-zinc-950/80 p-4 rounded-2xl border border-zinc-800 text-center">
-                  <div className="text-[10px] text-zinc-500 uppercase font-bold">Ahorro Metabólico</div>
-                  <div className="text-xl font-black text-emerald-400 mt-1">~{estimatedTransvulcaniaKcal} kcal</div>
-                  <div className="text-[10px] text-zinc-400 mt-1">Equivale a <strong>{Math.round(estimatedTransvulcaniaKcal / 4)}g</strong> de glucógeno no consumido</div>
-                </div>
-
-                <div className="bg-zinc-950/80 p-4 rounded-2xl border border-zinc-800 text-center">
-                  <div className="text-[10px] text-zinc-500 uppercase font-bold">Tiempo Estimado Ahorrado</div>
-                  <div className="text-xl font-black text-amber-400 mt-1">~{estimatedTransvulcaniaMinutes} min</div>
-                  <div className="text-[10px] text-zinc-400 mt-1">A igualdad de potencia aeróbica en umbral AeT</div>
-                </div>
-
-                <div className="bg-zinc-950/80 p-4 rounded-2xl border border-zinc-800 text-center">
-                  <div className="text-[10px] text-zinc-500 uppercase font-bold">Protección Articular D-</div>
-                  <div className="text-xl font-black text-sky-400 mt-1">-4.057 m</div>
-                  <div className="text-[10px] text-zinc-400 mt-1">Menos microimpactos excéntricos en rodillas y cuádriceps</div>
-                </div>
               </div>
 
               <div className="bg-zinc-950/60 p-3 rounded-xl border border-zinc-800/80 text-[11px] text-zinc-400">

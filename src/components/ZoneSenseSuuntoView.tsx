@@ -159,7 +159,7 @@ export const ZoneSenseSuuntoView: React.FC<ZoneSenseSuuntoViewProps> = ({
               <span className="text-[10px] font-mono text-emerald-400 font-bold">100% Plug & Play</span>
             </div>
             <p className="text-zinc-300 leading-relaxed">
-              <strong>¿No tienes API de Suunto? ¡No importa!</strong> Exporta el archivo <code>.fit</code> desde la app de Suunto en tu móvil o web y súbelo en la pestaña <em>"Analizador de Archivos .FIT"</em>. Miguel lee de inmediato las pulsaciones segundo a segundo, la curva DFA a1 de ZoneSense, la cadencia y el desnivel.
+              <strong>¿No tienes API de Suunto? ¡No importa!</strong> Exporta el archivo <code>.fit</code> desde la app de Suunto en tu móvil o web y súbelo en la pestaña <em>"Analizador de Archivos .FIT"</em>. Miguel lee de inmediato las pulsaciones segundo a segundo, la cadencia y el desnivel. (El .FIT no incluye DFA a1: el reparto de zonas se hace por FC con tus umbrales.)
             </p>
           </div>
         </div>
@@ -448,9 +448,9 @@ export const ZoneSenseSuuntoView: React.FC<ZoneSenseSuuntoViewProps> = ({
                 {/* ZoneSense / Uphill Athlete Metabolic Distribution */}
                 <div className="space-y-3 bg-zinc-900 p-5 rounded-2xl border border-zinc-800">
                   <div className="flex justify-between items-center text-xs">
-                    <span className="font-bold text-zinc-200">Distribución Metabólica (Calibrada con tu AeT de {profile.aetHr} bpm):</span>
-                    <span className="font-bold text-emerald-400">
-                      ZoneSense Est: DFA a1 ~ {parsedFitData.estimatedDfaAlpha1?.toFixed(2)}
+                    <span className="font-bold text-zinc-200">Tiempo por FC (AeT {profile.aetHr} bpm / AnT {profile.antHr} bpm):</span>
+                    <span className="font-bold text-zinc-400">
+                      {parsedFitData.hasHeartRate ? 'Calculado por FC, no ZoneSense' : 'El archivo no trae FC'}
                     </span>
                   </div>
 
@@ -459,24 +459,24 @@ export const ZoneSenseSuuntoView: React.FC<ZoneSenseSuuntoViewProps> = ({
                     <div
                       style={{ width: `${parsedFitData.timeInAerobicPct}%` }}
                       className="bg-emerald-500 h-full"
-                      title={`Aeróbico Z1-Z2: ${parsedFitData.timeInAerobicPct}%`}
+                      title={`FC ≤ AeT: ${parsedFitData.timeInAerobicPct}%`}
                     />
                     <div
                       style={{ width: `${parsedFitData.timeInTransitionPct}%` }}
                       className="bg-amber-500 h-full"
-                      title={`Transición Z3: ${parsedFitData.timeInTransitionPct}%`}
+                      title={`AeT < FC ≤ AnT: ${parsedFitData.timeInTransitionPct}%`}
                     />
                     <div
                       style={{ width: `${parsedFitData.timeInAnaerobicPct}%` }}
                       className="bg-red-500 h-full"
-                      title={`Anaeróbico Z4-Z5: ${parsedFitData.timeInAnaerobicPct}%`}
+                      title={`FC > AnT: ${parsedFitData.timeInAnaerobicPct}%`}
                     />
                   </div>
 
                   <div className="flex justify-between text-xs text-zinc-400">
-                    <span className="text-emerald-400">Aeróbico: {parsedFitData.timeInAerobicPct}%</span>
-                    <span className="text-amber-400">Transición (Z3): {parsedFitData.timeInTransitionPct}%</span>
-                    <span className="text-red-400">Anaeróbico: {parsedFitData.timeInAnaerobicPct}%</span>
+                    <span className="text-emerald-400">≤ AeT: {parsedFitData.timeInAerobicPct}%</span>
+                    <span className="text-amber-400">AeT–AnT: {parsedFitData.timeInTransitionPct}%</span>
+                    <span className="text-red-400">&gt; AnT: {parsedFitData.timeInAnaerobicPct}%</span>
                   </div>
                 </div>
 

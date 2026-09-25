@@ -13,10 +13,12 @@ export interface ParsedFitResult {
   avgSpeedKmh?: number;
   maxSpeedKmh?: number;
   calories?: number;
-  estimatedDfaAlpha1?: number;
-  timeInAerobicPct: number; // DFA a1 >= 0.75 or HR <= AeT
-  timeInTransitionPct: number; // 0.50 - 0.75 or AeT < HR <= AnT
-  timeInAnaerobicPct: number; // < 0.50 or HR > AnT
+  // % del tiempo por FRECUENCIA CARDÍACA respecto a tus umbrales (no es
+  // ZoneSense: el .FIT no trae DFA a1, así que no se estima).
+  hasHeartRate: boolean;
+  timeInAerobicPct: number; // FC <= AeT
+  timeInTransitionPct: number; // AeT < FC <= AnT
+  timeInAnaerobicPct: number; // FC > AnT
   recordsSample: Array<{
     timestamp: string;
     heartRate?: number;
@@ -105,7 +107,7 @@ export function parseFitFile(
           }
         }
 
-        // Calculate time distribution across Uphill Athlete zones & ZoneSense estimates
+        // Distribución del tiempo por FC respecto a AeT / AnT del perfil
         let aerobicCount = 0;
         let transitionCount = 0;
         let anaerobicCount = 0;
@@ -129,18 +131,6 @@ export function parseFitFile(
         const timeInTransitionPct = Math.round((transitionCount / totalPointsSafe) * 100);
         const timeInAnaerobicPct = Math.round((anaerobicCount / totalPointsSafe) * 100);
 
-        // Estimate DFA alpha-1 overall index based on HR distribution and drift
-        // If 85%+ time is below AeT, DFA a1 is typically ~0.80 - 0.95
-        let estimatedDfaAlpha1 = 0.85;
-        if (timeInAnaerobicPct > 20) {
-          estimatedDfaAlpha1 = 0.45;
-        } else if (timeInTransitionPct > 40) {
-          estimatedDfaAlpha1 = 0.65;
-        } else if (timeInAerobicPct >= 75) {
-          estimatedDfaAlpha1 = 0.82;
-        } else {
-          estimatedDfaAlpha1 = 0.72;
-        }
 
         // Sample records for UI display (downsample to ~50-100 points for smooth charts)
         const sampleStep = Math.max(1, Math.floor(records.length / 80));
@@ -166,7 +156,7 @@ export function parseFitFile(
           avgSpeedKmh: avgSpeedKmh ? Math.round(avgSpeedKmh * 10) / 10 : undefined,
           maxSpeedKmh: maxSpeedKmh ? Math.round(maxSpeedKmh * 10) / 10 : undefined,
           calories,
-          estimatedDfaAlpha1,
+          hasHeartRate: totalHrPoints > 0,
           timeInAerobicPct,
           timeInTransitionPct,
           timeInAnaerobicPct,

@@ -53,56 +53,56 @@ export const SetupGuideModal: React.FC<SetupGuideModalProps> = ({
 
   // Form states
   const [name, setName] = useState(profile.name || 'Atleta');
-  const [age, setAge] = useState(profile.age || 50);
-  const [heightCm, setHeightCm] = useState(profile.heightCm || 176);
-  const [weightKg, setWeightKg] = useState(profile.weightKg || 71.5);
-  const [targetRaceWeightKg, setTargetRaceWeightKg] = useState(profile.targetRaceWeightKg || 67.5);
+  const [age, setAge] = useState(profile.age || 0);
+  const [heightCm, setHeightCm] = useState(profile.heightCm || 0);
+  const [weightKg, setWeightKg] = useState(profile.weightKg || 0);
+  const [targetRaceWeightKg, setTargetRaceWeightKg] = useState(profile.targetRaceWeightKg || 0);
   
   // Physiology states
-  const [restingHr, setRestingHr] = useState(profile.restingHr || 48);
-  const [maxHr, setMaxHr] = useState(profile.maxHr || 178);
-  const [aetHr, setAetHr] = useState(profile.aetHr || 138);
-  const [antHr, setAntHr] = useState(profile.antHr || 162);
-  const [baselineHrv, setBaselineHrv] = useState(profile.baselineHrv || 51.5);
+  const [restingHr, setRestingHr] = useState(profile.restingHr || 0);
+  const [maxHr, setMaxHr] = useState(profile.maxHr || 0);
+  const [aetHr, setAetHr] = useState(profile.aetHr || 0);
+  const [antHr, setAntHr] = useState(profile.antHr || 0);
+  const [baselineHrv, setBaselineHrv] = useState(profile.baselineHrv || 0);
 
   // Routine states
-  const [availableDays, setAvailableDays] = useState(profile.availableDaysPerWeek || 4);
+  const [availableDays, setAvailableDays] = useState(profile.availableDaysPerWeek || 0);
   const [longRunDay, setLongRunDay] = useState(profile.preferredLongRunDay || 'saturday');
-  const [yearsTrail, setYearsTrail] = useState(profile.yearsTrailRunning || 12);
-  const [currentVolume, setCurrentVolume] = useState(profile.currentWeeklyVolumeHours || 6.5);
+  const [yearsTrail, setYearsTrail] = useState(profile.yearsTrailRunning || 0);
+  const [currentVolume, setCurrentVolume] = useState(profile.currentWeeklyVolumeHours || 0);
 
   // Ultra Experience & Miguel's Interview
   const initialUltra = profile.ultraExperience || {};
-  const [longestKm, setLongestKm] = useState(initialUltra.longestRaceKm || 85);
-  const [longestDPlus, setLongestDPlus] = useState(initialUltra.longestRaceElevationGainM || 5200);
-  const [completedUltras, setCompletedUltras] = useState(initialUltra.completedUltras || 'GTP 60k, Ultra Sierra Nevada 75k, CSP 110k');
+  const [longestKm, setLongestKm] = useState(initialUltra.longestRaceKm || 0);
+  const [longestDPlus, setLongestDPlus] = useState(initialUltra.longestRaceElevationGainM || 0);
+  const [completedUltras, setCompletedUltras] = useState(initialUltra.completedUltras || '');
   const [downhillAbility, setDownhillAbility] = useState<'beginner' | 'intermediate' | 'expert_technical'>(
     initialUltra.downhillTechnicalAbility || 'intermediate'
   );
   const [polesUsage, setPolesUsage] = useState<'never' | 'steep_only' | 'expert_all_hills'>(
     initialUltra.polesUsage || 'expert_all_hills'
   );
-  const [sleepHours, setSleepHours] = useState(initialUltra.sleepQualityAvgHours || 7.0);
+  const [sleepHours, setSleepHours] = useState(initialUltra.sleepQualityAvgHours || 0);
   const [stressLevel, setStressLevel] = useState<'low' | 'moderate' | 'high_physical' | 'high_mental'>(
     initialUltra.dailyWorkStressLevel || 'moderate'
   );
   const [recoveryCapacity, setRecoveryCapacity] = useState(
-    initialUltra.recoveryCapacityAt50 || 'A mis 50 años necesito entre 48 y 72h tras tiradas largas con mucho desnivel negativo para disipar la fatiga neuromuscular.'
+    initialUltra.recoveryCapacityAt50 || ''
   );
   const [selectedJoints, setSelectedJoints] = useState<string[]>(
-    initialUltra.vulnerableJointsOrTissues || ['Tendón de Aquiles', 'Sóleos excéntrico', 'Cintilla iliotibial']
+    initialUltra.vulnerableJointsOrTissues || []
   );
   const [heatTolerance, setHeatTolerance] = useState<'poor' | 'moderate' | 'strong'>(
     initialUltra.heatTolerance || 'moderate'
   );
   const [gutHistory, setGutHistory] = useState(
-    initialUltra.gutIssuesHistory || 'Tolerancia aceptable hasta 5h; a partir de ahí necesito comida salada y repartir los carbohidratos en tomas pequeñas.'
+    initialUltra.gutIssuesHistory || ''
   );
   const [motivation, setMotivation] = useState(
-    initialUltra.personalMotivation || 'Coronar Transvulcania a mis 50 años con preparación quirúrgica, respetando mi longevidad deportiva y disfrutando la montaña.'
+    initialUltra.personalMotivation || ''
   );
   const [hasVolcanicExp, setHasVolcanicExp] = useState<boolean>(
-    profile.advancedPhysiologicalProfile?.highMountain?.hasVolcanicTerrainExperience ?? true
+    profile.advancedPhysiologicalProfile?.highMountain?.hasVolcanicTerrainExperience ?? false
   );
 
   // Datos de Suunto: etiquetas Suunto/Manual y relleno automático al sincronizar
@@ -165,7 +165,7 @@ export const SetupGuideModal: React.FC<SetupGuideModalProps> = ({
 
   // Calculations
   const heightM = heightCm / 100;
-  const currentBmi = (weightKg / (heightM * heightM)).toFixed(1);
+  const currentBmi = weightKg > 0 && heightM > 0 ? (weightKg / (heightM * heightM)).toFixed(1) : '—';
   const weightDiff = Number((weightKg - targetRaceWeightKg).toFixed(1));
   const hasAdsCalculated = (antHr - aetHr) > 20 || ((antHr - aetHr) / antHr) > 0.1;
 
@@ -231,7 +231,7 @@ export const SetupGuideModal: React.FC<SetupGuideModalProps> = ({
   };
 
   const stepsList = [
-    { num: 1, title: 'Entrevista & Experiencia', sub: 'Conociendo al atleta de 50 años' },
+    { num: 1, title: 'Entrevista & Experiencia', sub: 'Conociendo al atleta' },
     { num: 2, title: 'Umbrales & Fisiología', sub: 'AeT, AnT, FC Reposo y ADS' },
     { num: 3, title: 'Objetivo & Rutina', sub: 'Transvulcania y 4 días/semana' },
     { num: 4, title: 'Datos & Suunto', sub: 'Sincronización y archivos FIT' },
@@ -677,7 +677,7 @@ export const SetupGuideModal: React.FC<SetupGuideModalProps> = ({
                   <span>Objetivo Diana & Calendario Semanal</span>
                 </div>
                 <p className="text-zinc-300 leading-relaxed">
-                  Para un corredor de 50 años con responsabilidades y vida real, la consistencia supera al volumen suicida. La fórmula recomendada por Jason Koop para ultra es <strong>3 sesiones clave entre semana + 1 tirada larga el fin de semana</strong>.
+                  Para un corredor con responsabilidades y vida real, la consistencia supera al volumen suicida. La fórmula recomendada por Jason Koop para ultra es <strong>3 sesiones clave entre semana + 1 tirada larga el fin de semana</strong>.
                 </p>
               </div>
 
@@ -953,7 +953,7 @@ export const SetupGuideModal: React.FC<SetupGuideModalProps> = ({
                 <div className="space-y-1.5 text-[11px]">
                   <div className="flex items-center space-x-2 text-emerald-400">
                     <Check className="w-3.5 h-3.5" />
-                    <span>Perfil de atleta de 50 años y entrevista ultra registrada</span>
+                    <span>Perfil de atleta y entrevista ultra registrada</span>
                   </div>
                   <div className="flex items-center space-x-2 text-emerald-400">
                     <Check className="w-3.5 h-3.5" />

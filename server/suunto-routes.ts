@@ -283,10 +283,14 @@ export function registerSuuntoRoutes(app: Express) {
       const allWorkoutRows = Array.isArray(workoutRows) ? workoutRows : [];
       const sleepList = Array.isArray(sleepRows) ? sleepRows : [];
       const workouts = mapSuuntoWorkouts(allWorkoutRows);
-      const checkIns = mapSuuntoCheckIns(sleepList, Array.isArray(recoveryRows) ? recoveryRows : []);
       const profileFromSuunto = deriveProfileFromSuunto(
         allWorkoutRows.filter((w) => w.startTime >= profileFromMs),
         sleepList,
+      );
+      const checkIns = mapSuuntoCheckIns(
+        sleepList,
+        Array.isArray(recoveryRows) ? recoveryRows : [],
+        profileFromSuunto.values.baselineHrv,
       );
       const oldest = workouts.reduce<string | null>((min, w) => (!min || w.date < min ? w.date : min), null);
 

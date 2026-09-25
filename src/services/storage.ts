@@ -37,6 +37,7 @@ import {
   SAMPLE_ADAPTATION_STAGES
 } from './sampleData';
 import { computePmcSeries, localDateKey } from '../utils/trainingLoad';
+import { rebaseSuuntoCheckIn } from '../utils/readiness';
 
 const STORAGE_KEYS = {
   PROFILE: 'uphill_coach_profile',
@@ -74,7 +75,69 @@ export const DEFAULT_TARGET_RACE: TargetRace = {
   notes: 'Objetivo A principal. Requiere adaptación extrema al desnivel negativo (fuerza excéntrica de cuádriceps) y una base aeróbica sólida para gestionar la altitud y el calor.'
 };
 
+// Perfil vacío: nada inventado. Los datos fisiológicos llegan de Suunto
+// (sincronización) o los introduce el atleta; 0 / '' = sin dato.
 export const DEFAULT_PROFILE: AthleteProfile = {
+  name: 'Atleta',
+  age: 0,
+  heightCm: 0,
+  weightKg: 0,
+  targetRaceWeightKg: 0,
+  weightHistory: [],
+  restingHr: 0,
+  maxHr: 0,
+  aetHr: 0,
+  antHr: 0,
+  hasAds: false,
+  driftTestResultPct: undefined,
+  yearsTrailRunning: 0,
+  availableDaysPerWeek: 0,
+  preferredLongRunDay: 'saturday',
+  injuryHistory: '',
+  strengthEquipment: 'none_bodyweight',
+  currentWeeklyVolumeHours: 0,
+  targetRaceName: 'Transvulcania 2027',
+  dataSource: 'pending',
+  setupCompleted: false,
+  setupStep: 1,
+};
+
+/**
+ * Limpia de un perfil guardado los datos del antiguo perfil de ejemplo que el
+ * atleta nunca cambió (textos idénticos, valores numéricos que Suunto aún no
+ * ha rellenado ni el atleta ha fijado a mano).
+ */
+function migrateLegacyProfile(p: AthleteProfile): { profile: AthleteProfile; changed: boolean } {
+  const L = LEGACY_SAMPLE_PROFILE;
+  const next: AthleteProfile = { ...p };
+  let changed = false;
+  const same = (x: unknown, y: unknown) => JSON.stringify(x) === JSON.stringify(y);
+
+  if (next.injuryHistory === L.injuryHistory) { next.injuryHistory = ''; changed = true; }
+  if (next.ultraExperience && same(next.ultraExperience, L.ultraExperience)) {
+    next.ultraExperience = undefined;
+    if (next.yearsTrailRunning === L.yearsTrailRunning) next.yearsTrailRunning = 0;
+    changed = true;
+  }
+  if (next.advancedPhysiologicalProfile && same(next.advancedPhysiologicalProfile, L.advancedPhysiologicalProfile)) {
+    next.advancedPhysiologicalProfile = undefined;
+    changed = true;
+  }
+  // Campos que rellena Suunto: si siguen con el valor de ejemplo y nadie los
+  // ha fijado (ni Suunto ni el atleta), se vacían; la próxima sync los rellena.
+  const suuntoFields = ['maxHr', 'aetHr', 'antHr', 'restingHr', 'currentWeeklyVolumeHours', 'availableDaysPerWeek'] as const;
+  for (const f of suuntoFields) {
+    if (!next.fieldSources?.[f] && next[f] === L[f]) { (next as any)[f] = 0; changed = true; }
+  }
+  if (!next.fieldSources?.hasAds && next.hasAds === L.hasAds && !next.aetHr) { next.hasAds = false; changed = true; }
+  if (next.weightHistory && same(next.weightHistory, L.weightHistory)) { next.weightHistory = []; changed = true; }
+  return { profile: next, changed };
+}
+
+// Perfil de EJEMPLO que usaban versiones anteriores como perfil por defecto.
+// Solo se conserva para detectar y limpiar esos datos inventados en perfiles
+// ya guardados (ver migrateLegacyProfile). No se muestra ni se envía a la IA.
+const LEGACY_SAMPLE_PROFILE: AthleteProfile = {
   name: 'Atleta',
   age: 50,
   heightCm: 176, // 1.76 m
@@ -206,14 +269,30 @@ export const StorageService = {
   getProfile(): AthleteProfile {
     try {
       const stored = localStorage.getItem(STORAGE_KEYS.PROFILE);
-      return stored ? JSON.parse(stored) : DEFAULT_PROFILE;
+      if (!stored) return DEFAULT_PROFILE;
+      const { profile, changed } = migrateLegacyProfile(JSON.parse(stored));
+      if (changed) localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(profile));
+      return profile;
     } catch {
       return DEFAULT_PROFILE;
     }
   },
 
   saveProfile(profile: AthleteProfile): void {
+    const previousBaseline = this.getProfile().baselineHrv;
     localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(profile));
+    // Si cambia la HRV de referencia, los check-ins de Suunto se recalculan con ella
+    if (profile.baselineHrv && profile.baselineHrv !== previousBaseline) {
+      try {
+        const raw = JSON.parse(localStorage.getItem(STORAGE_KEYS.DAILY_CHECKINS) || '[]');
+        if (Array.isArray(raw)) {
+          const rebased = raw.map((c: DailyCheckIn) => rebaseSuuntoCheckIn(c, profile.baselineHrv as number));
+          localStorage.setItem(STORAGE_KEYS.DAILY_CHECKINS, JSON.stringify(rebased));
+        }
+      } catch {
+        // check-ins corruptos: se dejan como están
+      }
+    }
   },
 
   getTargetRace(): TargetRace {
@@ -330,6 +409,7 @@ export const StorageService = {
       actualDurationMin: sw.actualDurationMin,
       actualDistanceKm: sw.actualDistanceKm,
       actualElevationGainM: sw.actualElevationGainM,
+      actualElevationLossM: sw.actualElevationLossM,
       actualAvgHr: sw.actualAvgHr,
       actualMaxHr: sw.actualMaxHr,
       actualTss: sw.actualTss,
@@ -343,6 +423,9 @@ export const StorageService = {
         Object.assign(existing, measured(sw), {
           zoneSenseBreakdown: sw.zoneSenseBreakdown ?? existing.zoneSenseBreakdown,
         });
+        // Entreno creado por la importación: versiones anteriores le ponían un
+        // objetivo ZoneSense ficticio ("DFA a1 > 0.75") a cualquier actividad.
+        if (existing.id === `suunto-${sw.suuntoWorkoutKey}`) existing.zoneSenseTarget = undefined;
         continue;
       }
       const planned = workouts.find(
@@ -373,7 +456,10 @@ export const StorageService = {
     const testDataActive = this.isTestDataActive();
     const byDate = new Map(stored.map((c) => [c.date, c]));
     let checkInsAdded = 0;
-    for (const ci of suuntoCheckIns) {
+    // Todos los check-ins de Suunto contra la HRV de referencia del perfil
+    const profileBaseline = this.getProfile().baselineHrv || 0;
+    for (const rawCi of suuntoCheckIns) {
+      const ci = rebaseSuuntoCheckIn(rawCi, profileBaseline);
       const existing = byDate.get(ci.date);
       if (!existing || existing.source === 'suunto' || testDataActive) {
         if (!existing) checkInsAdded++;
@@ -681,10 +767,16 @@ Puedes revisar tus umbrales (AeT y AnT) en tu perfil, registrar tu test de deriv
     try {
       const stored = localStorage.getItem(STORAGE_KEYS.WEIGHT_HISTORY);
       if (stored) return JSON.parse(stored);
-      return SAMPLE_WEIGHT_HISTORY;
+      return this.isTestDataActive() ? SAMPLE_WEIGHT_HISTORY : [];
     } catch {
-      return SAMPLE_WEIGHT_HISTORY;
+      return [];
     }
+  },
+
+  /** Peso actual: el último pesaje registrado; si no hay ninguno, el del perfil. */
+  getCurrentWeightKg(): number {
+    const history = [...this.getWeightHistory()].sort((a, b) => a.date.localeCompare(b.date));
+    return history.length > 0 ? history[history.length - 1].weightKg : (this.getProfile().weightKg || 0);
   },
 
   saveWeightHistory(history: WeightEntry[]): void {
@@ -697,12 +789,12 @@ Puedes revisar tus umbrales (AeT y AnT) en tu perfil, registrar tu test de deriv
       ...entry,
       id: `w-${Date.now()}`
     };
-    const updated = [...history, newEntry].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    const updated = [...history, newEntry].sort((a, b) => a.date.localeCompare(b.date));
     this.saveWeightHistory(updated);
 
-    // Also update athlete profile current weight
+    // El peso del perfil es siempre el del último pesaje (por fecha)
     const profile = this.getProfile();
-    profile.weightKg = entry.weightKg;
+    profile.weightKg = updated[updated.length - 1].weightKg;
     profile.weightHistory = updated;
     this.saveProfile(profile);
 
@@ -712,6 +804,12 @@ Puedes revisar tus umbrales (AeT y AnT) en tu perfil, registrar tu test de deriv
   deleteWeightEntry(id: string): WeightEntry[] {
     const history = this.getWeightHistory().filter(e => e.id !== id);
     this.saveWeightHistory(history);
+    if (history.length > 0) {
+      const profile = this.getProfile();
+      profile.weightKg = [...history].sort((a, b) => a.date.localeCompare(b.date))[history.length - 1].weightKg;
+      profile.weightHistory = history;
+      this.saveProfile(profile);
+    }
     return history;
   },
 
@@ -720,9 +818,9 @@ Puedes revisar tus umbrales (AeT y AnT) en tu perfil, registrar tu test de deriv
     try {
       const stored = localStorage.getItem(STORAGE_KEYS.WEEKLY_SUMMARIES);
       if (stored) return JSON.parse(stored);
-      return SAMPLE_WEEKLY_SUMMARIES;
+      return this.isTestDataActive() ? SAMPLE_WEEKLY_SUMMARIES : [];
     } catch {
-      return SAMPLE_WEEKLY_SUMMARIES;
+      return [];
     }
   },
 
@@ -735,9 +833,9 @@ Puedes revisar tus umbrales (AeT y AnT) en tu perfil, registrar tu test de deriv
     try {
       const stored = localStorage.getItem(STORAGE_KEYS.MESOCYCLE_PROGRESSION);
       if (stored) return JSON.parse(stored);
-      return SAMPLE_MESOCYCLE_PROGRESSION;
+      return this.isTestDataActive() ? SAMPLE_MESOCYCLE_PROGRESSION : [];
     } catch {
-      return SAMPLE_MESOCYCLE_PROGRESSION;
+      return [];
     }
   },
 

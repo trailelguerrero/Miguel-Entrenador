@@ -267,10 +267,6 @@ export default function App() {
         return res.message;
       }
 
-      const summary = StorageService.mergeSuuntoSync(res.workouts || [], res.checkIns || []);
-      setWorkouts(StorageService.getWorkouts());
-      setTodayCheckIn(StorageService.getTodayCheckIn());
-
       // Perfil automático: Suunto rellena sus campos (sin pisar los manuales)
       if (res.profileFromSuunto) {
         const { profile: newProfile, changed } = applySuuntoProfile(StorageService.getProfile(), res.profileFromSuunto);
@@ -286,6 +282,11 @@ export default function App() {
           askMiguelAboutSuuntoProfile(newProfile, changed);
         }
       }
+
+      // Después del perfil, para que los check-ins usen su HRV de referencia
+      const summary = StorageService.mergeSuuntoSync(res.workouts || [], res.checkIns || []);
+      setWorkouts(StorageService.getWorkouts());
+      setTodayCheckIn(StorageService.getTodayCheckIn());
 
       const message = `${res.message} Nuevos: ${summary.addedWorkouts} entrenos añadidos, ${summary.completedPlanned} sesiones planificadas completadas, ${summary.checkInsAdded} check-ins.`;
       handleUpdateSuuntoConfig({
@@ -842,6 +843,7 @@ Son exactamente 4 días de carga (3 entre semana y la tirada larga del fin de se
         {activeTab === 'performance' && (
           <PerformanceSummaryView
             profile={profile}
+            workouts={workouts}
             checkIns={StorageService.getCheckIns()}
             onScheduleDeload={handleScheduleDeload}
             onOpenFartlekGenerator={() => setIsFartlekModalOpen(true)}

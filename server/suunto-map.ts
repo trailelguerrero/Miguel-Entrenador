@@ -114,13 +114,14 @@ export function mapSuuntoWorkouts(rows: SuuntoWorkoutRow[]): Workout[] {
       title,
       type,
       plannedDurationMin: durationMin,
-      zoneSenseTarget: 'DFA a1 > 0.75 (Aeróbico puro)',
+      // Sin objetivo de intensidad: es una actividad ya hecha, no una sesión planificada
       description: `Actividad importada de Suunto (${sport}).`,
       mainSet: '',
       completed: true,
       actualDurationMin: durationMin,
       actualDistanceKm: distanceKm,
       actualElevationGainM: row.totalAscentM != null ? round(row.totalAscentM) : undefined,
+      actualElevationLossM: row.totalDescentM != null ? round(row.totalDescentM) : undefined,
       actualAvgHr: row.avgHR || undefined,
       actualMaxHr: row.maxHR || undefined,
       zoneSenseBreakdown,
@@ -137,7 +138,11 @@ function addDays(date: string, days: number): string {
 }
 
 /** Un check-in por mañana, con la noche principal (no siestas) que termina ese día. */
-export function mapSuuntoCheckIns(sleep: SuuntoSleepSession[], recovery: SuuntoRecoveryDay[]): DailyCheckIn[] {
+export function mapSuuntoCheckIns(
+  sleep: SuuntoSleepSession[],
+  recovery: SuuntoRecoveryDay[],
+  baselineHrv?: number,
+): DailyCheckIn[] {
   const nights = new Map<string, SuuntoSleepSession>();
   for (const s of sleep) {
     if (s.isNap || !s.durationMin || s.avgHRV == null) continue;
@@ -147,8 +152,10 @@ export function mapSuuntoCheckIns(sleep: SuuntoSleepSession[], recovery: SuuntoR
   }
   if (nights.size === 0) return [];
 
+  // Referencia: la misma HRV que se calcula para el perfil (deriveProfileFromSuunto);
+  // el cliente la sustituye por la del perfil si el atleta la fijó a mano.
   const hrvs = [...nights.values()].map((s) => s.avgHRV as number);
-  const hrvBaseline = round(hrvs.reduce((a, b) => a + b, 0) / hrvs.length);
+  const hrvBaseline = baselineHrv && baselineHrv > 0 ? baselineHrv : round(hrvs.reduce((a, b) => a + b, 0) / hrvs.length, 1);
   const balanceByDay = new Map(recovery.map((r) => [r.date, r.avgBalance]));
 
   return [...nights.entries()]
@@ -161,14 +168,14 @@ export function mapSuuntoCheckIns(sleep: SuuntoSleepSession[], recovery: SuuntoR
       const balanceNote = balance != null ? ` Recovery Suunto del día: ${Math.round(balance * 100)}%.` : '';
       return {
         date,
-        restingHr: s.hrMin ?? 0,
+        restingHr: s.hrMin ?? 0, // 0 = sin dato (se excluye de las medias)
         hrvRmssd,
         hrvBaseline,
         sleepHours,
         sleepQuality: s.sleepQualityScore ?? 0,
         readinessScore: readiness.readinessScore,
         status: readiness.status,
-        coachAdvice: `${readiness.coachAdvice} (Datos de Suunto: sueño ${sleepHours} h, HRV ${hrvRmssd} ms vs media ${hrvBaseline} ms.${balanceNote})`,
+        coachAdvice: `${readiness.coachAdvice} (Datos de Suunto: sueño ${sleepHours} h, HRV ${hrvRmssd} ms vs referencia ${hrvBaseline} ms.${balanceNote})`,
         suggestedAction: readiness.suggestedAction,
         source: 'suunto',
       } satisfies DailyCheckIn;

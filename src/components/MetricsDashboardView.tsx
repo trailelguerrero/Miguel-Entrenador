@@ -177,7 +177,7 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
 
   // Weight tracking
   const weightHistory = [...StorageService.getWeightHistory()].sort((x, y) => x.date.localeCompare(y.date));
-  const currentWeight = weightHistory.length > 0 ? weightHistory[weightHistory.length - 1].weightKg : (profile.weightKg || 0);
+  const currentWeight = StorageService.getCurrentWeightKg();
   const targetWeight = profile.targetRaceWeightKg || 0;
   const startWeight = weightHistory.length > 0 ? weightHistory[0].weightKg : currentWeight;
   const weightToLose = (currentWeight - targetWeight).toFixed(1);
@@ -1044,7 +1044,9 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
 
           <div className="bg-zinc-950 p-3.5 rounded-xl border border-zinc-800 text-xs text-zinc-400 space-y-1 leading-relaxed">
             <strong className="text-zinc-200 block">Física del Trail Running:</strong>
-            Reducir esos {weightToLose} kg restantes a un ritmo sano de 300g/semana ahorrará aproximadamente <strong>~3.600 kcal</strong> de gasto energético en la subida al Roque de los Muchachos y restará <strong>18 toneladas</strong> de impacto acumulado en tus cuádriceps en la bajada de 2.400m a Tazacorte.
+            {targetWeight > 0
+              ? <>Te quedan <strong>{weightToLose} kg</strong> hasta tu peso objetivo. Pérdida progresiva, sin déficits calóricos severos.</>
+              : <>Define tu peso objetivo en el perfil para ver el progreso.</>}
           </div>
         </div>
 

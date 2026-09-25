@@ -144,7 +144,7 @@ export const WeeklyTssVsHrvWidget: React.FC<WeeklyTssVsHrvWidgetProps> = ({
         badge: 'Intensidad Supera Recuperación',
         badgeColor: 'bg-rose-500/20 text-rose-400 border-rose-500/40',
         summary: 'La carga semanal sostenida está provocando supresión continuada del tono vagal parasimpático.',
-        advice: 'Tus 50 años exigen asimilación celular. Reduce volumen de inmediato y prioriza rodajes regenerativos (< 130 bpm).',
+        advice: 'Reduce volumen de inmediato y prioriza rodajes regenerativos claramente por debajo de tu AeT.',
         dotColor: 'bg-rose-500',
         icon: AlertTriangle
       };

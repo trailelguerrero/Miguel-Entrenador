@@ -187,17 +187,13 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
         giToleranceRating: giTolerance as 1 | 2 | 3 | 4 | 5,
         fuelingNotes: fuelingNotes.trim() || undefined,
         coachFeedback: feedbackText,
-        actualDfaAlpha1Avg: parsedFit?.estimatedDfaAlpha1,
+        actualElevationLossM: parsedFit ? parsedFit.totalDescentM : workout.actualElevationLossM,
         tss: hasSuuntoTss ? workout.tss : tssResult.tss,
         actualTss: hasSuuntoTss ? workout.actualTss : undefined,
         intensityFactor: hasSuuntoTss ? workout.intensityFactor : tssResult.intensityFactor,
-        zoneSenseBreakdown: parsedFit
-          ? {
-              aerobicPct: parsedFit.timeInAerobicPct,
-              transitionPct: parsedFit.timeInTransitionPct,
-              anaerobicPct: parsedFit.timeInAnaerobicPct,
-            }
-          : undefined,
+        // ZoneSense solo si viene de Suunto; el .FIT no trae DFA a1 y la
+        // distribución por FC del .FIT no es ZoneSense.
+        zoneSenseBreakdown: workout.zoneSenseBreakdown,
       };
 
       onSave(completedWorkout);
@@ -371,9 +367,11 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                 <span>Objetivo Suunto ZoneSense & FC</span>
               </div>
               <div className="text-xs font-bold text-emerald-400 mt-0.5 font-mono">
-                {formatZoneSenseWithBpm(workout.zoneSenseTarget, profile.aetHr, profile.antHr)}
+                {workout.zoneSenseTarget
+                  ? formatZoneSenseWithBpm(workout.zoneSenseTarget, profile.aetHr, profile.antHr)
+                  : 'Sin objetivo (actividad importada de Suunto)'}
               </div>
-              {profile.aetHr && (
+              {profile.aetHr > 0 && (
                 <div className="text-[10px] text-zinc-400 mt-0.5">
                   Límite AeT: &lt; {profile.aetHr} bpm
                 </div>
@@ -598,7 +596,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                     <strong className="block text-amber-200">Sincronización Suunto:</strong>
                     Si tu cuenta Suunto está conectada, pulsa <em>Sincronizar</em> en la pestaña Suunto y esta sesión se completará sola con
                     los datos reales del reloj. Para el análisis detallado, sube a continuación el archivo <strong>.FIT</strong> y Miguel
-                    extraerá la curva cardíaca y el desglose de <strong>ZoneSense (DFA &alpha;1)</strong>.
+                    extraerá la curva cardíaca, el desnivel y el tiempo por FC respecto a tus umbrales (el .FIT no incluye DFA &alpha;1).
                   </div>
                 </div>
 

@@ -42,7 +42,7 @@ export const PMCChartView: React.FC<PMCChartViewProps> = ({ profile: propProfile
 
   // Quick TSS Simulator state
   const [simDuration, setSimDuration] = useState<number>(75);
-  const [simAvgHr, setSimAvgHr] = useState<number>(profile.aetHr || 142);
+  const [simAvgHr, setSimAvgHr] = useState<number>(profile.aetHr || 0);
   const [simRpe, setSimRpe] = useState<number>(6);
 
   // Serie PMC calculada con todo el historial de entrenos completados
@@ -304,7 +304,7 @@ export const PMCChartView: React.FC<PMCChartViewProps> = ({ profile: propProfile
             <Heart className="w-4 h-4 text-rose-400" />
           </div>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-3xl font-black text-zinc-100 font-mono">{profile.antHr || 165}</span>
+            <span className="text-3xl font-black text-zinc-100 font-mono">{profile.antHr || '—'}</span>
             <span className="text-xs text-zinc-400">bpm</span>
           </div>
           <div className="mt-2 pt-2 border-t border-zinc-800 text-[11px] text-zinc-400 flex justify-between">
@@ -902,8 +902,8 @@ export const PMCChartView: React.FC<PMCChartViewProps> = ({ profile: propProfile
                 className="w-full accent-rose-500 cursor-pointer"
               />
               <div className="flex justify-between text-[10px] text-zinc-500 mt-0.5 font-mono">
-                <span>AeT: {profile.aetHr || 148} bpm</span>
-                <span>AnT (LTHR): {profile.antHr || 165} bpm</span>
+                <span>AeT: {profile.aetHr || '—'} bpm</span>
+                <span>AnT (LTHR): {profile.antHr || '—'} bpm</span>
               </div>
             </div>
 

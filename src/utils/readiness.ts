@@ -39,3 +39,21 @@ export function computeReadiness(input: {
     coachAdvice: `Recuperación excelente. Sistema nervioso parasimpático activo y listo para asimilar la sesión programada de hoy.`,
   };
 }
+
+/**
+ * Recalcula un check-in de Suunto contra la HRV de referencia del perfil, para
+ * que el semáforo, las gráficas y la ficha usen siempre la MISMA referencia.
+ */
+export function rebaseSuuntoCheckIn(ci: DailyCheckIn, hrvBaseline: number): DailyCheckIn {
+  if (!(hrvBaseline > 0) || ci.source !== 'suunto') return ci;
+  const r = computeReadiness({ hrvRmssd: ci.hrvRmssd, hrvBaseline, sleepHours: ci.sleepHours });
+  const balance = ci.coachAdvice.match(/ Recovery Suunto del día: \d+%\./)?.[0] ?? '';
+  return {
+    ...ci,
+    hrvBaseline,
+    readinessScore: r.readinessScore,
+    status: r.status,
+    suggestedAction: r.suggestedAction,
+    coachAdvice: `${r.coachAdvice} (Datos de Suunto: sueño ${ci.sleepHours} h, HRV ${ci.hrvRmssd} ms vs referencia ${hrvBaseline} ms.${balance})`,
+  };
+}

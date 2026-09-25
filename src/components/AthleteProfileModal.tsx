@@ -61,51 +61,51 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
 
   // General fields
   const [name, setName] = useState(profile.name || 'Atleta');
-  const [age, setAge] = useState(profile.age || 50);
-  const [heightCm, setHeightCm] = useState(profile.heightCm || 176);
-  const [weightKg, setWeightKg] = useState(profile.weightKg || 71.5);
-  const [targetRaceWeightKg, setTargetRaceWeightKg] = useState(profile.targetRaceWeightKg || 67.5);
-  const [availableDays, setAvailableDays] = useState(profile.availableDaysPerWeek || 4);
+  const [age, setAge] = useState(profile.age || 0);
+  const [heightCm, setHeightCm] = useState(profile.heightCm || 0);
+  const [weightKg, setWeightKg] = useState(profile.weightKg || 0);
+  const [targetRaceWeightKg, setTargetRaceWeightKg] = useState(profile.targetRaceWeightKg || 0);
+  const [availableDays, setAvailableDays] = useState(profile.availableDaysPerWeek || 0);
   const [longRunDay, setLongRunDay] = useState(profile.preferredLongRunDay || 'saturday');
-  const [volumeHours, setVolumeHours] = useState(profile.currentWeeklyVolumeHours || 6.5);
-  const [yearsTrail, setYearsTrail] = useState(profile.yearsTrailRunning || 12);
+  const [volumeHours, setVolumeHours] = useState(profile.currentWeeklyVolumeHours || 0);
+  const [yearsTrail, setYearsTrail] = useState(profile.yearsTrailRunning || 0);
 
   // Physiology fields
-  const [restingHr, setRestingHr] = useState(profile.restingHr || 48);
-  const [maxHr, setMaxHr] = useState(profile.maxHr || 178);
-  const [aetHr, setAetHr] = useState(profile.aetHr || 138);
-  const [antHr, setAntHr] = useState(profile.antHr || 162);
-  const [baselineHrv, setBaselineHrv] = useState(profile.baselineHrv || 51.5);
+  const [restingHr, setRestingHr] = useState(profile.restingHr || 0);
+  const [maxHr, setMaxHr] = useState(profile.maxHr || 0);
+  const [aetHr, setAetHr] = useState(profile.aetHr || 0);
+  const [antHr, setAntHr] = useState(profile.antHr || 0);
+  const [baselineHrv, setBaselineHrv] = useState(profile.baselineHrv || 0);
 
   // Ultra Experience & Miguel's Interview fields
   const ultra = profile.ultraExperience || {};
-  const [longestKm, setLongestKm] = useState(ultra.longestRaceKm || 85);
-  const [longestDPlus, setLongestDPlus] = useState(ultra.longestRaceElevationGainM || 5200);
-  const [completedUltras, setCompletedUltras] = useState(ultra.completedUltras || 'Gran Trail Peñalara 60k, Ultra Sierra Nevada 75k, CSP 110k');
+  const [longestKm, setLongestKm] = useState(ultra.longestRaceKm || 0);
+  const [longestDPlus, setLongestDPlus] = useState(ultra.longestRaceElevationGainM || 0);
+  const [completedUltras, setCompletedUltras] = useState(ultra.completedUltras || '');
   const [downhillAbility, setDownhillAbility] = useState<'beginner' | 'intermediate' | 'expert_technical'>(
     ultra.downhillTechnicalAbility || 'intermediate'
   );
   const [polesUsage, setPolesUsage] = useState<'never' | 'steep_only' | 'expert_all_hills'>(
     ultra.polesUsage || 'expert_all_hills'
   );
-  const [sleepHours, setSleepHours] = useState(ultra.sleepQualityAvgHours || 7.0);
+  const [sleepHours, setSleepHours] = useState(ultra.sleepQualityAvgHours || 0);
   const [stressLevel, setStressLevel] = useState<'low' | 'moderate' | 'high_physical' | 'high_mental'>(
     ultra.dailyWorkStressLevel || 'moderate'
   );
   const [recoveryCapacity, setRecoveryCapacity] = useState(
-    ultra.recoveryCapacityAt50 || 'A mis 50 años la asimilación neuromuscular de las bajadas tarda más; necesito 48-72h para recuperar tras tiradas con mucho desnivel negativo.'
+    ultra.recoveryCapacityAt50 || ''
   );
   const [selectedJoints, setSelectedJoints] = useState<string[]>(
-    ultra.vulnerableJointsOrTissues || ['Tendón de Aquiles', 'Sóleos excéntrico', 'Cintilla iliotibial']
+    ultra.vulnerableJointsOrTissues || []
   );
   const [heatTolerance, setHeatTolerance] = useState<'poor' | 'moderate' | 'strong'>(
     ultra.heatTolerance || 'moderate'
   );
   const [gutHistory, setGutHistory] = useState(
-    ultra.gutIssuesHistory || 'Tolerancia aceptable hasta las 5 horas; a partir de ahí necesito comida salada y repartir los carbohidratos en tomas pequeñas.'
+    ultra.gutIssuesHistory || ''
   );
   const [motivation, setMotivation] = useState(
-    ultra.personalMotivation || 'Coronar Transvulcania a mis 50 años con preparación quirúrgica, respetando la longevidad de mis piernas y disfrutando la crestería.'
+    ultra.personalMotivation || ''
   );
 
   // ================= PERFIL FISIOLÓGICO AVANZADO =================
@@ -113,33 +113,33 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
   
   // 1. Lesiones crónicas detalladas
   const [chronicDescription, setChronicDescription] = useState<string>(
-    adv?.chronicInjuries?.description || 'Tendinopatía aquílea izquierda recurrente (origen en sobrecarga de sóleos en descensos continuados) y conato de cintilla iliotibial derecha si supera los 30 km sin calentar glúteo medio.'
+    adv?.chronicInjuries?.description || ''
   );
   const [chronicTrigger, setChronicTrigger] = useState<string>(
-    adv?.chronicInjuries?.primaryTrigger || 'Descensos continuados de más de 800m negativos a ritmo vivo o calzado con drop inferior a 5mm.'
+    adv?.chronicInjuries?.primaryTrigger || ''
   );
   const [chronicWarningSigns, setChronicWarningSigns] = useState<string>(
-    adv?.chronicInjuries?.activeWarningSigns || 'Rigidez matutina al apoyar el talón en los primeros pasos y tirantez en el sóleo lateral tras 2h de carrera.'
+    adv?.chronicInjuries?.activeWarningSigns || ''
   );
   const [chronicManagementProtocol, setChronicManagementProtocol] = useState<string>(
-    adv?.chronicInjuries?.managementProtocol || 'Trabajo excéntrico en escalón (soleus drops 3-1-1), automasaje con pelota dura en sóleos y descarga muscular con crioterapia.'
+    adv?.chronicInjuries?.managementProtocol || ''
   );
   const [chronicOrthotics, setChronicOrthotics] = useState<boolean>(
-    adv?.chronicInjuries?.orthoticsOrInsoles ?? true
+    adv?.chronicInjuries?.orthoticsOrInsoles ?? false
   );
 
   // 2. Experiencia técnica en alta montaña y terreno volcánico
   const [hasVolcanicExp, setHasVolcanicExp] = useState<boolean>(
-    adv?.highMountain?.hasVolcanicTerrainExperience ?? true
+    adv?.highMountain?.hasVolcanicTerrainExperience ?? false
   );
   const [volcanicNotes, setVolcanicNotes] = useState<string>(
-    adv?.highMountain?.volcanicTerrainNotes || 'Experiencia en senderos de Tenerife y La Palma; el lapilli negro suelto exige mayor cadencia para no perder tracción y el uso obligatorio de polainas bajas para evitar piedras abrasivas en zapatillas.'
+    adv?.highMountain?.volcanicTerrainNotes || ''
   );
   const [technicalGrade, setTechnicalGrade] = useState<'moderate_trails' | 'technical_alpine_rocks' | 'extreme_ridge_scree'>(
     adv?.highMountain?.technicalTerrainGrade || 'technical_alpine_rocks'
   );
   const [maxAltitude, setMaxAltitude] = useState<number>(
-    adv?.highMountain?.maxAltitudeReachedM || 3100
+    adv?.highMountain?.maxAltitudeReachedM || 0
   );
   const [altitudeSens, setAltitudeSens] = useState<'none' | 'mild_headache_above_2000m' | 'significant_drop_in_pace'>(
     adv?.highMountain?.altitudeSensitivity || 'none'
@@ -150,16 +150,16 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
     adv?.heatTolerance?.level || 'moderate'
   );
   const [heatCramps, setHeatCramps] = useState<boolean>(
-    adv?.heatTolerance?.crampHistoryInHeat ?? true
+    adv?.heatTolerance?.crampHistoryInHeat ?? false
   );
   const [sweatRate, setSweatRate] = useState<number>(
-    adv?.heatTolerance?.sweatRateDocumentedLitersPerHour || 1.15
+    adv?.heatTolerance?.sweatRateDocumentedLitersPerHour || 0
   );
   const [sodiumProfile, setSodiumProfile] = useState<'low_salt' | 'medium_salt' | 'salty_sweater_white_crust'>(
-    adv?.heatTolerance?.sodiumLossProfile || 'salty_sweater_white_crust'
+    adv?.heatTolerance?.sodiumLossProfile || 'medium_salt'
   );
   const [heatStrategy, setHeatStrategy] = useState<string>(
-    adv?.heatTolerance?.heatStrategyNotes || 'Alta pérdida de sal (costras blancas en tirantes de mochila). Requiere 650-750 mg de sodio por hora y bidón con cubrenucas mojado en avituallamientos.'
+    adv?.heatTolerance?.heatStrategyNotes || ''
   );
 
   // 4. Cuestionario de Preferencias de Entrenamiento
@@ -170,7 +170,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
     adv?.trainingPreferences?.longRunPreferredTerrain || 'steep_technical_trail'
   );
   const [crossSports, setCrossSports] = useState<string[]>(
-    adv?.trainingPreferences?.crossTrainingSports || ['Bicicleta Gravel/MTB', 'Senderismo con desnivel (Power Hiking)']
+    adv?.trainingPreferences?.crossTrainingSports || []
   );
   const [weeklyFlex, setWeeklyFlex] = useState<'strict_fixed_days' | 'flexible_swap_days' | 'shift_work_adaptive'>(
     adv?.trainingPreferences?.weeklyFlexibility || 'flexible_swap_days'
@@ -182,12 +182,12 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
     adv?.trainingPreferences?.preferredRestDay || 'monday'
   );
   const [lifestyleNotes, setLifestyleNotes] = useState<string>(
-    adv?.trainingPreferences?.lifestyleConstraintsNotes || 'Jornada laboral sedentaria entre semana con reuniones matutinas. Prefiero entrenar a primera hora (6:30 - 8:00 AM) para no interferir con la familia.'
+    adv?.trainingPreferences?.lifestyleConstraintsNotes || ''
   );
 
   // Live Calculations
-  const heightM = (heightCm || 176) / 100;
-  const currentBmi = ((weightKg || 71.5) / (heightM * heightM)).toFixed(1);
+  const heightM = (heightCm || 0) / 100;
+  const currentBmi = weightKg > 0 && heightM > 0 ? (weightKg / (heightM * heightM)).toFixed(1) : '—';
   const weightDiff = Number((weightKg - targetRaceWeightKg).toFixed(1));
   const estimatedCaloriesSaved = Math.round(Math.max(0, weightDiff) * 9.81 * 4.35 / 0.23);
   const estimatedMinutesSaved = Math.round(Math.max(0, weightDiff) * 6.5);
@@ -830,7 +830,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
                   <span>Coach Miguel: "Las preguntas que un buen entrenador debe hacerte"</span>
                 </div>
                 <p className="text-zinc-300 leading-relaxed">
-                  Para no prescribirte sesiones genéricas que revienten tus articulaciones, necesito que me respondas como a un compañero de cordada. A los 50 años la clave no es entrenar más, sino asimilar mejor y blindar los puntos débiles.
+                  Para no prescribirte sesiones genéricas que revienten tus articulaciones, necesito que me respondas como a un compañero de cordada. La clave no es entrenar más, sino asimilar mejor y blindar los puntos débiles.
                 </p>
               </div>
 

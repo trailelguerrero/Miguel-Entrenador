@@ -17,30 +17,33 @@ export interface ZoneSenseInterpretation {
 }
 
 export function formatZoneSenseWithBpm(
-  targetLabel: string, 
-  aetHr: number = 142, 
-  antHr: number = 167
+  targetLabel: string | undefined, 
+  aetHr?: number, 
+  antHr?: number
 ): string {
   if (!targetLabel) return '';
+  // Sin umbrales del atleta no se dan pulsaciones (nunca valores por defecto)
+  const aet = aetHr && aetHr > 0 ? aetHr : null;
+  const ant = antHr && antHr > 0 ? antHr : null;
   if (targetLabel.includes('0.75') && targetLabel.includes('>')) {
-    return `DFA a1 > 0.75 (Aeróbico puro: < ${aetHr} bpm)`;
+    return `DFA a1 > 0.75 (Aeróbico: ${aet ? `< ${aet} bpm` : 'por debajo de tu AeT'})`;
   }
   if (targetLabel.includes('0.75') && targetLabel.includes('0.50')) {
-    return `DFA a1 0.75 - 0.50 (Transición: ${aetHr + 1} - ${antHr} bpm)`;
+    return `DFA a1 0.75 - 0.50 (Transición: ${aet && ant ? `${aet + 1} - ${ant} bpm` : 'entre AeT y AnT'})`;
   }
   if (targetLabel.includes('< 0.50') || targetLabel.includes('Anaeróbico')) {
-    return `DFA a1 < 0.50 (Anaeróbico: > ${antHr} bpm)`;
+    return `DFA a1 < 0.50 (Anaeróbico: ${ant ? `> ${ant} bpm` : 'por encima de tu AnT'})`;
   }
-  if (targetLabel.toLowerCase().includes('regenerativo') || targetLabel.includes('0.85')) {
-    return `DFA a1 > 0.85 (Regenerativo Z1: < ${Math.min(130, aetHr - 12)} bpm)`;
+  if (targetLabel.toLowerCase().includes('regenerativo')) {
+    return `Regenerativo (${aet ? `claramente por debajo de ${aet} bpm` : 'claramente por debajo de tu AeT'})`;
   }
   return targetLabel;
 }
 
 export function interpretDfaAlpha1(
   dfaAlpha1: number, 
-  aetHr: number = 142, 
-  antHr: number = 167
+  aetHr: number = 0, 
+  antHr: number = 0
 ): ZoneSenseInterpretation {
   if (dfaAlpha1 >= 0.75) {
     return {

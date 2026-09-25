@@ -31,7 +31,7 @@ export interface Workout {
   // Uphill Athlete & ZoneSense targets
   targetHrMin?: number;
   targetHrMax?: number;
-  zoneSenseTarget: 'DFA a1 > 0.75 (Aeróbico puro)' | 'DFA a1 0.75 - 0.50 (Transición)' | 'DFA a1 < 0.50 (Anaeróbico)' | 'Regenerativo';
+  zoneSenseTarget?: 'DFA a1 > 0.75 (Aeróbico puro)' | 'DFA a1 0.75 - 0.50 (Transición)' | 'DFA a1 < 0.50 (Anaeróbico)' | 'Regenerativo';
   
   description: string;
   personalizedReasoning?: string; // Why this session was custom-crafted for this specific athlete
@@ -48,6 +48,7 @@ export interface Workout {
   actualDurationMin?: number;
   actualDistanceKm?: number;
   actualElevationGainM?: number;
+  actualElevationLossM?: number;
   actualAvgHr?: number;
   actualMaxHr?: number;
   actualDfaAlpha1Avg?: number; // ZoneSense average

@@ -64,9 +64,9 @@ export const FartlekGeneratorModal: React.FC<FartlekGeneratorModalProps> = ({
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   // Athlete physiology constants
-  const aet = profile.aetHr || 142;
-  const ant = profile.antHr || 166;
-  const restingHr = profile.restingHr || 46;
+  const aet = profile.aetHr || 0;
+  const ant = profile.antHr || 0;
+  const restingHr = profile.restingHr || 0;
 
   // Generate the strictly tailored Fartlek
   const fartlekPlan = useMemo<GeneratedFartlekPlan>(() => {
