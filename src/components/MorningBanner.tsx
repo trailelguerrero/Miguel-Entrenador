@@ -1,6 +1,7 @@
+import { localDateKey } from '../utils/trainingLoad';
 import React from 'react';
 import { AlertCircle, Heart, ArrowRight, ShieldAlert, Sparkles, CheckCircle2, Compass } from 'lucide-react';
-import { DailyCheckIn, Workout } from '../types';
+import { DailyCheckIn, Workout, WatchZoneAdvice } from '../types';
 
 interface MorningBannerProps {
   checkIn?: DailyCheckIn;
@@ -10,6 +11,7 @@ interface MorningBannerProps {
   isAdapting?: boolean;
   isSetupIncomplete?: boolean;
   onOpenSetupGuide?: () => void;
+  watchZoneAdvice?: WatchZoneAdvice;
 }
 
 export const MorningBanner: React.FC<MorningBannerProps> = ({
@@ -20,9 +22,32 @@ export const MorningBanner: React.FC<MorningBannerProps> = ({
   isAdapting,
   isSetupIncomplete,
   onOpenSetupGuide,
+  watchZoneAdvice,
 }) => {
+  // Puntuación = Recovery (Balance) medio del día según Suunto
+  const recoveryText = checkIn?.readinessScore != null
+    ? ` • Recovery Suunto ${checkIn.readinessScore}%${checkIn.date === localDateKey() ? ' (día en curso)' : ''}`
+    : '';
+
   return (
     <div className="space-y-3">
+      {/* Aviso de zonas del reloj: solo con tendencia sostenida (ver server/zone-advice.ts) */}
+      {watchZoneAdvice && watchZoneAdvice.recommendations.length > 0 && (
+        <div className="bg-gradient-to-r from-amber-950/40 to-zinc-950 border border-amber-700/40 rounded-2xl p-4 shadow-lg">
+          <div className="text-xs font-extrabold text-amber-400 uppercase tracking-wide">
+            Recomendado cambiar las zonas de FC de tu reloj (carrera)
+          </div>
+          <ul className="mt-1.5 space-y-1.5">
+            {watchZoneAdvice.recommendations.map((r) => (
+              <li key={r.field} className="text-xs text-zinc-200">
+                <strong>{r.label}: {r.current} → {r.suggested} ppm</strong>{' '}
+                <span className="text-zinc-400">({r.direction === 'up' ? 'tendencia al alza' : 'tendencia a la baja'}). {r.evidence}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="text-[10px] text-zinc-500 mt-1.5">Cámbialo en la configuración de zonas de FC de carrera de tu Suunto. Cuando la tendencia deje de cumplirse, el aviso desaparece en la siguiente sincronización.</p>
+        </div>
+      )}
       {/* Guía de Setup Callout si no se ha completado */}
       {isSetupIncomplete && onOpenSetupGuide && (
         <div className="bg-gradient-to-r from-amber-950/40 via-zinc-900 to-zinc-950 border border-amber-500/40 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg animate-in fade-in duration-200">
@@ -38,7 +63,7 @@ export const MorningBanner: React.FC<MorningBannerProps> = ({
                 </span>
               </h4>
               <p className="text-xs text-zinc-400">
-                Calibra tus parámetros clave de ultra trail: entrevista de montaña (50 años), umbrales AeT/AnT, objetivo Transvulcania y datos de Suunto.
+                Calibra tus parámetros clave de ultra trail: entrevista de montaña, umbrales AeT/AnT, objetivo Transvulcania y datos de Suunto.
               </p>
             </div>
           </div>
@@ -94,7 +119,7 @@ export const MorningBanner: React.FC<MorningBannerProps> = ({
                     Fatiga Detectada por Suunto
                   </span>
                   <span className="text-[10px] text-zinc-400">
-                    (HRV: {checkIn.hrvRmssd}ms vs {checkIn.hrvBaseline}ms base • {checkIn.sleepHours}h sueño)
+                    (HRV: {checkIn.hrvRmssd}ms vs {checkIn.hrvBaseline}ms base • {checkIn.sleepHours}h sueño{recoveryText})
                   </span>
                 </div>
                 <p className="text-xs text-zinc-200 mt-1 font-medium leading-relaxed">
@@ -137,7 +162,7 @@ export const MorningBanner: React.FC<MorningBannerProps> = ({
                     Recuperación Moderada
                   </span>
                   <span className="text-[10px] text-zinc-400">
-                    (HRV: {checkIn.hrvRmssd}ms • Sueño: {checkIn.sleepHours}h)
+                    (HRV: {checkIn.hrvRmssd}ms • Sueño: {checkIn.sleepHours}h{recoveryText})
                   </span>
                 </div>
                 <p className="text-xs text-zinc-300 mt-1 leading-relaxed">
@@ -165,11 +190,11 @@ export const MorningBanner: React.FC<MorningBannerProps> = ({
               <h4 className="text-xs font-bold text-zinc-200 flex items-center space-x-2">
                 <span>Sistema Parasimpático Listo</span>
                 <span className="text-[10px] text-emerald-400 font-semibold bg-emerald-500/10 px-2 py-0.5 rounded">
-                  HRV {checkIn.hrvRmssd}ms • Sueño {checkIn.sleepHours}h
+                  HRV {checkIn.hrvRmssd}ms • Sueño {checkIn.sleepHours}h{recoveryText}
                 </span>
               </h4>
               <p className="text-[11px] text-zinc-400">
-                Luz verde para la sesión de hoy. Recuerda monitorizar ZoneSense (DFA a1 &gt; 0.75).
+                Luz verde para la sesión de hoy. Recuerda: con banda de pecho, ZoneSense en verde.
               </p>
             </div>
           </div>

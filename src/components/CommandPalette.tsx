@@ -117,7 +117,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       category: 'Acciones Rápidas',
       description: 'Generador dinámico de intervalos adaptados a tu HRV actual',
       icon: Sparkles,
-      badge: 'DFA a1',
+      badge: 'ZoneSense',
       keywords: ['fartlek', 'intervalos', 'series', 'zonesense', 'generador', 'suunto'],
       action: () => { onClose(); onOpenFartlek(); }
     },
@@ -296,7 +296,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     },
     {
       id: 'tab-zonesense',
-      title: 'Suunto & ZoneSense (DFA a1 en Vivo)',
+      title: 'Suunto & ZoneSense',
       category: 'Vistas',
       description: 'Análisis de dispersión espectral RR y configuración de sincronización Suunto',
       icon: Watch,

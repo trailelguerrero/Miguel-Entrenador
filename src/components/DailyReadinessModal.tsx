@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { X, Heart, Moon, Zap, AlertTriangle, CheckCircle, ArrowRight, Activity } from 'lucide-react';
 import { DailyCheckIn } from '../types';
 import { computeReadiness } from '../utils/readiness';
+import { localDateKey } from '../utils/trainingLoad';
+import { StorageService } from '../services/storage';
 
 interface DailyReadinessModalProps {
   isOpen: boolean;
@@ -18,11 +20,12 @@ export const DailyReadinessModal: React.FC<DailyReadinessModalProps> = ({
   currentCheckIn,
   onAdaptSessionRequest,
 }) => {
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = localDateKey();
 
   const [restingHr, setRestingHr] = useState<number>(currentCheckIn?.restingHr || 48);
   const [hrvRmssd, setHrvRmssd] = useState<number>(currentCheckIn?.hrvRmssd || 55);
-  const [hrvBaseline, setHrvBaseline] = useState<number>(currentCheckIn?.hrvBaseline || 60);
+  // Misma HRV de referencia que el resto de la app: la del perfil
+  const [hrvBaseline, setHrvBaseline] = useState<number>(StorageService.getProfile().baselineHrv || currentCheckIn?.hrvBaseline || 0);
   const [sleepHours, setSleepHours] = useState<number>(currentCheckIn?.sleepHours || 7.5);
   const [sleepQuality, setSleepQuality] = useState<number>(currentCheckIn?.sleepQuality || 80);
   const [muscleSoreness, setMuscleSoreness] = useState<number>(currentCheckIn?.muscleSoreness || 3);
@@ -31,7 +34,7 @@ export const DailyReadinessModal: React.FC<DailyReadinessModalProps> = ({
   if (!isOpen) return null;
 
   // Calculate readiness status based on HRV deviation and sleep (misma lógica que la sync de Suunto)
-  const { hrvDropPct, status: calculatedStatus, readinessScore, coachAdvice, suggestedAction } = computeReadiness({
+  const { hrvDropPct, status: calculatedStatus, coachAdvice, suggestedAction } = computeReadiness({
     hrvRmssd,
     hrvBaseline,
     sleepHours,
@@ -48,7 +51,9 @@ export const DailyReadinessModal: React.FC<DailyReadinessModalProps> = ({
       sleepQuality,
       muscleSoreness,
       stressLevel,
-      readinessScore,
+      // La puntuación es el Recovery de Suunto: se conserva si ese día ya venía de Suunto
+      readinessScore: currentCheckIn?.date === todayStr ? currentCheckIn.readinessScore : undefined,
+      recoverySamples: currentCheckIn?.date === todayStr ? currentCheckIn.recoverySamples : undefined,
       status: calculatedStatus,
       coachAdvice,
       suggestedAction,

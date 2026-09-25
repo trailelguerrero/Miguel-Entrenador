@@ -26,8 +26,6 @@ import {
   SAMPLE_TRANSVULCANIA_SEGMENTS,
   SAMPLE_GUT_PROFILE,
   SAMPLE_ECCENTRIC_EXERCISES,
-  SAMPLE_PMC_DATA,
-  generateSamplePMCData,
   SAMPLE_TEST_WORKOUTS,
   SAMPLE_DAILY_CHECKINS,
   SAMPLE_WEIGHT_HISTORY,
@@ -38,6 +36,8 @@ import {
   SAMPLE_WUT_CHECK,
   SAMPLE_ADAPTATION_STAGES
 } from './sampleData';
+import { computePmcSeries, localDateKey } from '../utils/trainingLoad';
+import { rebaseSuuntoCheckIn } from '../utils/readiness';
 
 const STORAGE_KEYS = {
   PROFILE: 'uphill_coach_profile',
@@ -75,7 +75,69 @@ export const DEFAULT_TARGET_RACE: TargetRace = {
   notes: 'Objetivo A principal. Requiere adaptación extrema al desnivel negativo (fuerza excéntrica de cuádriceps) y una base aeróbica sólida para gestionar la altitud y el calor.'
 };
 
+// Perfil vacío: nada inventado. Los datos fisiológicos llegan de Suunto
+// (sincronización) o los introduce el atleta; 0 / '' = sin dato.
 export const DEFAULT_PROFILE: AthleteProfile = {
+  name: 'Atleta',
+  age: 0,
+  heightCm: 0,
+  weightKg: 0,
+  targetRaceWeightKg: 0,
+  weightHistory: [],
+  restingHr: 0,
+  maxHr: 0,
+  aetHr: 0,
+  antHr: 0,
+  hasAds: false,
+  driftTestResultPct: undefined,
+  yearsTrailRunning: 0,
+  availableDaysPerWeek: 0,
+  preferredLongRunDay: 'saturday',
+  injuryHistory: '',
+  strengthEquipment: 'none_bodyweight',
+  currentWeeklyVolumeHours: 0,
+  targetRaceName: 'Transvulcania 2027',
+  dataSource: 'pending',
+  setupCompleted: false,
+  setupStep: 1,
+};
+
+/**
+ * Limpia de un perfil guardado los datos del antiguo perfil de ejemplo que el
+ * atleta nunca cambió (textos idénticos, valores numéricos que Suunto aún no
+ * ha rellenado ni el atleta ha fijado a mano).
+ */
+function migrateLegacyProfile(p: AthleteProfile): { profile: AthleteProfile; changed: boolean } {
+  const L = LEGACY_SAMPLE_PROFILE;
+  const next: AthleteProfile = { ...p };
+  let changed = false;
+  const same = (x: unknown, y: unknown) => JSON.stringify(x) === JSON.stringify(y);
+
+  if (next.injuryHistory === L.injuryHistory) { next.injuryHistory = ''; changed = true; }
+  if (next.ultraExperience && same(next.ultraExperience, L.ultraExperience)) {
+    next.ultraExperience = undefined;
+    if (next.yearsTrailRunning === L.yearsTrailRunning) next.yearsTrailRunning = 0;
+    changed = true;
+  }
+  if (next.advancedPhysiologicalProfile && same(next.advancedPhysiologicalProfile, L.advancedPhysiologicalProfile)) {
+    next.advancedPhysiologicalProfile = undefined;
+    changed = true;
+  }
+  // Campos que rellena Suunto: si siguen con el valor de ejemplo y nadie los
+  // ha fijado (ni Suunto ni el atleta), se vacían; la próxima sync los rellena.
+  const suuntoFields = ['maxHr', 'aetHr', 'antHr', 'restingHr', 'currentWeeklyVolumeHours', 'availableDaysPerWeek'] as const;
+  for (const f of suuntoFields) {
+    if (!next.fieldSources?.[f] && next[f] === L[f]) { (next as any)[f] = 0; changed = true; }
+  }
+  if (!next.fieldSources?.hasAds && next.hasAds === L.hasAds && !next.aetHr) { next.hasAds = false; changed = true; }
+  if (next.weightHistory && same(next.weightHistory, L.weightHistory)) { next.weightHistory = []; changed = true; }
+  return { profile: next, changed };
+}
+
+// Perfil de EJEMPLO que usaban versiones anteriores como perfil por defecto.
+// Solo se conserva para detectar y limpiar esos datos inventados en perfiles
+// ya guardados (ver migrateLegacyProfile). No se muestra ni se envía a la IA.
+const LEGACY_SAMPLE_PROFILE: AthleteProfile = {
   name: 'Atleta',
   age: 50,
   heightCm: 176, // 1.76 m
@@ -153,7 +215,41 @@ export const DEFAULT_SUUNTO_CONFIG: SuuntoIntegrationConfig = {
 // URL del connector MCP de Suunto (el mismo servidor que usa la app para sincronizar).
 export const SUUNTO_MCP_CONNECTOR_URL = 'https://mcp-ten-kappa.vercel.app/mcp';
 
+// Memoria vacía: Miguel solo guarda lo que aprende de verdad (feedback de
+// sesiones, check-ins, conversaciones). Nada de aprendizajes de ejemplo.
 export const DEFAULT_COACH_MEMORY: CoachLearnedMemory = {
+  athleteId: 'pupilo-transvulcania-2027',
+  lastUpdated: new Date().toISOString(),
+  overallPhilosophySummary: 'Objetivo Transvulcania 2027. Estructura semanal: 3 sesiones entre semana (2 si la fatiga o la disponibilidad lo aconsejan) + tirada larga en sábado o domingo. Sin gimnasio.',
+  insights: [],
+  adaptationHistory: [],
+  coachNotebookNotes: [],
+};
+
+/** Quita de una memoria guardada los aprendizajes y notas de ejemplo que nunca se aprendieron. */
+function migrateLegacyCoachMemory(m: CoachLearnedMemory): { memory: CoachLearnedMemory; changed: boolean } {
+  const L = LEGACY_SAMPLE_COACH_MEMORY;
+  const fakeInsight = new Set(L.insights.map((i) => i.observation));
+  const fakeNotes = new Set(L.coachNotebookNotes);
+  const insights = (m.insights || []).filter((i) => !fakeInsight.has(i.observation));
+  const coachNotebookNotes = (m.coachNotebookNotes || []).filter((n) => !fakeNotes.has(n));
+  const summaryIsLegacy = m.overallPhilosophySummary === L.overallPhilosophySummary;
+  const changed = insights.length !== (m.insights || []).length ||
+    coachNotebookNotes.length !== (m.coachNotebookNotes || []).length || summaryIsLegacy;
+  return {
+    memory: {
+      ...m,
+      insights,
+      coachNotebookNotes,
+      overallPhilosophySummary: summaryIsLegacy ? DEFAULT_COACH_MEMORY.overallPhilosophySummary : m.overallPhilosophySummary,
+    },
+    changed,
+  };
+}
+
+// Memoria de EJEMPLO de versiones anteriores (aprendizajes inventados). Solo
+// se usa para detectarlos y quitarlos de memorias guardadas.
+const LEGACY_SAMPLE_COACH_MEMORY: CoachLearnedMemory = {
   athleteId: 'pupilo-transvulcania-2027',
   lastUpdated: new Date().toISOString(),
   overallPhilosophySummary: 'Atleta enfocado en Transvulcania 2027 con disponibilidad de 4 días (3 entre semana + 1 tirada larga). Sin acceso a gimnasio. Perfil metabólico con necesidad de blindaje aeróbico estricto (sub-AeT) para erradicar el ADS y fortalecer la musculatura de cuádriceps de forma excéntrica para el descenso brutal de Tazacorte.',
@@ -203,18 +299,45 @@ export const DEFAULT_COACH_MEMORY: CoachLearnedMemory = {
   ]
 };
 
+/**
+ * Versiones anteriores guardaban una puntuación fija (45/68/90) según reglas.
+ * Ahora la puntuación es el Recovery de Suunto: se recupera de la nota del
+ * check-in si existe; si no, queda sin dato.
+ */
+function fixLegacyReadinessScore(c: DailyCheckIn): DailyCheckIn {
+  if (c.readinessScore == null || ![45, 68, 90].includes(c.readinessScore)) return c;
+  const m = c.source === 'suunto' ? c.coachAdvice?.match(/Recovery Suunto del día: (\d+)%/) : null;
+  return { ...c, readinessScore: m ? Number(m[1]) : undefined };
+}
+
 export const StorageService = {
   getProfile(): AthleteProfile {
     try {
       const stored = localStorage.getItem(STORAGE_KEYS.PROFILE);
-      return stored ? JSON.parse(stored) : DEFAULT_PROFILE;
+      if (!stored) return DEFAULT_PROFILE;
+      const { profile, changed } = migrateLegacyProfile(JSON.parse(stored));
+      if (changed) localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(profile));
+      return profile;
     } catch {
       return DEFAULT_PROFILE;
     }
   },
 
   saveProfile(profile: AthleteProfile): void {
+    const previousBaseline = this.getProfile().baselineHrv;
     localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(profile));
+    // Si cambia la HRV de referencia, los check-ins de Suunto se recalculan con ella
+    if (profile.baselineHrv && profile.baselineHrv !== previousBaseline) {
+      try {
+        const raw = JSON.parse(localStorage.getItem(STORAGE_KEYS.DAILY_CHECKINS) || '[]');
+        if (Array.isArray(raw)) {
+          const rebased = raw.map((c: DailyCheckIn) => rebaseSuuntoCheckIn(c, profile.baselineHrv as number));
+          localStorage.setItem(STORAGE_KEYS.DAILY_CHECKINS, JSON.stringify(rebased));
+        }
+      } catch {
+        // check-ins corruptos: se dejan como están
+      }
+    }
   },
 
   getTargetRace(): TargetRace {
@@ -279,13 +402,12 @@ export const StorageService = {
   getCheckIns(): DailyCheckIn[] {
     try {
       const stored = localStorage.getItem(STORAGE_KEYS.DAILY_CHECKINS);
-      if (stored) {
+      if (stored !== null) {
         const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length >= 7) {
-          return parsed;
-        }
+        if (Array.isArray(parsed)) return parsed.map(fixLegacyReadinessScore);
       }
-      return SAMPLE_DAILY_CHECKINS;
+      // Solo en la primera carga (sin nada guardado) se muestran los de ejemplo
+      return this.isTestDataActive() ? SAMPLE_DAILY_CHECKINS : [];
     } catch {
       return SAMPLE_DAILY_CHECKINS;
     }
@@ -313,32 +435,57 @@ export const StorageService = {
     suuntoWorkouts: Workout[],
     suuntoCheckIns: DailyCheckIn[],
   ): { addedWorkouts: number; completedPlanned: number; checkInsAdded: number } {
+    // Con una cuenta Suunto real, los entrenos de ejemplo (completados, con TSS
+    // ficticio) contaminarían CTL/ATL/TSB: se eliminan antes de integrar.
+    if (suuntoWorkouts.length > 0 && this.isTestDataActive()) {
+      this.clearOnlySampleData();
+    }
     const workouts = this.getWorkouts();
-    const importedKeys = new Set(workouts.map((w) => w.suuntoWorkoutKey).filter(Boolean));
+    const byKey = new Map(workouts.filter((w) => w.suuntoWorkoutKey).map((w) => [w.suuntoWorkoutKey as string, w]));
     let addedWorkouts = 0;
     let completedPlanned = 0;
 
+    // Datos medidos por Suunto (se copian siempre, también al re-sincronizar,
+    // para recoger cambios como un TSS o una duración editados en Suunto).
+    const measured = (sw: Workout) => ({
+      completed: true,
+      suuntoWorkoutKey: sw.suuntoWorkoutKey,
+      date: sw.date,
+      actualDurationMin: sw.actualDurationMin,
+      actualDistanceKm: sw.actualDistanceKm,
+      actualElevationGainM: sw.actualElevationGainM,
+      actualElevationLossM: sw.actualElevationLossM,
+      actualAvgHr: sw.actualAvgHr,
+      actualMaxHr: sw.actualMaxHr,
+      actualTss: sw.actualTss,
+      tss: sw.tss,
+    });
+
     for (const sw of suuntoWorkouts) {
-      if (!sw.suuntoWorkoutKey || importedKeys.has(sw.suuntoWorkoutKey)) continue;
-      importedKeys.add(sw.suuntoWorkoutKey);
+      if (!sw.suuntoWorkoutKey) continue;
+      const existing = byKey.get(sw.suuntoWorkoutKey);
+      if (existing) {
+        Object.assign(existing, measured(sw), {
+          zoneSenseBreakdown: sw.zoneSenseBreakdown ?? existing.zoneSenseBreakdown,
+        });
+        // Entreno creado por la importación: versiones anteriores le ponían un
+        // objetivo ZoneSense ficticio ("DFA a1 > 0.75") a cualquier actividad.
+        if (existing.id === `suunto-${sw.suuntoWorkoutKey}`) existing.zoneSenseTarget = undefined;
+        continue;
+      }
       const planned = workouts.find(
         (w) => w.date === sw.date && !w.completed && !w.suuntoWorkoutKey && w.type !== 'rest',
       );
       if (planned) {
-        Object.assign(planned, {
-          completed: true,
-          suuntoWorkoutKey: sw.suuntoWorkoutKey,
-          actualDurationMin: sw.actualDurationMin,
-          actualDistanceKm: sw.actualDistanceKm,
-          actualElevationGainM: sw.actualElevationGainM,
-          actualAvgHr: sw.actualAvgHr,
-          actualMaxHr: sw.actualMaxHr,
+        Object.assign(planned, measured(sw), {
           zoneSenseBreakdown: sw.zoneSenseBreakdown ?? planned.zoneSenseBreakdown,
-          actualTss: sw.actualTss,
+          intensityFactor: undefined,
         });
+        byKey.set(sw.suuntoWorkoutKey, planned);
         completedPlanned++;
       } else {
         workouts.push(sw);
+        byKey.set(sw.suuntoWorkoutKey, sw);
         addedWorkouts++;
       }
     }
@@ -354,7 +501,10 @@ export const StorageService = {
     const testDataActive = this.isTestDataActive();
     const byDate = new Map(stored.map((c) => [c.date, c]));
     let checkInsAdded = 0;
-    for (const ci of suuntoCheckIns) {
+    // Todos los check-ins de Suunto contra la HRV de referencia del perfil
+    const profileBaseline = this.getProfile().baselineHrv || 0;
+    for (const rawCi of suuntoCheckIns) {
+      const ci = rebaseSuuntoCheckIn(rawCi, profileBaseline);
       const existing = byDate.get(ci.date);
       if (!existing || existing.source === 'suunto' || testDataActive) {
         if (!existing) checkInsAdded++;
@@ -368,7 +518,7 @@ export const StorageService = {
   },
 
   getTodayCheckIn(): DailyCheckIn | undefined {
-    const today = new Date().toISOString().split('T')[0];
+    const today = localDateKey();
     return this.getCheckIns().find(c => c.date === today);
   },
 
@@ -385,9 +535,9 @@ export const StorageService = {
       role: 'assistant',
       content: `¡Hola! Soy Miguel, tu entrenador de Trail Running. Vamos juntos a por esa Transvulcania en 2027.
 
-Aquí no vamos a perder el tiempo con modas ni con kilometraje basura. Nuestro manual de cabecera es *Training for the Uphill Athlete* y nuestra brújula en cada entreno será tu Suunto con ZoneSense (DFA a1) y tu HRV nocturna.
+Aquí no vamos a perder el tiempo con modas ni con kilometraje basura. Nuestro manual de cabecera es *Training for the Uphill Athlete* y nuestra brújula en cada entreno será tu Suunto con ZoneSense (con banda de pecho) y tu HRV nocturna.
 
-Organizamos 4 días de entrenamiento semanales (3 entre semana y la tirada larga el fin de semana), con trabajo de fuerza en casa y al aire libre sin máquinas. 
+Organizamos la semana en 3 sesiones entre semana (2 si toca aflojar) y la tirada larga el sábado o el domingo, con trabajo de fuerza en casa y al aire libre sin máquinas. 
 
 Puedes revisar tus umbrales (AeT y AnT) en tu perfil, registrar tu test de deriva cardíaca, subir tus archivos .FIT de Suunto o simplemente contarme cómo te sientes hoy para calibrar la carga. ¡Dime cómo estamos de piernas y empezamos!`,
       timestamp: new Date().toISOString(),
@@ -456,7 +606,10 @@ Puedes revisar tus umbrales (AeT y AnT) en tu perfil, registrar tu test de deriv
   getCoachMemory(): CoachLearnedMemory {
     try {
       const stored = localStorage.getItem(STORAGE_KEYS.COACH_MEMORY);
-      return stored ? JSON.parse(stored) : DEFAULT_COACH_MEMORY;
+      if (!stored) return DEFAULT_COACH_MEMORY;
+      const { memory, changed } = migrateLegacyCoachMemory(JSON.parse(stored));
+      if (changed) localStorage.setItem(STORAGE_KEYS.COACH_MEMORY, JSON.stringify(memory));
+      return memory;
     } catch {
       return DEFAULT_COACH_MEMORY;
     }
@@ -518,41 +671,37 @@ Puedes revisar tus umbrales (AeT y AnT) en tu perfil, registrar tu test de deriv
     return memory;
   },
 
+  // Plantilla VACÍA: solo encabezados y huecos para rellenar. Nada de datos de
+  // ejemplo, porque lo que se guarda aquí Miguel lo trata como historial real.
   getHistoryMarkdownTemplate(): string {
     return `# HISTORIAL DEL ATLETA & MÉTRICAS SUUNTO
-*Documento de referencia para el entrenador Miguel (Metodología Uphill Athlete)*
+*Documento de referencia para el entrenador Miguel. Rellena solo lo que sepas; deja en blanco lo que no.*
 
-## 1. Perfil y Datos Fisiológicos Reales
-- **Nombre:** [Tu Nombre o Apodo]
-- **Edad:** 36
-- **Reloj Suunto:** Suunto Race / Suunto Vertical
-- **Banda de Frecuencia Cardíaca:** Suunto Smart Sensor (pecho)
-- **Frecuencia Cardíaca en Reposo:** 46 bpm (promedio 30 días en Suunto)
-- **Frecuencia Cardíaca Máxima:** 183 bpm (alcanzada en test de campo en cuesta)
-- **Umbral Aeróbico (AeT / VT1):** 142 bpm (verificado con test de deriva <3.5%)
-- **Umbral Anaeróbico (AnT / LT2):** 167 bpm (determinado en subida sostenida de 30 min)
+## 1. Perfil y datos fisiológicos
+- **Nombre:**
+- **Edad:**
+- **Reloj Suunto:**
+- **Banda de pecho (necesaria para ZoneSense):**
+- **FC en reposo:**
+- **FC máxima (y cómo se midió):**
+- **Umbral aeróbico por FC (y cómo se midió):**
+- **Umbral anaeróbico por FC (y cómo se midió):**
 
-## 2. Observaciones Suunto ZoneSense (DFA alpha-1)
-- **Comportamiento en Rodaje Z1/Z2:** Con ritmo suave en llano y subidas moderadas, el DFA a1 se mantiene estable en 0.78 - 0.88.
-- **Punto de Quiebre (Decoupling):** En cuanto la pendiente supera el 12% y trato de trotar en lugar de caminar rápido (power-hiking), el DFA a1 cae de 0.76 a 0.58 en menos de 90 segundos.
-- **HRV Nocturna (Línea Base Suunto):** Promedio rMSSD de 52 ms en semanas normales. Cuando baja de 40 ms suelo acusar fatiga o mal descanso.
+## 2. Observaciones con Suunto ZoneSense
+- (Qué ves en tus sesiones: cuándo pasa de verde a amarillo, en qué terreno o a qué hora de la tirada.)
 
-## 3. Historial de Carga y Carreras Previas
-- **Años practicando Trail Running:** 3 años.
-- **Volumen Semanal Típico:** 35 a 48 km / 1.500m a 2.400m D+ repartidos en 4 días.
-- **Carreras Completadas:**
-  - 2024: Trail 28K (+1.600m D+) - Tiempo: 3h 42m. Sensaciones: Buenas hasta el km 22, calambres en bajada técnica.
-  - 2025: Maratón de Montaña 42K (+2.500m D+) - Tiempo: 5h 50m. Sensaciones: Gestión adecuada de ritmo, fatiga acusada en cuádriceps en los últimos 800m negativos.
-- **Objetivo Principal A:** Transvulcania 2027 (73 km, +4.350m D+, -4.057m D-).
+## 3. Historial de carga y carreras previas
+- **Años practicando trail running:**
+- **Volumen semanal típico (km / D+ / días):**
+- **Carreras completadas (año, distancia, desnivel, tiempo, sensaciones):**
+- **Objetivo principal:** Transvulcania 2027
 
-## 4. Lesiones y Puntos Débiles Fisiológicos
-- Tendencia a sobrecarga en sóleo/gemelo izquierdo en entrenamientos con exceso de subida por asfalto.
-- Fatiga excéntrica en cuádriceps en descensos continuados de más de 1.000m D-.
-- Disponibilidad: Sin gimnasio. Todo entrenamiento de fuerza se realiza en casa con peso corporal o al aire libre (escaleras, bordillos, cuestas).
+## 4. Lesiones y puntos débiles
+-
 
-## 5. Nutrición & Hidratación Habitual
-- Tolerancia estomacal: 45-55 gramos de carbohidratos por hora en esfuerzo.
-- Sales/Electrolitos: 1 cápsula de sales cada 60-75 min en condiciones de calor (>22°C).
+## 5. Nutrición e hidratación habitual
+- **Carbohidratos por hora que toleras:**
+- **Sales / electrolitos:**
 `;
   },
 
@@ -641,20 +790,15 @@ Puedes revisar tus umbrales (AeT y AnT) en tu perfil, registrar tu test de deriv
   },
 
   // --- PMC Performance Management Chart (Mejora 3) ---
+  // El PMC ya no se guarda: se calcula siempre a partir de los entrenos
+  // completados (TSS de Suunto). Así nunca se mezcla con series de ejemplo.
   getPMCData(): PMCDataPoint[] {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEYS.PMC_DATA);
-      if (stored) return JSON.parse(stored);
-      const generated = generateSamplePMCData();
-      this.savePMCData(generated);
-      return generated;
-    } catch {
-      return generateSamplePMCData();
-    }
+    return computePmcSeries(this.getWorkouts(), this.getProfile().antHr);
   },
 
-  savePMCData(points: PMCDataPoint[]): void {
-    localStorage.setItem(STORAGE_KEYS.PMC_DATA, JSON.stringify(points));
+  /** Borra la serie PMC antigua (datos de ejemplo) que guardaban versiones anteriores. */
+  savePMCData(_points?: PMCDataPoint[]): void {
+    localStorage.removeItem(STORAGE_KEYS.PMC_DATA);
   },
 
   // --- Eccentric Outdoor Exercises (Mejora 4) ---
@@ -667,10 +811,16 @@ Puedes revisar tus umbrales (AeT y AnT) en tu perfil, registrar tu test de deriv
     try {
       const stored = localStorage.getItem(STORAGE_KEYS.WEIGHT_HISTORY);
       if (stored) return JSON.parse(stored);
-      return SAMPLE_WEIGHT_HISTORY;
+      return this.isTestDataActive() ? SAMPLE_WEIGHT_HISTORY : [];
     } catch {
-      return SAMPLE_WEIGHT_HISTORY;
+      return [];
     }
+  },
+
+  /** Peso actual: el último pesaje registrado; si no hay ninguno, el del perfil. */
+  getCurrentWeightKg(): number {
+    const history = [...this.getWeightHistory()].sort((a, b) => a.date.localeCompare(b.date));
+    return history.length > 0 ? history[history.length - 1].weightKg : (this.getProfile().weightKg || 0);
   },
 
   saveWeightHistory(history: WeightEntry[]): void {
@@ -683,12 +833,12 @@ Puedes revisar tus umbrales (AeT y AnT) en tu perfil, registrar tu test de deriv
       ...entry,
       id: `w-${Date.now()}`
     };
-    const updated = [...history, newEntry].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    const updated = [...history, newEntry].sort((a, b) => a.date.localeCompare(b.date));
     this.saveWeightHistory(updated);
 
-    // Also update athlete profile current weight
+    // El peso del perfil es siempre el del último pesaje (por fecha)
     const profile = this.getProfile();
-    profile.weightKg = entry.weightKg;
+    profile.weightKg = updated[updated.length - 1].weightKg;
     profile.weightHistory = updated;
     this.saveProfile(profile);
 
@@ -698,6 +848,12 @@ Puedes revisar tus umbrales (AeT y AnT) en tu perfil, registrar tu test de deriv
   deleteWeightEntry(id: string): WeightEntry[] {
     const history = this.getWeightHistory().filter(e => e.id !== id);
     this.saveWeightHistory(history);
+    if (history.length > 0) {
+      const profile = this.getProfile();
+      profile.weightKg = [...history].sort((a, b) => a.date.localeCompare(b.date))[history.length - 1].weightKg;
+      profile.weightHistory = history;
+      this.saveProfile(profile);
+    }
     return history;
   },
 
@@ -706,9 +862,9 @@ Puedes revisar tus umbrales (AeT y AnT) en tu perfil, registrar tu test de deriv
     try {
       const stored = localStorage.getItem(STORAGE_KEYS.WEEKLY_SUMMARIES);
       if (stored) return JSON.parse(stored);
-      return SAMPLE_WEEKLY_SUMMARIES;
+      return this.isTestDataActive() ? SAMPLE_WEEKLY_SUMMARIES : [];
     } catch {
-      return SAMPLE_WEEKLY_SUMMARIES;
+      return [];
     }
   },
 
@@ -721,9 +877,9 @@ Puedes revisar tus umbrales (AeT y AnT) en tu perfil, registrar tu test de deriv
     try {
       const stored = localStorage.getItem(STORAGE_KEYS.MESOCYCLE_PROGRESSION);
       if (stored) return JSON.parse(stored);
-      return SAMPLE_MESOCYCLE_PROGRESSION;
+      return this.isTestDataActive() ? SAMPLE_MESOCYCLE_PROGRESSION : [];
     } catch {
-      return SAMPLE_MESOCYCLE_PROGRESSION;
+      return [];
     }
   },
 
@@ -812,7 +968,6 @@ Puedes revisar tus umbrales (AeT y AnT) en tu perfil, registrar tu test de deriv
   loadFullTestData(): void {
     this.saveWorkouts(SAMPLE_TEST_WORKOUTS);
     this.saveGutProfile(SAMPLE_GUT_PROFILE);
-    this.savePMCData(generateSamplePMCData());
     this.saveWeightHistory(SAMPLE_WEIGHT_HISTORY);
     this.saveWeeklySummaries(SAMPLE_WEEKLY_SUMMARIES);
     this.saveMesocycleProgression(SAMPLE_MESOCYCLE_PROGRESSION);
@@ -843,7 +998,7 @@ Puedes revisar tus umbrales (AeT y AnT) en tu perfil, registrar tu test de deriv
     this.saveHydrationTests(userHydrationTests);
 
     // Keep today's checkin if recorded by athlete
-    const today = new Date().toISOString().split('T')[0];
+    const today = localDateKey();
     const userCheckIns = this.getCheckIns().filter(c => c.date === today);
     localStorage.setItem(STORAGE_KEYS.DAILY_CHECKINS, JSON.stringify(userCheckIns));
 
@@ -966,7 +1121,7 @@ Puedes revisar tus umbrales (AeT y AnT) en tu perfil, registrar tu test de deriv
         this.saveTransvulcaniaPlan(data.raceSimulation);
       }
       if (Array.isArray(data.pmcData)) {
-        this.savePMCData(data.pmcData);
+        // La serie PMC se recalcula desde los entrenos; no se importa.
         countSummary.pmcPoints = data.pmcData.length;
       }
       if (Array.isArray(data.weightHistory)) {

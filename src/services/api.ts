@@ -7,7 +7,8 @@ import {
   SuuntoAuth,
   SuuntoProfileSuggestion,
   CoachLearnedMemory,
-  CoachLearnedInsight
+  CoachLearnedInsight,
+  WatchZoneAdvice
 } from '../types';
 
 import { ApiError, apiStatus } from './apiStatus';
@@ -69,6 +70,14 @@ async function apiFetch(
   return data;
 }
 
+/** Estado real de carga y recuperación para que Miguel decida 3 o 2 sesiones entre semana. */
+export interface PlanLoadContext {
+  ctl?: number;
+  atl?: number;
+  tsb?: number;
+  recentCheckIns?: Array<{ date: string; hrvRmssd: number; hrvBaseline: number; sleepHours: number; recoveryPct?: number; status: string }>;
+}
+
 export const ApiService = {
   async sendMessage(
     messages: Array<{ role: 'user' | 'assistant'; content: string }>,
@@ -97,7 +106,8 @@ export const ApiService = {
     weekStartDate: string,
     phaseFocus?: string,
     athleteHistoryDoc?: AthleteHistoryDocument | null,
-    coachMemory?: CoachLearnedMemory | null
+    coachMemory?: CoachLearnedMemory | null,
+    loadContext?: PlanLoadContext
   ): Promise<{ weekSummary: string; workouts: Workout[] }> {
     return await apiFetch('/api/generate-plan', {
         athleteProfile,
@@ -106,6 +116,7 @@ export const ApiService = {
         phaseFocus,
         athleteHistoryDoc,
         coachMemory,
+        loadContext,
       }, 'ai', 'Error al generar el plan personalizado');
   },
 
@@ -202,6 +213,7 @@ export const ApiService = {
     lastSync?: string;
     newAuth?: SuuntoAuth;
     profileFromSuunto?: SuuntoProfileSuggestion;
+    watchZoneAdvice?: WatchZoneAdvice;
   }> {
     return await apiFetch('/api/suunto/sync-history', { auth, days }, 'suunto', 'Error en la sincronización con Suunto', {
       // 401 needsReconnect no es un fallo de la API: lo gestiona App (pide reconectar)

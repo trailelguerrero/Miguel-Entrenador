@@ -4,10 +4,9 @@
  * - Dr. Eric W. Banister (1975, 1991): Impulse-Response Model
  * - Dr. Andrew R. Coggan (2003): Training Stress Score (TSS), Intensity Factor (IF), CTL, ATL, TSB
  * - Joe Friel (2009): The Cyclist's/Triathlete's Training Bible & Fast After 50 (PMC application & Ramp Rates)
- * - Scott Johnston, Steve House & Kilian Jornet (2019): Training for the Uphill Athlete (hrTSS & Mountain adjustments)
+ * - Scott Johnston, Steve House & Kilian Jornet (2019): Training for the Uphill Athlete (enfoque de entrenamiento)
  */
 
-import { PMCDataPoint, Workout } from '../types';
 
 export interface TSSCalculationResult {
   tss: number;
@@ -49,15 +48,17 @@ export interface RampRateDiagnosis {
  *    Validated proxy when heart rate monitor is unavailable (Foster et al., 2001).
  *    Mapped to equivalent IF: RPE 5 = IF 0.70; RPE 7 = IF 0.88; RPE 8 = IF 1.00 (Threshold).
  * 
- * 3. Mountain TSS (Uphill Athlete):
- *    Adds eccentric descent load factor: ~8 TSS per 1000m of descent (D-).
+ *
+ * IMPORTANTE: es solo una ESTIMACIÓN para sesiones sin TSS de Suunto
+ * (planificadas o registradas a mano). Suunto calcula su propio TSS con otro
+ * método (p. ej. TRIMP por FC o MET), así que no coincidirá exactamente. Para
+ * los entrenos sincronizados siempre se usa el TSS de Suunto (ver trainingLoad.ts).
  */
 export function calculateWorkoutTss(
   durationMin: number,
   avgHr?: number,
   antHr: number = 165,
-  rpe?: number,
-  elevationLossM: number = 0
+  rpe?: number
 ): TSSCalculationResult {
   if (durationMin <= 0) {
     return {
@@ -109,10 +110,8 @@ export function calculateWorkoutTss(
     formulaExplanation = `TSS estimado por duración = (${durationMin} min / 60) × (IF base 0.72)² × 100 = ${tss} TSS`;
   }
 
-  // Mountain descent factor (eccentric stress on quadriceps & Achilles tendon)
-  // Scientific consensus: 1.000m D- adds muscle damage equivalent to ~8 TSS units
-  const eccentricDescentAdjustment = elevationLossM > 0 ? Math.round((elevationLossM / 1000) * 8) : 0;
-  const mountainTss = tss + eccentricDescentAdjustment;
+  // Sin ajuste por desnivel: no hay un factor validado que convierta D- en TSS.
+  const mountainTss = tss;
 
   return {
     tss,
@@ -121,122 +120,6 @@ export function calculateWorkoutTss(
     method,
     formulaExplanation,
   };
-}
-
-/**
- * Calculates Chronic Training Load (CTL), Acute Training Load (ATL) and
- * Training Stress Balance (TSB) using Exponentially Weighted Moving Averages (EWMA).
- * 
- * Time Constants (strictly verified by Coggan & Banister):
- * - CTL (Fitness): Time constant tau = 42 days -> decay factor lambda = 1 - e^(-1/42) ≈ 0.02353
- * - ATL (Fatigue): Time constant tau = 7 days -> decay factor lambda = 1 - e^(-1/7) ≈ 0.13312
- * - TSB (Form / Frescura): TSB_t = CTL_(t-1) - ATL_(t-1) (or end-of-day balance CTL_t - ATL_t)
- */
-export function calculatePmcSeriesFromWorkouts(
-  workouts: Workout[],
-  daysCount: number = 42,
-  antHr: number = 165,
-  initialCtl: number = 38.0,
-  initialAtl: number = 35.0
-): PMCDataPoint[] {
-  const points: PMCDataPoint[] = [];
-  const today = new Date();
-
-  // Map workouts by date string YYYY-MM-DD
-  const workoutsByDate: Record<string, Workout[]> = {};
-  for (const w of workouts) {
-    if (!workoutsByDate[w.date]) {
-      workoutsByDate[w.date] = [];
-    }
-    workoutsByDate[w.date].push(w);
-  }
-
-  // Exponential constants
-  const ctlDecay = 1 - Math.exp(-1 / 42); // 0.023528
-  const atlDecay = 1 - Math.exp(-1 / 7);  // 0.133122
-
-  let ctl = initialCtl;
-  let atl = initialAtl;
-
-  // Track CTL history for calculating Ramp Rate (7-day change in CTL)
-  const ctlHistory: number[] = [];
-
-  for (let i = daysCount - 1; i >= 0; i--) {
-    const d = new Date(today);
-    d.setDate(today.getDate() - i);
-    const dateStr = d.toISOString().split('T')[0];
-
-    const dayWorkouts = workoutsByDate[dateStr] || [];
-
-    let dayTss = 0;
-    let dayMountainTss = 0;
-    let dayElevationGain = 0;
-    let dayElevationLoss = 0;
-    let dayZoneSenseMin = 0;
-    let titles: string[] = [];
-    let rpes: number[] = [];
-    let ifValues: number[] = [];
-
-    for (const w of dayWorkouts) {
-      const dur = w.completed && w.actualDurationMin ? w.actualDurationMin : w.plannedDurationMin;
-      const hr = w.completed && w.actualAvgHr ? w.actualAvgHr : (w.targetHrMin && w.targetHrMax ? (w.targetHrMin + w.targetHrMax) / 2 : undefined);
-      const elevLoss = (w.completed && w.actualElevationGainM !== undefined ? w.actualElevationGainM : (w.plannedElevationGainM || 0)); // approximate loss with gain
-      const rpe = w.athleteRpe;
-
-      const calc = calculateWorkoutTss(dur, hr, antHr, rpe, elevLoss);
-      dayTss += calc.tss;
-      dayMountainTss += calc.mountainTss;
-      dayElevationGain += (w.completed && w.actualElevationGainM !== undefined) ? w.actualElevationGainM : (w.plannedElevationGainM || 0);
-      dayElevationLoss += elevLoss;
-      
-      if (w.actualDfaAlpha1Avg && w.actualDfaAlpha1Avg > 0.75) {
-        dayZoneSenseMin += dur;
-      } else if (w.zoneSenseBreakdown?.aerobicPct) {
-        dayZoneSenseMin += Math.round((dur * w.zoneSenseBreakdown.aerobicPct) / 100);
-      } else if (w.type === 'easy_run' || w.type === 'long_mountain_run') {
-        dayZoneSenseMin += Math.round(dur * 0.85);
-      }
-
-      if (w.title) titles.push(w.title);
-      if (w.athleteRpe) rpes.push(w.athleteRpe);
-      if (calc.intensityFactor > 0) ifValues.push(calc.intensityFactor);
-    }
-
-    // Exact daily EWMA updates
-    ctl = ctl + (dayTss - ctl) * ctlDecay;
-    atl = atl + (dayTss - atl) * atlDecay;
-    const tsb = ctl - atl;
-
-    ctlHistory.push(ctl);
-
-    // Ramp rate: difference between today's CTL and CTL 7 days ago
-    let rampRate = 0;
-    if (ctlHistory.length > 7) {
-      rampRate = Math.round((ctl - ctlHistory[ctlHistory.length - 8]) * 10) / 10;
-    }
-
-    const avgIf = ifValues.length > 0 ? Math.round((ifValues.reduce((a, b) => a + b, 0) / ifValues.length) * 100) / 100 : undefined;
-    const avgRpe = rpes.length > 0 ? Math.round((rpes.reduce((a, b) => a + b, 0) / rpes.length) * 10) / 10 : undefined;
-
-    points.push({
-      date: dateStr,
-      dayLabel: d.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' }),
-      tss: dayTss,
-      mountainTss: dayMountainTss > 0 ? dayMountainTss : dayTss,
-      intensityFactor: avgIf,
-      ctl: Math.round(ctl * 10) / 10,
-      atl: Math.round(atl * 10) / 10,
-      tsb: Math.round(tsb * 10) / 10,
-      rampRate,
-      zoneSenseAerobicMin: dayZoneSenseMin,
-      elevationGainM: dayElevationGain,
-      elevationLossM: dayElevationLoss,
-      workoutTitle: titles.join(' + ') || undefined,
-      rpe: avgRpe,
-    });
-  }
-
-  return points;
 }
 
 /**

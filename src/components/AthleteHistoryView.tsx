@@ -165,7 +165,7 @@ export const AthleteHistoryView: React.FC<AthleteHistoryViewProps> = ({
                 </span>
               </div>
               <p className="text-xs text-zinc-400 mt-0.5 leading-relaxed">
-                Miguel extrae tus métricas de <strong>Suunto ZoneSense (DFA a1)</strong> y pulsaciones exclusivamente de tu reloj Suunto o de tu documento <code className="text-zinc-300">.md</code>. Jamás inventará zonas, fatigas ni umbrales.
+                Miguel extrae tus métricas de <strong>Suunto ZoneSense</strong> y pulsaciones exclusivamente de tu reloj Suunto o de tu documento <code className="text-zinc-300">.md</code>. Jamás inventará zonas, fatigas ni umbrales.
               </p>
             </div>
           </div>

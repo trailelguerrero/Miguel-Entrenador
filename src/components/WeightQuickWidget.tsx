@@ -1,3 +1,4 @@
+import { localDateKey } from '../utils/trainingLoad';
 import React, { useState } from 'react';
 import { 
   Scale, 
@@ -27,34 +28,34 @@ export const WeightQuickWidget: React.FC<WeightQuickWidgetProps> = ({
   onOpenFullPerformance
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [newWeight, setNewWeight] = useState<number>(profile.weightKg || 71.5);
+  const [newWeight, setNewWeight] = useState<number>(profile.weightKg || 0);
   const [newFatPct, setNewFatPct] = useState<string>('14.5');
   const [notes, setNotes] = useState<string>('Pesaje matutino en ayunas');
   const [isSavedSuccess, setIsSavedSuccess] = useState(false);
 
-  const currentWeight = Number(profile.weightKg) || 71.5;
-  const targetWeight = Number(profile.targetRaceWeightKg) || 67.5;
-  const heightM = (Number(profile.heightCm) || 176) / 100;
-  const bmi = (currentWeight / (heightM * heightM)).toFixed(1);
+  // Misma fuente que el resto de la app: último pesaje, o el peso del perfil
+  const history = [...StorageService.getWeightHistory()].sort((a, b) => a.date.localeCompare(b.date));
+  const currentWeight = StorageService.getCurrentWeightKg();
+  const targetWeight = Number(profile.targetRaceWeightKg) || 0;
+  const heightM = (Number(profile.heightCm) || 0) / 100;
+  const bmi = currentWeight > 0 && heightM > 0 ? (currentWeight / (heightM * heightM)).toFixed(1) : '—';
   const deltaKg = (currentWeight - targetWeight).toFixed(1);
-  const isTargetReached = currentWeight <= targetWeight;
+  const isTargetReached = targetWeight > 0 && currentWeight <= targetWeight;
 
-  // Biomechanical calculations for Transvulcania (+4,350m D+):
-  const kcalSaved = Math.round(Number(deltaKg) > 0 ? Number(deltaKg) * 222.5 : 0);
-  const minutesSaved = Math.round(Number(deltaKg) > 0 ? Number(deltaKg) * 6.5 : 0);
-
-  // Progress percentage toward goal (assuming starting point ~74 kg)
-  const startWeight = 74.0;
+  // Progreso desde el primer pesaje registrado hasta el objetivo
+  const startWeight = history.length > 0 ? history[0].weightKg : currentWeight;
   const totalToLose = startWeight - targetWeight;
   const lostSoFar = startWeight - currentWeight;
-  const progressPct = Math.min(100, Math.max(0, Math.round((lostSoFar / totalToLose) * 100)));
+  const progressPct = targetWeight > 0 && totalToLose > 0
+    ? Math.min(100, Math.max(0, Math.round((lostSoFar / totalToLose) * 100)))
+    : 0;
 
   const handleSaveWeight = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newWeight || newWeight <= 30 || newWeight >= 250) return;
 
     const entry: Omit<WeightEntry, 'id'> = {
-      date: new Date().toISOString().split('T')[0],
+      date: localDateKey(),
       weightKg: Number(newWeight),
       bodyFatPct: newFatPct ? Number(newFatPct) : undefined,
       notes: notes.trim() || undefined
@@ -102,7 +103,7 @@ export const WeightQuickWidget: React.FC<WeightQuickWidgetProps> = ({
                 </span>
 
                 <span className="text-xs text-zinc-400">
-                  Objetivo: <strong className="text-emerald-400">{targetWeight} kg</strong>
+                  Objetivo: <strong className="text-emerald-400">{targetWeight > 0 ? `${targetWeight} kg` : 'sin definir'}</strong>
                 </span>
 
                 <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
@@ -110,7 +111,7 @@ export const WeightQuickWidget: React.FC<WeightQuickWidgetProps> = ({
                     ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                     : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
                 }`}>
-                  {isTargetReached ? '¡Peso Óptimo!' : `-${deltaKg} kg restantes`}
+                  {targetWeight <= 0 ? 'Define tu peso objetivo' : isTargetReached ? '¡Peso objetivo alcanzado!' : `-${deltaKg} kg restantes`}
                 </span>
               </div>
 
@@ -129,16 +130,16 @@ export const WeightQuickWidget: React.FC<WeightQuickWidgetProps> = ({
             <div className="flex items-center space-x-2">
               <Flame className="w-4 h-4 text-orange-400 shrink-0" />
               <div>
-                <span className="text-[10px] text-zinc-500 block leading-tight">Ahorro en D+</span>
-                <span className="text-xs font-bold text-zinc-200">~{kcalSaved} kcal</span>
+                <span className="text-[10px] text-zinc-500 block leading-tight">Inicio registro</span>
+                <span className="text-xs font-bold text-zinc-200">{startWeight > 0 ? `${startWeight} kg` : '—'}</span>
               </div>
             </div>
 
             <div className="flex items-center space-x-2">
               <Timer className="w-4 h-4 text-emerald-400 shrink-0" />
               <div>
-                <span className="text-[10px] text-zinc-500 block leading-tight">Tiempo estimado</span>
-                <span className="text-xs font-bold text-emerald-400">~{minutesSaved} min</span>
+                <span className="text-[10px] text-zinc-500 block leading-tight">Pesajes</span>
+                <span className="text-xs font-bold text-emerald-400">{history.length}</span>
               </div>
             </div>
 
@@ -146,7 +147,7 @@ export const WeightQuickWidget: React.FC<WeightQuickWidgetProps> = ({
               <TrendingDown className="w-4 h-4 text-blue-400 shrink-0" />
               <div>
                 <span className="text-[10px] text-zinc-500 block leading-tight">IMC actual</span>
-                <span className="text-xs font-bold text-zinc-200">{bmi} (Óptimo)</span>
+                <span className="text-xs font-bold text-zinc-200">{bmi}</span>
               </div>
             </div>
           </div>

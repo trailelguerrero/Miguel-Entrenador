@@ -1,3 +1,5 @@
+import { analyzeWeekStructure } from '../utils/weekStructure';
+import { localDateKey } from '../utils/trainingLoad';
 import React, { useState } from 'react';
 import { 
   Calendar as CalendarIcon, 
@@ -83,7 +85,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     calendarCells.push(new Date(year, month, d));
   }
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = localDateKey();
 
   // Helper to format date YYYY-MM-DD
   const formatDateKey = (date: Date) => {
@@ -124,10 +126,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   };
 
   // Calculate monthly stats
-  const currentMonthWorkouts = workouts.filter((w) => {
-    const wDate = new Date(w.date);
-    return wDate.getFullYear() === year && wDate.getMonth() === month;
-  });
+  const monthPrefix = `${year}-${String(month + 1).padStart(2, '0')}-`;
+  const currentMonthWorkouts = workouts.filter((w) => w.date.startsWith(monthPrefix));
 
   const totalPlannedMinutes = currentMonthWorkouts.reduce((acc, w) => acc + (w.plannedDurationMin || 0), 0);
   const totalCompletedMinutes = currentMonthWorkouts
@@ -135,7 +135,10 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     .reduce((acc, w) => acc + (w.actualDurationMin || w.plannedDurationMin || 0), 0);
   const totalCompletedDPlus = currentMonthWorkouts
     .filter((w) => w.completed)
-    .reduce((acc, w) => acc + (w.actualElevationGainM || w.plannedElevationGainM || 0), 0);
+    .reduce((acc, w) => acc + (w.actualElevationGainM || 0), 0);
+
+  // Estructura 3 (o 2) + tirada larga de la semana de hoy (o la 1ª semana del mes mostrado)
+  const weekStructure = analyzeWeekStructure(workouts, getSelectedMondayStr());
 
   return (
     <div className="space-y-6">
@@ -154,7 +157,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
               <span className="text-zinc-500 font-normal">{year}</span>
             </h2>
             <p className="text-xs text-zinc-400">
-              Macrociclo hacia Transvulcania 2027 • 4 sesiones/semana
+              Macrociclo hacia Transvulcania 2027 • 3 entre semana (o 2) + tirada larga sáb/dom
             </p>
           </div>
           <div className="flex items-center space-x-1 pl-3">
@@ -252,14 +255,25 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3.5">
           <div className="flex items-center space-x-2 text-zinc-400 text-xs mb-1">
             <Activity className="w-3.5 h-3.5 text-cyan-400" />
-            <span>Frecuencia Semanal</span>
+            <span>Estructura de la Semana</span>
           </div>
-          <div className="text-lg font-black text-zinc-100">
-            4 días / sem
-            <span className="text-xs font-normal text-emerald-400 ml-1.5">
-              3 + Tirada Larga
-            </span>
+          {weekStructure.midweekPlanned === 0 && !weekStructure.longRunDate ? (
+            <div className="text-sm font-bold text-zinc-400">Semana sin planificar</div>
+          ) : (
+            <div className="text-lg font-black text-zinc-100">
+              {weekStructure.midweekPlanned} + Tirada Larga
+              <span className="text-xs font-normal text-emerald-400 ml-1.5">
+                {weekStructure.longRunDay ? `(${weekStructure.longRunDay})` : '(sin tirada larga)'}
+              </span>
+            </div>
+          )}
+          <div className="text-[10px] text-zinc-500 mt-0.5">
+            Semana {weekStructure.monday.slice(8)}/{weekStructure.monday.slice(5, 7)} · hechas {weekStructure.midweekCompleted}/{weekStructure.midweekPlanned}
+            {weekStructure.longRunDate ? ` + tirada ${weekStructure.longRunCompleted ? '✓' : 'pendiente'}` : ''}
           </div>
+          {weekStructure.issues.length > 0 && (
+            <div className="text-[10px] text-amber-400 mt-0.5">⚠ {weekStructure.issues.join('; ')}</div>
+          )}
         </div>
       </div>
 
@@ -395,7 +409,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         <span className="font-bold text-zinc-300">Leyenda Uphill:</span>
         <div className="flex items-center space-x-1.5">
           <span className="w-3 h-3 rounded-full bg-emerald-500/40 border border-emerald-500"></span>
-          <span>Aeróbico Z1/Z2 (DFA a1 &gt; 0.75)</span>
+          <span>Aeróbico (ZoneSense verde)</span>
         </div>
         <div className="flex items-center space-x-1.5">
           <span className="w-3 h-3 rounded-full bg-amber-500/40 border border-amber-500"></span>

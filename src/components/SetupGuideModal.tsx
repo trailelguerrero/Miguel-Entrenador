@@ -53,56 +53,56 @@ export const SetupGuideModal: React.FC<SetupGuideModalProps> = ({
 
   // Form states
   const [name, setName] = useState(profile.name || 'Atleta');
-  const [age, setAge] = useState(profile.age || 50);
-  const [heightCm, setHeightCm] = useState(profile.heightCm || 176);
-  const [weightKg, setWeightKg] = useState(profile.weightKg || 71.5);
-  const [targetRaceWeightKg, setTargetRaceWeightKg] = useState(profile.targetRaceWeightKg || 67.5);
+  const [age, setAge] = useState(profile.age || 0);
+  const [heightCm, setHeightCm] = useState(profile.heightCm || 0);
+  const [weightKg, setWeightKg] = useState(profile.weightKg || 0);
+  const [targetRaceWeightKg, setTargetRaceWeightKg] = useState(profile.targetRaceWeightKg || 0);
   
   // Physiology states
-  const [restingHr, setRestingHr] = useState(profile.restingHr || 48);
-  const [maxHr, setMaxHr] = useState(profile.maxHr || 178);
-  const [aetHr, setAetHr] = useState(profile.aetHr || 138);
-  const [antHr, setAntHr] = useState(profile.antHr || 162);
-  const [baselineHrv, setBaselineHrv] = useState(profile.baselineHrv || 51.5);
+  const [restingHr, setRestingHr] = useState(profile.restingHr || 0);
+  const [maxHr, setMaxHr] = useState(profile.maxHr || 0);
+  const [aetHr, setAetHr] = useState(profile.aetHr || 0);
+  const [antHr, setAntHr] = useState(profile.antHr || 0);
+  const [baselineHrv, setBaselineHrv] = useState(profile.baselineHrv || 0);
 
   // Routine states
-  const [availableDays, setAvailableDays] = useState(profile.availableDaysPerWeek || 4);
+  const [availableDays, setAvailableDays] = useState(profile.availableDaysPerWeek || 0);
   const [longRunDay, setLongRunDay] = useState(profile.preferredLongRunDay || 'saturday');
-  const [yearsTrail, setYearsTrail] = useState(profile.yearsTrailRunning || 12);
-  const [currentVolume, setCurrentVolume] = useState(profile.currentWeeklyVolumeHours || 6.5);
+  const [yearsTrail, setYearsTrail] = useState(profile.yearsTrailRunning || 0);
+  const [currentVolume, setCurrentVolume] = useState(profile.currentWeeklyVolumeHours || 0);
 
   // Ultra Experience & Miguel's Interview
   const initialUltra = profile.ultraExperience || {};
-  const [longestKm, setLongestKm] = useState(initialUltra.longestRaceKm || 85);
-  const [longestDPlus, setLongestDPlus] = useState(initialUltra.longestRaceElevationGainM || 5200);
-  const [completedUltras, setCompletedUltras] = useState(initialUltra.completedUltras || 'GTP 60k, Ultra Sierra Nevada 75k, CSP 110k');
+  const [longestKm, setLongestKm] = useState(initialUltra.longestRaceKm || 0);
+  const [longestDPlus, setLongestDPlus] = useState(initialUltra.longestRaceElevationGainM || 0);
+  const [completedUltras, setCompletedUltras] = useState(initialUltra.completedUltras || '');
   const [downhillAbility, setDownhillAbility] = useState<'beginner' | 'intermediate' | 'expert_technical'>(
     initialUltra.downhillTechnicalAbility || 'intermediate'
   );
   const [polesUsage, setPolesUsage] = useState<'never' | 'steep_only' | 'expert_all_hills'>(
     initialUltra.polesUsage || 'expert_all_hills'
   );
-  const [sleepHours, setSleepHours] = useState(initialUltra.sleepQualityAvgHours || 7.0);
+  const [sleepHours, setSleepHours] = useState(initialUltra.sleepQualityAvgHours || 0);
   const [stressLevel, setStressLevel] = useState<'low' | 'moderate' | 'high_physical' | 'high_mental'>(
     initialUltra.dailyWorkStressLevel || 'moderate'
   );
   const [recoveryCapacity, setRecoveryCapacity] = useState(
-    initialUltra.recoveryCapacityAt50 || 'A mis 50 años necesito entre 48 y 72h tras tiradas largas con mucho desnivel negativo para disipar la fatiga neuromuscular.'
+    initialUltra.recoveryCapacityAt50 || ''
   );
   const [selectedJoints, setSelectedJoints] = useState<string[]>(
-    initialUltra.vulnerableJointsOrTissues || ['Tendón de Aquiles', 'Sóleos excéntrico', 'Cintilla iliotibial']
+    initialUltra.vulnerableJointsOrTissues || []
   );
   const [heatTolerance, setHeatTolerance] = useState<'poor' | 'moderate' | 'strong'>(
     initialUltra.heatTolerance || 'moderate'
   );
   const [gutHistory, setGutHistory] = useState(
-    initialUltra.gutIssuesHistory || 'Tolerancia aceptable hasta 5h; a partir de ahí necesito comida salada y repartir los carbohidratos en tomas pequeñas.'
+    initialUltra.gutIssuesHistory || ''
   );
   const [motivation, setMotivation] = useState(
-    initialUltra.personalMotivation || 'Coronar Transvulcania a mis 50 años con preparación quirúrgica, respetando mi longevidad deportiva y disfrutando la montaña.'
+    initialUltra.personalMotivation || ''
   );
   const [hasVolcanicExp, setHasVolcanicExp] = useState<boolean>(
-    profile.advancedPhysiologicalProfile?.highMountain?.hasVolcanicTerrainExperience ?? true
+    profile.advancedPhysiologicalProfile?.highMountain?.hasVolcanicTerrainExperience ?? false
   );
 
   // Datos de Suunto: etiquetas Suunto/Manual y relleno automático al sincronizar
@@ -165,7 +165,7 @@ export const SetupGuideModal: React.FC<SetupGuideModalProps> = ({
 
   // Calculations
   const heightM = heightCm / 100;
-  const currentBmi = (weightKg / (heightM * heightM)).toFixed(1);
+  const currentBmi = weightKg > 0 && heightM > 0 ? (weightKg / (heightM * heightM)).toFixed(1) : '—';
   const weightDiff = Number((weightKg - targetRaceWeightKg).toFixed(1));
   const hasAdsCalculated = (antHr - aetHr) > 20 || ((antHr - aetHr) / antHr) > 0.1;
 
@@ -231,9 +231,9 @@ export const SetupGuideModal: React.FC<SetupGuideModalProps> = ({
   };
 
   const stepsList = [
-    { num: 1, title: 'Entrevista & Experiencia', sub: 'Conociendo al atleta de 50 años' },
+    { num: 1, title: 'Entrevista & Experiencia', sub: 'Conociendo al atleta' },
     { num: 2, title: 'Umbrales & Fisiología', sub: 'AeT, AnT, FC Reposo y ADS' },
-    { num: 3, title: 'Objetivo & Rutina', sub: 'Transvulcania y 4 días/semana' },
+    { num: 3, title: 'Objetivo & Rutina', sub: 'Transvulcania y 3 + tirada larga' },
     { num: 4, title: 'Datos & Suunto', sub: 'Sincronización y archivos FIT' },
     { num: 5, title: 'Nutrición & Estómago', sub: 'Gut training e hidratación' },
     { num: 6, title: 'Veredicto & Almacenamiento', sub: 'Checklist y privacidad local' },
@@ -569,7 +569,7 @@ export const SetupGuideModal: React.FC<SetupGuideModalProps> = ({
                   <span>Fisiología Uphill Athlete & Jason Koop</span>
                 </div>
                 <p className="text-zinc-300 leading-relaxed">
-                  Para no caer en la <em>zona basura</em> de fatiga sin adaptación, calculamos tus dos umbrales clave. En ultra trail, el <strong>Umbral Aeróbico (AeT / VT1 / DFA a1 &ge; 0.75)</strong> es tu techo de combustible de grasas: por encima de él, quemas glucógeno escaso.
+                  Para no caer en la <em>zona basura</em> de fatiga sin adaptación, calculamos tus dos umbrales clave. En ultra trail, el <strong>Umbral Aeróbico (AeT / VT1)</strong> es tu techo de combustible de grasas: por encima de él, quemas glucógeno escaso.
                 </p>
               </div>
 
@@ -602,7 +602,7 @@ export const SetupGuideModal: React.FC<SetupGuideModalProps> = ({
                     onChange={(e) => setAetHr(Number(e.target.value))}
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-emerald-400 font-bold"
                   />
-                  <span className="text-[10px] text-zinc-500 mt-1 block">DFA a1 &ge; 0.75 / Test deriva</span>
+                  <span className="text-[10px] text-zinc-500 mt-1 block">Zonas de FC del reloj / Test de deriva</span>
                 </div>
                 <div>
                   <label className="text-zinc-400 font-semibold flex flex-wrap items-center mb-1">Umbral AnT (VT2 / LTHR)<SourceTag field="antHr" /></label>
@@ -612,7 +612,7 @@ export const SetupGuideModal: React.FC<SetupGuideModalProps> = ({
                     onChange={(e) => setAntHr(Number(e.target.value))}
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-amber-400 font-bold"
                   />
-                  <span className="text-[10px] text-zinc-500 mt-1 block">DFA a1 = 0.50</span>
+                  <span className="text-[10px] text-zinc-500 mt-1 block">Zonas de FC del reloj</span>
                 </div>
               </div>
 
@@ -677,7 +677,7 @@ export const SetupGuideModal: React.FC<SetupGuideModalProps> = ({
                   <span>Objetivo Diana & Calendario Semanal</span>
                 </div>
                 <p className="text-zinc-300 leading-relaxed">
-                  Para un corredor de 50 años con responsabilidades y vida real, la consistencia supera al volumen suicida. La fórmula recomendada por Jason Koop para ultra es <strong>3 sesiones clave entre semana + 1 tirada larga el fin de semana</strong>.
+                  Para un corredor con responsabilidades y vida real, la consistencia supera al volumen suicida. La fórmula recomendada por Jason Koop para ultra es <strong>3 sesiones clave entre semana + 1 tirada larga el fin de semana</strong>.
                 </p>
               </div>
 
@@ -713,7 +713,7 @@ export const SetupGuideModal: React.FC<SetupGuideModalProps> = ({
                   >
                     {[1, 2, 3, 4, 5, 6, 7].map((n) => (
                       <option key={n} value={n}>
-                        {n === 4 ? '4 días (3 entre semana + 1 fin de semana) [Óptimo]' : n === 5 ? '5 días (4 entre semana + 1 fin de semana)' : n === 3 ? '3 días (2 entre semana + 1 fin de semana)' : `${n} ${n === 1 ? 'día' : 'días'}`}
+                        {n >= 4 ? `${n} días → plan 3 entre semana + tirada larga` : n === 3 ? '3 días → plan 2 entre semana + tirada larga' : `${n} ${n === 1 ? 'día' : 'días'} (el plan necesita al menos 3)`}
                       </option>
                     ))}
                   </select>
@@ -901,7 +901,7 @@ export const SetupGuideModal: React.FC<SetupGuideModalProps> = ({
                   <span>Veredicto Táctico de Coach Miguel</span>
                 </div>
                 <p className="text-zinc-200 leading-relaxed">
-                  ¡Ficha completa, <strong>{name}</strong>! Tienes <strong>{age} años</strong>, 12 años de poso montañero y un objetivo claro en <strong>Transvulcania 2027</strong>. Con tu umbral AeT en <strong>{aetHr} bpm</strong> y tu patrón de 4 días semanales, priorizaremos asimilación mitocondrial estricta y blindaje excéntrico de cuádriceps sin pisar un gimnasio.
+                  ¡Ficha completa, <strong>{name}</strong>! {age > 0 && <>Tienes <strong>{age} años</strong>{yearsTrail > 0 ? `, ${yearsTrail} años de montaña` : ''} y </>}un objetivo claro en <strong>Transvulcania 2027</strong>. {aetHr > 0 && <>Con tu umbral AeT en <strong>{aetHr} bpm</strong> y </>}la semana en 3 sesiones + tirada larga, priorizaremos asimilación mitocondrial estricta y blindaje excéntrico de cuádriceps sin pisar un gimnasio.
                 </p>
               </div>
 
@@ -953,7 +953,7 @@ export const SetupGuideModal: React.FC<SetupGuideModalProps> = ({
                 <div className="space-y-1.5 text-[11px]">
                   <div className="flex items-center space-x-2 text-emerald-400">
                     <Check className="w-3.5 h-3.5" />
-                    <span>Perfil de atleta de 50 años y entrevista ultra registrada</span>
+                    <span>Perfil de atleta y entrevista ultra registrada</span>
                   </div>
                   <div className="flex items-center space-x-2 text-emerald-400">
                     <Check className="w-3.5 h-3.5" />
@@ -965,7 +965,7 @@ export const SetupGuideModal: React.FC<SetupGuideModalProps> = ({
                   </div>
                   <div className="flex items-center space-x-2 text-emerald-400">
                     <Check className="w-3.5 h-3.5" />
-                    <span>Estructura semanal de 4 días (3+1) y tirada en {longRunDay === 'saturday' ? 'sábado' : 'domingo'} fijada</span>
+                    <span>Estructura semanal 3 (o 2) + tirada larga en sábado o domingo</span>
                   </div>
                   <div className="flex items-center space-x-2 text-emerald-400">
                     <Check className="w-3.5 h-3.5" />

@@ -51,8 +51,8 @@ export const WeeklyTssVsHrvWidget: React.FC<WeeklyTssVsHrvWidgetProps> = ({
 
   // Compute physiological correlation using Plews & Buchheit methodology
   const correlation = useMemo(() => {
-    return calculateHRVLoadCorrelation(workouts, checkIns, pmcData, profile, timeframe);
-  }, [workouts, checkIns, pmcData, profile, timeframe]);
+    return calculateHRVLoadCorrelation(workouts, checkIns, profile, timeframe);
+  }, [workouts, checkIns, profile, timeframe]);
 
   const {
     currentHrv7d,
@@ -135,20 +135,23 @@ export const WeeklyTssVsHrvWidget: React.FC<WeeklyTssVsHrvWidgetProps> = ({
     return `M ${firstX},${bottomY} L ${pts.join(' L ')} L ${lastX},${bottomY} Z`;
   }, [series, maxTss]);
 
-  // Dynamic Relationship Status Diagnosis for Ultra Running (50-year-old athlete context)
+  // Umbrales de carga relativos a la forma física actual (CTL × 7), no cifras fijas
+  const thr = correlation.currentLoadThresholds;
+
+  // Dynamic Relationship Status Diagnosis
   const relationshipDiagnosis = useMemo(() => {
-    if (currentStatus === 'non_functional_overreaching' || (currentWeeklyTss >= 320 && currentHrv7d < swcLower)) {
+    if (currentStatus === 'non_functional_overreaching' || (!!thr && currentWeeklyTss > thr.high && currentHrv7d > 0 && currentHrv7d < swcLower)) {
       return {
         state: 'desacople_critico',
         title: 'Desacople Autonómico Crítico (NFOR)',
         badge: 'Intensidad Supera Recuperación',
         badgeColor: 'bg-rose-500/20 text-rose-400 border-rose-500/40',
         summary: 'La carga semanal sostenida está provocando supresión continuada del tono vagal parasimpático.',
-        advice: 'Tus 50 años exigen asimilación celular. Reduce volumen de inmediato y prioriza rodajes regenerativos (< 130 bpm).',
+        advice: 'Reduce volumen de inmediato y prioriza rodajes regenerativos claramente por debajo de tu AeT.',
         dotColor: 'bg-rose-500',
         icon: AlertTriangle
       };
-    } else if (currentStatus === 'functional_overreaching' || (currentWeeklyTss >= 360 && currentHrv7d <= baselineHrv)) {
+    } else if (currentStatus === 'functional_overreaching' || (!!thr && currentWeeklyTss > thr.veryHigh && currentHrv7d > 0 && currentHrv7d <= baselineHrv)) {
       return {
         state: 'sobrecarga_funcional',
         title: 'Sobre-esfuerzo Funcional (FOR)',
@@ -159,7 +162,7 @@ export const WeeklyTssVsHrvWidget: React.FC<WeeklyTssVsHrvWidgetProps> = ({
         dotColor: 'bg-amber-500',
         icon: Zap
       };
-    } else if (currentStatus === 'recovery_deload' || currentWeeklyTss < 230) {
+    } else if (currentStatus === 'recovery_deload' || (!!thr && currentWeeklyTss < thr.low)) {
       return {
         state: 'descarga_frescura',
         title: 'Fase de Asimilación & Frescura',
@@ -182,7 +185,7 @@ export const WeeklyTssVsHrvWidget: React.FC<WeeklyTssVsHrvWidgetProps> = ({
         icon: CheckCircle2
       };
     }
-  }, [currentStatus, currentWeeklyTss, currentHrv7d, swcLower, baselineHrv]);
+  }, [currentStatus, currentWeeklyTss, currentHrv7d, swcLower, baselineHrv, thr]);
 
   const DiagIcon = relationshipDiagnosis.icon;
 
@@ -308,7 +311,7 @@ export const WeeklyTssVsHrvWidget: React.FC<WeeklyTssVsHrvWidgetProps> = ({
             <div className="bg-zinc-900/60 p-3 rounded-xl border border-rose-500/20 space-y-1">
               <span className="font-bold text-rose-400 block">3. Desacople / Alarma (NFOR)</span>
               <p className="text-[11px] text-zinc-400">
-                La carga semanal se mantiene alta (&gt; 320 TSS) pero la HRV 7d se desploma por debajo de {swcLower} ms por 3+ días. Señal de agotamiento simpático: exige microciclo de descarga.
+                La carga semanal se mantiene alta ({thr ? <>&gt; {thr.high} TSS, +10 % sobre tu CTL×7</> : 'sin CTL aún'}) pero la HRV 7d se desploma por debajo de {swcLower} ms por 3+ días. Señal de agotamiento simpático: exige microciclo de descarga.
               </p>
             </div>
           </div>
@@ -423,6 +426,11 @@ export const WeeklyTssVsHrvWidget: React.FC<WeeklyTssVsHrvWidgetProps> = ({
             </div>
             <p className="text-[11px] text-zinc-300 mt-1 leading-snug line-clamp-2">
               {relationshipDiagnosis.summary}
+            </p>
+            <p className="text-[10px] text-zinc-500 mt-1">
+              {thr
+                ? `Tus umbrales hoy (CTL ${thr.ctl} → ${thr.chronicWeeklyTss} TSS/sem): baja < ${thr.low} · alta > ${thr.high} · muy alta > ${thr.veryHigh}`
+                : 'Sin CTL todavía: no se clasifica la carga como alta o baja.'}
             </p>
           </div>
           <div className="text-[10px] pt-1.5 border-t border-zinc-800/80 flex items-center justify-between">
@@ -904,7 +912,7 @@ export const WeeklyTssVsHrvWidget: React.FC<WeeklyTssVsHrvWidgetProps> = ({
             onClick={() => onNavigateTab?.('zonesense')}
             className="px-3 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-zinc-950 text-xs font-bold transition cursor-pointer flex items-center gap-1"
           >
-            <span>Ver ZoneSense DFA a1</span>
+            <span>Ver ZoneSense</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </button>
         </div>

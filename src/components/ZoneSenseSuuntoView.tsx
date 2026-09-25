@@ -19,7 +19,6 @@ import {
 import { AthleteProfile, SuuntoIntegrationConfig } from '../types';
 import { SUUNTO_MCP_CONNECTOR_URL } from '../services/storage';
 import { parseFitFile, ParsedFitResult } from '../utils/fitParser';
-import { interpretDfaAlpha1, explainZoneSenseDecoupling } from '../utils/zoneSense';
 
 interface ZoneSenseSuuntoViewProps {
   profile: AthleteProfile;
@@ -38,9 +37,6 @@ export const ZoneSenseSuuntoView: React.FC<ZoneSenseSuuntoViewProps> = ({
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<'education' | 'fit_analyzer' | 'mcp_integration'>('education');
   
-  // Interactive Simulator for DFA a1
-  const [testHr, setTestHr] = useState(140);
-  const [testDfa, setTestDfa] = useState(0.82);
 
   // FIT file state
   const [isParsingFit, setIsParsingFit] = useState(false);
@@ -51,8 +47,6 @@ export const ZoneSenseSuuntoView: React.FC<ZoneSenseSuuntoViewProps> = ({
 
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
-  const interpretation = interpretDfaAlpha1(testDfa, profile.aetHr, profile.antHr);
-  const decouplingNote = explainZoneSenseDecoupling(testHr, profile.aetHr, testDfa);
 
   const handleFitUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -159,7 +153,7 @@ export const ZoneSenseSuuntoView: React.FC<ZoneSenseSuuntoViewProps> = ({
               <span className="text-[10px] font-mono text-emerald-400 font-bold">100% Plug & Play</span>
             </div>
             <p className="text-zinc-300 leading-relaxed">
-              <strong>¿No tienes API de Suunto? ¡No importa!</strong> Exporta el archivo <code>.fit</code> desde la app de Suunto en tu móvil o web y súbelo en la pestaña <em>"Analizador de Archivos .FIT"</em>. Miguel lee de inmediato las pulsaciones segundo a segundo, la curva DFA a1 de ZoneSense, la cadencia y el desnivel.
+              <strong>¿No tienes API de Suunto? ¡No importa!</strong> Exporta el archivo <code>.fit</code> desde la app de Suunto en tu móvil o web y súbelo en la pestaña <em>"Analizador de Archivos .FIT"</em>. Miguel lee las pulsaciones segundo a segundo, la cadencia y el desnivel. (El .FIT no incluye ZoneSense: el reparto de zonas se hace por FC con tus umbrales.)
             </p>
           </div>
         </div>
@@ -204,163 +198,55 @@ export const ZoneSenseSuuntoView: React.FC<ZoneSenseSuuntoViewProps> = ({
         </button>
       </div>
 
-      {/* 1. ZoneSense Physiology & Simulator */}
+      {/* 1. Qué es ZoneSense y cómo se usa (sin pulsaciones fijas) */}
       {activeSubTab === 'education' && (
         <div className="space-y-6">
-          
-          {/* Header Explanation */}
-          <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 sm:p-8 space-y-4 shadow-xl">
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center border border-amber-500/30">
-                <Zap className="w-5 h-5" />
+          <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 space-y-4">
+            <h3 className="text-lg font-black text-zinc-100">Qué es Suunto ZoneSense</h3>
+            <p className="text-sm text-zinc-300 leading-relaxed">
+              ZoneSense mide la intensidad a partir de la <strong>variabilidad entre latidos (intervalos R-R)</strong> durante el ejercicio,
+              con el método <strong>DDFA</strong> (análisis de fluctuaciones sin tendencia dinámico), desarrollado en la Universidad de Tampere
+              y comercializado por MoniCardi. No es el DFA a1 clásico (con sus cortes fijos 0,75 / 0,50): Suunto usa su propia calibración.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+              <div className="bg-emerald-950/30 border border-emerald-800/40 rounded-2xl p-4">
+                <div className="font-black text-emerald-400">Verde · Aeróbico</div>
+                <p className="text-zinc-300 mt-1">Por debajo del umbral aeróbico de ESE día.</p>
               </div>
-              <div>
-                <h3 className="text-lg font-black text-zinc-100">
-                  ¿Qué es Suunto ZoneSense y qué hay detrás?
-                </h3>
-                <p className="text-xs text-zinc-400">
-                  El salto de las zonas fijas de pulso al monitoreo del estrés celular en tiempo real
-                </p>
+              <div className="bg-amber-950/30 border border-amber-800/40 rounded-2xl p-4">
+                <div className="font-black text-amber-400">Amarillo · Anaeróbico</div>
+                <p className="text-zinc-300 mt-1">Entre el umbral aeróbico y el anaeróbico de ESE día.</p>
+              </div>
+              <div className="bg-red-950/30 border border-red-800/40 rounded-2xl p-4">
+                <div className="font-black text-red-400">Rojo · VO2máx</div>
+                <p className="text-zinc-300 mt-1">Por encima del umbral anaeróbico de ESE día.</p>
               </div>
             </div>
-
-            <p className="text-xs sm:text-sm text-zinc-300 leading-relaxed">
-              Tradicionalmente, los corredores de montaña nos guiamos por zonas de frecuencia cardíaca calculadas en laboratorio. Pero en un ultra trail como <strong>Transvulcania</strong>, el pulso sufre <em>deriva cardíaca</em> por calor, deshidratación, falta de sueño y altitud.
-            </p>
-
-            <p className="text-xs sm:text-sm text-zinc-300 leading-relaxed">
-              <strong>Suunto ZoneSense</strong> utiliza el análisis de fluctuación sin tendencia (<strong>DFA alpha-1</strong>) sobre la variabilidad de la frecuencia cardíaca (HRV) <em>durante el ejercicio</em>. Mide la correlación fractal de los latidos del corazón: cuando tu cuerpo entra en fatiga metabólica o acumula lactato, la fractalidad se desmorona de forma medible e instantánea.
-            </p>
-
-            {/* 3 Biological Thresholds with BPM */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
-              <div className="bg-zinc-950 p-4 rounded-2xl border border-emerald-900/40 space-y-2">
-                <div className="flex justify-between items-center">
-                  <span className="text-xs font-black text-emerald-400 uppercase tracking-wider">
-                    Aeróbico Puro (Z1 - Z2)
-                  </span>
-                  <span className="text-xs font-bold text-zinc-300 bg-emerald-950 px-2 py-0.5 rounded border border-emerald-800">
-                    DFA a1 ≥ 0.75
-                  </span>
-                </div>
-                <div className="text-sm font-black text-emerald-300 font-mono">
-                  &lt; {profile.aetHr} bpm
-                </div>
-                <p className="text-xs text-zinc-400 leading-relaxed">
-                  Tono parasimpático preservado. El motor funciona con oxidación de grasas y lactato basal (&lt;1.5 mmol/L). <strong>Aquí debe ocurrir el 85% de tu preparación para Transvulcania.</strong>
-                </p>
-              </div>
-
-              <div className="bg-zinc-950 p-4 rounded-2xl border border-amber-900/40 space-y-2">
-                <div className="flex justify-between items-center">
-                  <span className="text-xs font-black text-amber-400 uppercase tracking-wider">
-                    Transición / Tempo (Z3)
-                  </span>
-                  <span className="text-xs font-bold text-zinc-300 bg-amber-950 px-2 py-0.5 rounded border border-amber-800">
-                    0.75 &gt; a1 ≥ 0.50
-                  </span>
-                </div>
-                <div className="text-sm font-black text-amber-300 font-mono">
-                  {profile.aetHr + 1} - {profile.antHr} bpm
-                </div>
-                <p className="text-xs text-zinc-400 leading-relaxed">
-                  Superado el Umbral Aeróbico (AeT). Comienza el consumo acelerado de glucógeno y la acumulación de metabolitos. En ultras, pasar horas aquí conduce al temido "muro".
-                </p>
-              </div>
-
-              <div className="bg-zinc-950 p-4 rounded-2xl border border-red-900/40 space-y-2">
-                <div className="flex justify-between items-center">
-                  <span className="text-xs font-black text-red-400 uppercase tracking-wider">
-                    Anaeróbico (Z4 - Z5)
-                  </span>
-                  <span className="text-xs font-bold text-zinc-300 bg-red-950 px-2 py-0.5 rounded border border-red-800">
-                    DFA a1 &lt; 0.50
-                  </span>
-                </div>
-                <div className="text-sm font-black text-red-300 font-mono">
-                  &gt; {profile.antHr} bpm
-                </div>
-                <p className="text-xs text-zinc-400 leading-relaxed">
-                  Superado el Umbral Anaeróbico (AnT / LT2). Estrés simpático extremo, ácido láctico en sangre y fatiga en pocos minutos. Reservado para picos de potencia aeróbica.
-                </p>
-              </div>
+            <div className="p-4 rounded-2xl bg-zinc-950 border border-zinc-800 text-xs text-zinc-300 leading-relaxed space-y-2">
+              <p><strong className="text-amber-300">Las zonas de ZoneSense no equivalen a ninguna FC concreta.</strong> Se calculan como un desplazamiento respecto a tu nivel aeróbico de referencia del día (la "línea base" que el reloj toma al empezar suave). La misma FC puede ser verde un día y amarilla otro (fatiga, calor, cafeína, altitud), o verde corriendo y amarilla en bici.</p>
+              <p>Por eso la app nunca traduce los colores de ZoneSense a pulsaciones. Tus <strong>zonas de FC</strong> ({profile.aetHr ? `umbral aeróbico ${profile.aetHr} ppm` : 'sin umbral aeróbico'}{profile.antHr ? `, anaeróbico ${profile.antHr} ppm` : ''}) son otra referencia, útil cuando no llevas banda de pecho.</p>
             </div>
           </div>
 
-          {/* Interactive ZoneSense Diagnostic Simulator */}
-          <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 sm:p-8 space-y-6">
-            <div className="flex items-center space-x-2 text-zinc-100 font-black">
-              <Sliders className="w-5 h-5 text-amber-400" />
-              <span>Simulador Interactivo de Decoupling & ZoneSense</span>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-4">
-                <div>
-                  <div className="flex justify-between text-xs text-zinc-400 mb-1">
-                    <span>Frecuencia Cardíaca en Subida</span>
-                    <span className="font-bold text-zinc-200">{testHr} bpm (Tu AeT: {profile.aetHr} bpm)</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="110"
-                    max="180"
-                    value={testHr}
-                    onChange={(e) => setTestHr(Number(e.target.value))}
-                    className="w-full accent-amber-500 cursor-pointer"
-                  />
-                </div>
-
-                <div>
-                  <div className="flex justify-between text-xs text-zinc-400 mb-1">
-                    <span>Métrica Suunto ZoneSense (DFA a1)</span>
-                    <span className="font-bold text-emerald-400">{testDfa.toFixed(2)}</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0.30"
-                    max="1.10"
-                    step="0.02"
-                    value={testDfa}
-                    onChange={(e) => setTestDfa(Number(e.target.value))}
-                    className="w-full accent-emerald-500 cursor-pointer"
-                  />
-                  <div className="flex justify-between text-[10px] text-zinc-500 mt-1">
-                    <span>&lt; 0.50 Anaeróbico</span>
-                    <span>0.75 Umbral AeT</span>
-                    <span>&gt; 0.85 Aeróbico Alto</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Real-Time Interpretation Result */}
-              <div className="bg-zinc-950 p-5 rounded-2xl border border-zinc-800 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-zinc-400">Estado Celular:</span>
-                  <span className="text-xs font-black px-2.5 py-0.5 rounded-full" style={{ backgroundColor: `${interpretation.color}20`, color: interpretation.color, border: `1px solid ${interpretation.color}40` }}>
-                    {interpretation.zone}
-                  </span>
-                </div>
-
-                <div className="text-xs text-zinc-300">
-                  <strong>Pulsaciones equivalentes:</strong> <span className="font-mono font-bold text-amber-400">{interpretation.bpmRangeLabel}</span>
-                </div>
-
-                <div className="text-xs text-zinc-300">
-                  <strong>Metabolismo:</strong> {interpretation.metabolism}
-                </div>
-
-                <div className="text-xs text-zinc-400">
-                  <strong>Lactato:</strong> {interpretation.lactateState}
-                </div>
-
-                <div className="bg-zinc-900 p-3 rounded-xl border border-zinc-800 text-xs text-amber-300 font-medium">
-                  <strong>Veredicto Miguel:</strong> {decouplingNote}
-                </div>
-              </div>
-            </div>
+          <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 space-y-3">
+            <h3 className="text-base font-black text-zinc-100">Cómo usarlo bien</h3>
+            <ul className="text-xs text-zinc-300 space-y-2 list-disc pl-5 leading-relaxed">
+              <li><strong>Banda de pecho obligatoria:</strong> necesita los intervalos R-R exactos; el sensor óptico de muñeca no sirve.</li>
+              <li><strong>Calentamiento suave de ~10 min:</strong> en ese tiempo el reloj fija tu línea base del día; antes no da un valor fiable. Si arrancas fuerte, la referencia sale mal.</li>
+              <li><strong>Retraso de 1-2 minutos:</strong> el cálculo necesita una ventana de latidos. Sirve para esfuerzos continuos (rodajes, tiradas largas, subidas largas), no para series cortas ni fuerza.</li>
+              <li><strong>Para la base aeróbica:</strong> en rodajes y tiradas largas, mantente en verde. La distribución real de intensidad de la app sale del tiempo en verde / amarillo / rojo que registra Suunto.</li>
+              <li><strong>En esfuerzos largos a ritmo constante es normal que tienda hacia el amarillo</strong> con las horas: los índices de este tipo son sensibles a la duración y a la fatiga. Es una señal para aflojar, no un fallo.</li>
+            </ul>
           </div>
 
+          <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 space-y-2">
+            <h3 className="text-base font-black text-zinc-100">Qué dicen los estudios</h3>
+            <ul className="text-xs text-zinc-400 space-y-1.5 list-disc pl-5 leading-relaxed">
+              <li>Kanniainen y cols. (2023, Frontiers in Physiology): DDFA en 15 personas en cicloergómetro; buena concordancia con los umbrales de lactato.</li>
+              <li>Kanniainen y cols. (2025, Physiological Reports): 58 personas en test incremental en cinta, comparado con umbrales de lactato.</li>
+              <li>DFA a1 clásico (Rogers, Gronwald y cols.): 0,75 ≈ primer umbral ventilatorio y 0,50 ≈ segundo como media de grupo; a nivel individual esos cortes fijos no valen para todo el mundo, y el índice cambia con la duración del esfuerzo.</li>
+            </ul>
+          </div>
         </div>
       )}
 
@@ -448,9 +334,9 @@ export const ZoneSenseSuuntoView: React.FC<ZoneSenseSuuntoViewProps> = ({
                 {/* ZoneSense / Uphill Athlete Metabolic Distribution */}
                 <div className="space-y-3 bg-zinc-900 p-5 rounded-2xl border border-zinc-800">
                   <div className="flex justify-between items-center text-xs">
-                    <span className="font-bold text-zinc-200">Distribución Metabólica (Calibrada con tu AeT de {profile.aetHr} bpm):</span>
-                    <span className="font-bold text-emerald-400">
-                      ZoneSense Est: DFA a1 ~ {parsedFitData.estimatedDfaAlpha1?.toFixed(2)}
+                    <span className="font-bold text-zinc-200">Tiempo por FC (AeT {profile.aetHr} bpm / AnT {profile.antHr} bpm):</span>
+                    <span className="font-bold text-zinc-400">
+                      {parsedFitData.hasHeartRate ? 'Calculado por FC, no ZoneSense' : 'El archivo no trae FC'}
                     </span>
                   </div>
 
@@ -459,24 +345,24 @@ export const ZoneSenseSuuntoView: React.FC<ZoneSenseSuuntoViewProps> = ({
                     <div
                       style={{ width: `${parsedFitData.timeInAerobicPct}%` }}
                       className="bg-emerald-500 h-full"
-                      title={`Aeróbico Z1-Z2: ${parsedFitData.timeInAerobicPct}%`}
+                      title={`FC ≤ AeT: ${parsedFitData.timeInAerobicPct}%`}
                     />
                     <div
                       style={{ width: `${parsedFitData.timeInTransitionPct}%` }}
                       className="bg-amber-500 h-full"
-                      title={`Transición Z3: ${parsedFitData.timeInTransitionPct}%`}
+                      title={`AeT < FC ≤ AnT: ${parsedFitData.timeInTransitionPct}%`}
                     />
                     <div
                       style={{ width: `${parsedFitData.timeInAnaerobicPct}%` }}
                       className="bg-red-500 h-full"
-                      title={`Anaeróbico Z4-Z5: ${parsedFitData.timeInAnaerobicPct}%`}
+                      title={`FC > AnT: ${parsedFitData.timeInAnaerobicPct}%`}
                     />
                   </div>
 
                   <div className="flex justify-between text-xs text-zinc-400">
-                    <span className="text-emerald-400">Aeróbico: {parsedFitData.timeInAerobicPct}%</span>
-                    <span className="text-amber-400">Transición (Z3): {parsedFitData.timeInTransitionPct}%</span>
-                    <span className="text-red-400">Anaeróbico: {parsedFitData.timeInAnaerobicPct}%</span>
+                    <span className="text-emerald-400">≤ AeT: {parsedFitData.timeInAerobicPct}%</span>
+                    <span className="text-amber-400">AeT–AnT: {parsedFitData.timeInTransitionPct}%</span>
+                    <span className="text-red-400">&gt; AnT: {parsedFitData.timeInAnaerobicPct}%</span>
                   </div>
                 </div>
 

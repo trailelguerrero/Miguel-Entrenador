@@ -19,6 +19,18 @@ export interface StrengthExercise {
   isOutdoorFriendly: boolean;
 }
 
+/** Colores de Suunto ZoneSense: se evalúan contra la línea base de cada día, no contra una FC. */
+export type ZoneSenseTarget =
+  | 'ZoneSense verde (aeróbico)'
+  | 'ZoneSense amarillo (entre umbrales)'
+  | 'ZoneSense rojo (sobre umbral anaeróbico)'
+  | 'Regenerativo (verde, muy suave)';
+export type LegacyZoneSenseTarget =
+  | 'DFA a1 > 0.75 (Aeróbico puro)'
+  | 'DFA a1 0.75 - 0.50 (Transición)'
+  | 'DFA a1 < 0.50 (Anaeróbico)'
+  | 'Regenerativo';
+
 export interface Workout {
   id: string;
   date: string; // YYYY-MM-DD
@@ -31,7 +43,9 @@ export interface Workout {
   // Uphill Athlete & ZoneSense targets
   targetHrMin?: number;
   targetHrMax?: number;
-  zoneSenseTarget: 'DFA a1 > 0.75 (Aeróbico puro)' | 'DFA a1 0.75 - 0.50 (Transición)' | 'DFA a1 < 0.50 (Anaeróbico)' | 'Regenerativo';
+  // Objetivo de intensidad en colores de ZoneSense (NO equivalen a pulsaciones).
+  // Se aceptan los textos antiguos "DFA a1 ..." de sesiones ya guardadas.
+  zoneSenseTarget?: ZoneSenseTarget | LegacyZoneSenseTarget;
   
   description: string;
   personalizedReasoning?: string; // Why this session was custom-crafted for this specific athlete
@@ -48,13 +62,14 @@ export interface Workout {
   actualDurationMin?: number;
   actualDistanceKm?: number;
   actualElevationGainM?: number;
+  actualElevationLossM?: number;
   actualAvgHr?: number;
   actualMaxHr?: number;
   actualDfaAlpha1Avg?: number; // ZoneSense average
   zoneSenseBreakdown?: {
-    aerobicPct: number; // DFA a1 > 0.75
-    transitionPct: number; // 0.75 - 0.50
-    anaerobicPct: number; // < 0.50
+    aerobicPct: number; // ZoneSense verde (aeróbico)
+    transitionPct: number; // ZoneSense amarillo (entre umbrales)
+    anaerobicPct: number; // ZoneSense rojo (sobre umbral anaeróbico)
   };
   athleteRpe?: number; // 1 to 10
   athleteNotes?: string;
@@ -104,7 +119,7 @@ export interface RaceSimulationSegment {
   highestAltM: number;
   surfaceType: 'volcanic_sand' | 'dirt_trail' | 'technical_rock' | 'steep_descent_rock' | 'paved_road';
   targetHrCap: number; // Max HR advised for this segment (strict sub-AeT on climbs, low HR on descents)
-  recommendedEffort: 'AeT puro / Power-Hike' | 'DFA a1 > 0.75' | 'Z1 Controlada' | 'Protección Cuádriceps / Frenado mínimo';
+  recommendedEffort: 'AeT puro / Power-Hike' | 'ZoneSense verde' | 'Z1 Controlada' | 'Protección Cuádriceps / Frenado mínimo';
   estimatedTimeMin: number;
   targetCarbsGrams: number;
   targetSodiumMg: number;
@@ -212,7 +227,7 @@ export interface PMCDataPoint {
   tsb: number; // Training Stress Balance (Form = CTL - ATL)
   rampRate?: number; // 7-day change in CTL (+3 to +7 is safe)
   intensityFactor?: number; // Daily average Intensity Factor (IF)
-  zoneSenseAerobicMin: number; // Minutes spent in DFA a1 > 0.75
+  zoneSenseAerobicMin: number; // Minutos en ZoneSense verde
   elevationGainM: number;
   elevationLossM: number; // Eccentric muscle stress
   workoutTitle?: string;
@@ -447,6 +462,24 @@ export interface AthleteProfile {
   /** Explicación de cómo se calculó cada valor. */
   suuntoEvidence?: Partial<Record<SuuntoProfileField, string>>;
   suuntoProfileUpdatedAt?: string;
+  /** Aviso para cambiar las zonas de FC del reloj (solo con tendencia sostenida). */
+  watchZoneAdvice?: WatchZoneAdvice;
+}
+
+export interface WatchZoneRecommendation {
+  field: 'maxHr' | 'aetHr' | 'antHr';
+  label: string;
+  current: number;
+  suggested: number;
+  direction: 'up' | 'down';
+  evidence: string;
+}
+
+export interface WatchZoneAdvice {
+  checkedAt: string;
+  watch: { maxHr: number | null; zones: { z2: number | null; z3: number | null; z4: number | null; z5: number | null } | null; sport: string } | null;
+  recommendations: WatchZoneRecommendation[];
+  notes: string[];
 }
 
 /** Campos del perfil que se calculan a partir de los datos de Suunto. */
@@ -481,7 +514,7 @@ export interface WeeklyZoneDistribution {
   zone5Min: number; // VO2max / Anaeróbico (> AnT + 5)
   totalDurationMin: number;
   aerobicRatioPct: number; // (Z1 + Z2) / Total * 100
-  zoneSenseAerobicMin: number; // DFA a1 > 0.75
+  zoneSenseAerobicMin: number; // Minutos en ZoneSense verde
 }
 
 export interface WeeklyPerformanceSummary {
@@ -528,7 +561,10 @@ export interface DailyCheckIn {
   sleepQuality: number; // 1-100 or 1-10
   muscleSoreness?: number; // 1-10
   stressLevel?: number; // 1-10
-  readinessScore: number; // 0 - 100
+  /** Recovery (Balance) medio del día según Suunto, 0-100. Sin dato de Suunto → undefined. */
+  readinessScore?: number;
+  /** Muestras de Recovery de Suunto de ese día (pocas = día aún incompleto). */
+  recoverySamples?: number;
   status: 'optimal' | 'moderate' | 'fatigued'; // Green, Amber, Red
   coachAdvice: string;
   suggestedAction?: 'maintain' | 'downgrade_easy' | 'full_rest' | 'swap_with_rest';
@@ -645,7 +681,7 @@ export interface FartlekIntervalBlock {
   fastPaceLabel: string;
   fastTargetHrMax: number;
   fastZoneSense: string;
-  fastCadenceTarget: string;
+  fastCadenceTarget?: string; // sin valor: no hay dato de cadencia del atleta
   fastTacticalCue: string;
   recoveryDurationMinutes: number;
   recoveryPaceLabel: string;

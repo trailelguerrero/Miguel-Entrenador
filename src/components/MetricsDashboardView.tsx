@@ -35,16 +35,14 @@ import {
   PMCDataPoint, 
   SuuntoIntegrationConfig 
 } from '../types';
-import { formatZoneSenseWithBpm } from '../utils/zoneSense';
+import { describeZoneSenseTarget } from '../utils/zoneSense';
 import { ReportPdfModal } from './ReportPdfModal';
 import { 
-  calculatePmcSeriesFromWorkouts, 
   getTsbZoneDiagnosis, 
-  getRampRateDiagnosis,
-  calculateWorkoutTss 
+  getRampRateDiagnosis
 } from '../utils/pmcCalculations';
 import { StorageService } from '../services/storage';
-import { generateSamplePMCData } from '../services/sampleData';
+import { computePmcSeries, localDateKey } from '../utils/trainingLoad';
 import { ACWRVisualization } from './ACWRVisualization';
 import { calculateACWRSummary } from '../utils/acwrCalculations';
 import { HRVLoadOverreachingView } from './HRVLoadOverreachingView';
@@ -77,171 +75,112 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
   const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
   const [showSuuntoGuideModal, setShowSuuntoGuideModal] = useState(false);
   const [hoveredPmcPoint, setHoveredPmcPoint] = useState<PMCDataPoint | null>(null);
-  const [pmcMetricMode, setPmcMetricMode] = useState<'standard' | 'mountain'>('standard');
 
-  // Dynamic PMC calculations based on actual workouts and profile
+  // PMC calculado con todo el historial de entrenos completados (TSS de Suunto)
   const calculatedPmcSeries: PMCDataPoint[] = useMemo(() => {
     const days = period === '7d' ? 14 : period === '30d' ? 30 : period === 'mesocycle' ? 42 : 90;
-    
-    // Retrieve base PMC series
-    let baseSeries = StorageService.getPMCData();
-    if (!baseSeries || baseSeries.length < 90) {
-      baseSeries = generateSamplePMCData(90);
-      StorageService.savePMCData(baseSeries);
-    }
-
-    // Synchronize user workouts if present
-    if (workouts && workouts.length > 0) {
-      const workoutsByDate: Record<string, Workout[]> = {};
-      workouts.forEach(w => {
-        if (!workoutsByDate[w.date]) workoutsByDate[w.date] = [];
-        workoutsByDate[w.date].push(w);
-      });
-
-      let modified = false;
-      const ctlDecay = 1 - Math.exp(-1 / 42);
-      const atlDecay = 1 - Math.exp(-1 / 7);
-
-      const updatedSeries = baseSeries.map(p => ({ ...p }));
-      for (let i = 0; i < updatedSeries.length; i++) {
-        const pt = updatedSeries[i];
-        const dayWs = workoutsByDate[pt.date];
-        if (dayWs && dayWs.length > 0) {
-          let dayTss = 0;
-          let dayMTss = 0;
-          let dPlus = 0;
-          let dMinus = 0;
-          let titles: string[] = [];
-
-          for (const w of dayWs) {
-            const dur = w.completed && w.actualDurationMin ? w.actualDurationMin : w.plannedDurationMin;
-            const hr = w.completed && w.actualAvgHr ? w.actualAvgHr : (w.targetHrMin && w.targetHrMax ? (w.targetHrMin + w.targetHrMax) / 2 : undefined);
-            const elevLoss = (w.completed && w.actualElevationGainM !== undefined ? w.actualElevationGainM : (w.plannedElevationGainM || 0));
-            const calc = calculateWorkoutTss(dur, hr, profile.antHr || 166, w.athleteRpe, elevLoss);
-            dayTss += calc.tss;
-            dayMTss += calc.mountainTss;
-            dPlus += (w.completed && w.actualElevationGainM !== undefined) ? w.actualElevationGainM : (w.plannedElevationGainM || 0);
-            dMinus += elevLoss;
-            if (w.title) titles.push(w.title);
-          }
-
-          if (dayTss > 0) {
-            pt.tss = dayTss;
-            pt.mountainTss = dayMTss;
-            pt.elevationGainM = dPlus;
-            pt.elevationLossM = dMinus;
-            if (titles.length > 0) pt.workoutTitle = titles.join(' + ');
-            modified = true;
-          }
-        }
-      }
-
-      if (modified) {
-        for (let i = 1; i < updatedSeries.length; i++) {
-          const prev = updatedSeries[i - 1];
-          const curr = updatedSeries[i];
-          const load = pmcMetricMode === 'mountain' ? curr.mountainTss : curr.tss;
-          curr.ctl = Math.round((prev.ctl + (load - prev.ctl) * ctlDecay) * 10) / 10;
-          curr.atl = Math.round((prev.atl + (load - prev.atl) * atlDecay) * 10) / 10;
-          curr.tsb = Math.round((curr.ctl - curr.atl) * 10) / 10;
-          if (i >= 7) {
-            curr.rampRate = Math.round((curr.ctl - updatedSeries[i - 7].ctl) * 10) / 10;
-          }
-        }
-        return updatedSeries.slice(-days);
-      }
-    }
-
-    return baseSeries.slice(-days);
-  }, [workouts, period, profile.antHr, pmcMetricMode]);
+    return computePmcSeries(workouts, profile.antHr, days);
+  }, [workouts, period, profile.antHr]);
 
   // Latest PMC values
   const latestPmc = calculatedPmcSeries.length > 0 
     ? calculatedPmcSeries[calculatedPmcSeries.length - 1] 
-    : { ctl: 54.2, atl: 68.4, tsb: -14.2, tss: 65, mountainTss: 75, rampRate: 4.2 };
+    : { ctl: 0, atl: 0, tsb: 0, tss: 0, mountainTss: 0, rampRate: 0 };
 
   const tsbDiagnosis = getTsbZoneDiagnosis(latestPmc.tsb);
   const rampRateDiagnosis = getRampRateDiagnosis(latestPmc.rampRate || 0);
 
   // Total TSS in the displayed period
-  const totalPeriodTss = calculatedPmcSeries.reduce((sum: number, p: PMCDataPoint) => sum + (pmcMetricMode === 'standard' ? p.tss : p.mountainTss), 0);
+  const totalPeriodTss = calculatedPmcSeries.reduce((sum: number, p: PMCDataPoint) => sum + p.tss, 0);
   const avgDailyTss = Math.round(totalPeriodTss / Math.max(calculatedPmcSeries.length, 1));
 
   // ACWR 28-day summary
   const acwrSummary = useMemo(() => {
-    return calculateACWRSummary(workouts, pmcData);
-  }, [workouts, pmcData]);
+    return calculateACWRSummary(workouts, profile.antHr);
+  }, [workouts, profile.antHr]);
 
-  // HRV calculations
-  const last7DaysCheckIns = checkIns.slice(-7);
+  // HRV calculations (check-ins reales, ordenados por fecha: los últimos 7)
+  const last7DaysCheckIns = [...checkIns]
+    .filter(c => c.hrvRmssd > 0)
+    .sort((x, y) => x.date.localeCompare(y.date))
+    .slice(-7);
   const avgHrv7d = last7DaysCheckIns.length > 0
     ? (last7DaysCheckIns.reduce((acc, c) => acc + c.hrvRmssd, 0) / last7DaysCheckIns.length).toFixed(1)
-    : '46.4';
-  const baselineHrv = profile.baselineHrv || 51.5;
-  const hrvDeltaPct = (((Number(avgHrv7d) - baselineHrv) / baselineHrv) * 100).toFixed(1);
+    : '--';
+  const baselineHrv = profile.baselineHrv || 0;
+  const hrvDeltaPct = baselineHrv > 0 && last7DaysCheckIns.length > 0
+    ? (((Number(avgHrv7d) - baselineHrv) / baselineHrv) * 100).toFixed(1)
+    : '0.0';
 
   // Resting HR
-  const avgRestingHr7d = last7DaysCheckIns.length > 0
-    ? Math.round(last7DaysCheckIns.reduce((acc, c) => acc + c.restingHr, 0) / last7DaysCheckIns.length)
-    : 45;
-  const baselineRestingHr = profile.restingHr || 42;
-  const restingHrDelta = avgRestingHr7d - baselineRestingHr;
+  const restingValues = last7DaysCheckIns.map(c => c.restingHr).filter(v => v > 0);
+  const baselineRestingHr = profile.restingHr || 0;
+  const avgRestingHr7d = restingValues.length > 0
+    ? Math.round(restingValues.reduce((acc, v) => acc + v, 0) / restingValues.length)
+    : baselineRestingHr;
+  const restingHrDelta = baselineRestingHr > 0 ? avgRestingHr7d - baselineRestingHr : 0;
 
-  // Volume calculations based on period
-  const totalHours = (workouts.reduce((acc, w) => acc + (w.actualDurationMin || w.plannedDurationMin || 0), 0) / 60).toFixed(1);
-  const totalElevationGainM = workouts.reduce((acc, w) => acc + (w.actualElevationGainM || w.plannedElevationGainM || 0), 0);
-  const totalDistanceKm = workouts.reduce((acc, w) => acc + (w.actualDistanceKm || w.plannedDistanceKm || 0), 0).toFixed(1);
+  // Volumen del periodo elegido: solo entrenos completados dentro del rango
+  const periodDays = period === '7d' ? 7 : period === '30d' ? 30 : period === 'mesocycle' ? 42 : 90;
+  const periodStart = localDateKey(new Date(Date.now() - (periodDays - 1) * 86400000));
+  const periodWorkouts = workouts.filter(w => w.completed && w.date >= periodStart && w.date <= localDateKey());
+  const totalHours = (periodWorkouts.reduce((acc, w) => acc + (w.actualDurationMin || 0), 0) / 60).toFixed(1);
+  const totalElevationGainM = periodWorkouts.reduce((acc, w) => acc + (w.actualElevationGainM || 0), 0);
+  const totalDistanceKm = periodWorkouts.reduce((acc, w) => acc + (w.actualDistanceKm || 0), 0).toFixed(1);
 
-  // Zone Breakdown (% distribution)
+  // Distribución por zonas ZoneSense de Suunto (tiempo real medido), ponderada
+  // por la duración de cada entreno que trae ese dato.
+  const zsWorkouts = periodWorkouts.filter(w => w.zoneSenseBreakdown && (w.actualDurationMin || 0) > 0);
+  const zsMinutes = zsWorkouts.reduce((acc, w) => acc + (w.actualDurationMin || 0), 0);
+  const zsPct = (key: 'aerobicPct' | 'transitionPct' | 'anaerobicPct') =>
+    zsMinutes > 0
+      ? Math.round((zsWorkouts.reduce((acc, w) => acc + (w.actualDurationMin || 0) * w.zoneSenseBreakdown![key], 0) / zsMinutes) * 10) / 10
+      : 0;
+  const zsHours = (pct: number) => ((zsMinutes / 60) * pct / 100).toFixed(1);
+  const aerobicPct = zsPct('aerobicPct');
+  const transitionPct = zsPct('transitionPct');
+  const anaerobicPct = zsPct('anaerobicPct');
   const zoneDistribution = [
     {
-      zone: 'Zona 1 (Regenerativo)',
-      dfaLabel: 'DFA a1 > 0.85',
-      bpmRange: `< 130 bpm`,
-      pct: 34.0,
-      hours: (Number(totalHours) * 0.34).toFixed(1),
+      zone: 'Verde · Aeróbico',
+      dfaLabel: 'Bajo el umbral aeróbico del día',
+      pct: aerobicPct,
+      hours: zsHours(aerobicPct),
       color: 'bg-emerald-500',
       textColor: 'text-emerald-400',
-      description: 'Recuperación activa y depósitos de glucógeno',
+      description: 'Tiempo por debajo del umbral aeróbico según ZoneSense',
     },
     {
-      zone: 'Zona 2 (Aeróbico Puro / AeT)',
-      dfaLabel: 'DFA a1 ≥ 0.75',
-      bpmRange: `130 - ${profile.aetHr} bpm`,
-      pct: 48.5,
-      hours: (Number(totalHours) * 0.485).toFixed(1),
-      color: 'bg-emerald-400',
-      textColor: 'text-emerald-300',
-      description: 'Oxidación máxima de grasas (FatMax) y biogénesis mitocondrial',
-    },
-    {
-      zone: 'Zona 3 (Transición / Tempo)',
-      dfaLabel: '0.75 > a1 ≥ 0.50',
-      bpmRange: `${profile.aetHr + 1} - ${profile.antHr} bpm`,
-      pct: 13.5,
-      hours: (Number(totalHours) * 0.135).toFixed(1),
+      zone: 'Amarillo · Entre umbrales',
+      dfaLabel: 'Entre umbral aeróbico y anaeróbico del día',
+      pct: transitionPct,
+      hours: zsHours(transitionPct),
       color: 'bg-amber-500',
       textColor: 'text-amber-400',
-      description: 'Zona gris / Gasto acelerado de glucógeno',
+      description: 'Tiempo entre umbral aeróbico y anaeróbico según ZoneSense',
     },
     {
-      zone: 'Zona 4+ (Anaeróbico / AnT)',
-      dfaLabel: 'DFA a1 < 0.50',
-      bpmRange: `> ${profile.antHr} bpm`,
-      pct: 4.0,
-      hours: (Number(totalHours) * 0.04).toFixed(1),
+      zone: 'Rojo · VO2máx',
+      dfaLabel: 'Sobre el umbral anaeróbico del día',
+      pct: anaerobicPct,
+      hours: zsHours(anaerobicPct),
       color: 'bg-red-500',
       textColor: 'text-red-400',
-      description: 'Lactato acumulado y fatiga ácida rápida',
+      description: 'Tiempo por encima del umbral anaeróbico según ZoneSense',
     },
   ];
 
-  const totalAerobicPct = (zoneDistribution[0].pct + zoneDistribution[1].pct).toFixed(1);
+  const totalAerobicPct = aerobicPct.toFixed(1);
 
   // Weight tracking
-  const currentWeight = profile.weightKg || 71.5;
-  const targetWeight = profile.targetRaceWeightKg || 67.5;
+  const weightHistory = [...StorageService.getWeightHistory()].sort((x, y) => x.date.localeCompare(y.date));
+  const currentWeight = StorageService.getCurrentWeightKg();
+  const targetWeight = profile.targetRaceWeightKg || 0;
+  const startWeight = weightHistory.length > 0 ? weightHistory[0].weightKg : currentWeight;
   const weightToLose = (currentWeight - targetWeight).toFixed(1);
+  const weightProgressPct = startWeight > targetWeight && targetWeight > 0
+    ? Math.max(0, Math.min(100, Math.round(((startWeight - currentWeight) / (startWeight - targetWeight)) * 100)))
+    : 0;
 
   // Suunto API connection status
   const isSuuntoApiConnected = suuntoConfig.connected && !!suuntoConfig.auth;
@@ -387,7 +326,7 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
           }`}
         >
           <Activity className="w-4 h-4 text-emerald-400" />
-          <span>Zonas DFA a1 & Fisiología</span>
+          <span>Zonas ZoneSense & Fisiología</span>
         </button>
       </div>
 
@@ -466,7 +405,7 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
           <div className="bg-zinc-950 p-3 rounded-xl border border-zinc-800 space-y-1">
             <span className="text-[10px] text-zinc-400 font-bold uppercase block">3. Datos Leídos por Miguel</span>
             <div className="font-semibold text-amber-400">
-              DFA a1, Decoupling, FC & D+
+              ZoneSense, FC & D+
             </div>
             <p className="text-[11px] text-zinc-500">
               Análisis segundo a segundo de la correlación fractal de la HRV sin inventar nada.
@@ -482,7 +421,7 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
         <div 
           className="bg-zinc-900 border border-zinc-800 p-5 rounded-3xl space-y-3 cursor-pointer hover:border-zinc-700 transition"
           onClick={() => setActiveMetricsTab('zones')}
-          title="Ver desglose completo de Zonas Fisiológicas & DFA a1"
+          title="Ver desglose de tiempo en zonas ZoneSense"
         >
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Umbral Aeróbico (AeT)</span>
@@ -496,7 +435,7 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
               <span className="text-xs text-zinc-400 font-bold">bpm</span>
             </div>
             <div className="text-xs font-bold text-zinc-200 mt-1">
-              {formatZoneSenseWithBpm('DFA a1 > 0.75 (Aeróbico puro)', profile.aetHr, profile.antHr)}
+              {describeZoneSenseTarget('ZoneSense verde (aeróbico)')}
             </div>
           </div>
           <div className="pt-2 border-t border-zinc-800/80 text-[11px] text-zinc-400 flex items-center justify-between">
@@ -916,7 +855,7 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
           )}
           <ACWRVisualization
             workouts={workouts}
-            pmcData={pmcData}
+            antHr={profile.antHr}
             onScheduleDeload={onScheduleDeload}
             onNavigateTab={onNavigateTab}
           />
@@ -968,7 +907,7 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
         </div>
       )}
 
-      {/* Physiological Zones & Time Breakdown (with explicit BPM for DFA a1) */}
+      {/* Tiempo en zonas ZoneSense (sin traducir a pulsaciones) */}
       {(activeMetricsTab === 'all' || activeMetricsTab === 'zones') && (
         <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 sm:p-8 space-y-6 shadow-xl animate-in fade-in">
           {activeMetricsTab === 'zones' && (
@@ -991,13 +930,13 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
               <span>Distribución en Zonas Fisiológicas & Suunto ZoneSense</span>
             </h3>
             <p className="text-xs text-zinc-400 mt-0.5">
-              Cada umbral de DFA a1 traducido exactamente a pulsaciones cardíacas individuales (AeT: {profile.aetHr} bpm, AnT: {profile.antHr} bpm)
+              Tiempo en los colores de Suunto ZoneSense (con banda de pecho). No equivalen a pulsaciones fijas: se miden contra tu línea base de cada entreno.
             </p>
           </div>
 
           <div className="flex items-center space-x-2">
             <span className="px-3 py-1 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-bold">
-              {totalAerobicPct}% en Z1 + Z2 (Meta &gt;80%)
+              {zsMinutes > 0 ? <>{totalAerobicPct}% bajo AeT (Meta &gt;80%) · {zsWorkouts.length} entrenos con ZoneSense</> : 'Sin datos de ZoneSense en el periodo'}
             </span>
           </div>
         </div>
@@ -1009,13 +948,13 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
               key={idx}
               className={`${z.color} transition-all relative group`}
               style={{ width: `${z.pct}%` }}
-              title={`${z.zone}: ${z.pct}% (${z.bpmRange})`}
+              title={`${z.zone}: ${z.pct}%`}
             />
           ))}
         </div>
 
         {/* Detailed Breakdown Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 pt-2">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
           {zoneDistribution.map((item, idx) => (
             <div key={idx} className="bg-zinc-950 p-4 rounded-2xl border border-zinc-800 space-y-2">
               <div className="flex justify-between items-start">
@@ -1026,12 +965,7 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
                   {item.pct}%
                 </span>
               </div>
-
-              {/* Exact BPM & DFA a1 */}
               <div className="space-y-0.5">
-                <div className="text-sm font-black text-zinc-100 font-mono">
-                  {item.bpmRange}
-                </div>
                 <div className="text-xs font-mono text-zinc-400">
                   {item.dfaLabel}
                 </div>
@@ -1056,7 +990,7 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
               Cumplimiento de la Regla de Oro (Training for the Uphill Athlete):
             </span>
             <p className="leading-relaxed">
-              Actualmente mantienes un <strong>{totalAerobicPct}%</strong> de tu entrenamiento estrictamente por debajo de tu AeT (&lt; {profile.aetHr} bpm con DFA a1 &ge; 0.75). Esto garantiza la reversión activa del <strong>Síndrome de Deficiencia Aeróbica (ADS)</strong>, maximiza la densidad mitocondrial de las fibras lentas tipo I y protege tus articulaciones de cara al volumen de Transvulcania.
+              Actualmente mantienes un <strong>{totalAerobicPct}%</strong> del tiempo registrado con ZoneSense en verde (por debajo del umbral aeróbico de cada día). Esto garantiza la reversión activa del <strong>Síndrome de Deficiencia Aeróbica (ADS)</strong>, maximiza la densidad mitocondrial de las fibras lentas tipo I y protege tus articulaciones de cara al volumen de Transvulcania.
             </p>
           </div>
         </div>
@@ -1075,7 +1009,7 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
                 <Scale className="w-4 h-4" />
               </div>
               <div>
-                <h4 className="text-sm font-black text-zinc-100">Peso Óptimo de Carrera (67.5 kg)</h4>
+                <h4 className="text-sm font-black text-zinc-100">Peso Óptimo de Carrera ({targetWeight} kg)</h4>
                 <p className="text-[11px] text-zinc-400">Biomecánica vertical y costo metabólico en +4.350m D+</p>
               </div>
             </div>
@@ -1091,10 +1025,10 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
               <span className="font-mono font-bold text-zinc-200">Resta: -{weightToLose} kg</span>
             </div>
             <div className="w-full bg-zinc-950 h-3 rounded-full overflow-hidden border border-zinc-800">
-              <div className="h-full bg-gradient-to-r from-amber-500 to-emerald-400 rounded-full" style={{ width: '62%' }} />
+              <div className="h-full bg-gradient-to-r from-amber-500 to-emerald-400 rounded-full" style={{ width: `${weightProgressPct}%` }} />
             </div>
             <div className="flex justify-between text-[10px] text-zinc-500 font-mono">
-              <span>Inicio: 74.0 kg</span>
+              <span>Inicio: {startWeight} kg</span>
               <span>Actual: {currentWeight} kg</span>
               <span className="text-emerald-400 font-bold">Meta: {targetWeight} kg</span>
             </div>
@@ -1102,7 +1036,9 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
 
           <div className="bg-zinc-950 p-3.5 rounded-xl border border-zinc-800 text-xs text-zinc-400 space-y-1 leading-relaxed">
             <strong className="text-zinc-200 block">Física del Trail Running:</strong>
-            Reducir esos {weightToLose} kg restantes a un ritmo sano de 300g/semana ahorrará aproximadamente <strong>~3.600 kcal</strong> de gasto energético en la subida al Roque de los Muchachos y restará <strong>18 toneladas</strong> de impacto acumulado en tus cuádriceps en la bajada de 2.400m a Tazacorte.
+            {targetWeight > 0
+              ? <>Te quedan <strong>{weightToLose} kg</strong> hasta tu peso objetivo. Pérdida progresiva, sin déficits calóricos severos.</>
+              : <>Define tu peso objetivo en el perfil para ver el progreso.</>}
           </div>
         </div>
 
@@ -1205,7 +1141,7 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
                   <strong>¡No necesitas configurar ninguna API si no quieres!</strong> Solo descarga el archivo <code>.fit</code> de tu sesión desde la app móvil de Suunto (opción <em>"Exportar entrenamiento como .FIT"</em>) y arrástralo en la pestaña <em>"Suunto & ZoneSense" &gt; "Analizador de Archivos .FIT"</em>.
                 </p>
                 <p className="text-zinc-400 text-[11px] pt-1 border-t border-zinc-800">
-                  El sistema extrae directamente la frecuencia cardíaca exacta, la curva <strong>DFA a1 de ZoneSense</strong>, la cadencia, el desnivel y la deriva cardíaca (decoupling) para que Miguel te analice la sesión de inmediato.
+                  El sistema extrae directamente la frecuencia cardíaca exacta, la cadencia, el desnivel y la deriva cardíaca (decoupling) para que Miguel te analice la sesión de inmediato.
                 </p>
               </div>
             </div>

@@ -25,8 +25,9 @@ import {
 } from 'lucide-react';
 import { Workout, AthleteProfile, WorkoutType, CoachLearnedInsight } from '../types';
 import { parseFitFile, ParsedFitResult } from '../utils/fitParser';
-import { formatZoneSenseWithBpm } from '../utils/zoneSense';
+import { describeZoneSenseTarget } from '../utils/zoneSense';
 import { calculateWorkoutTss } from '../utils/pmcCalculations';
+import { getWorkoutLoad } from '../utils/trainingLoad';
 import { SuuntoExportModal } from './SuuntoExportModal';
 
 interface WorkoutDetailModalProps {
@@ -160,12 +161,14 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
 
       setCoachAnalysis(feedbackText);
 
+      // Si el entreno viene de Suunto se conserva su TSS; solo se estima
+      // cuando no hay TSS medido (registro manual).
+      const hasSuuntoTss = !!workout.suuntoWorkoutKey;
       const tssResult = calculateWorkoutTss(
         Number(actualDuration),
-        Number(actualAvgHr),
-        profile.antHr || 166,
-        Number(athleteRpe),
-        Number(actualElevation)
+        Number(actualAvgHr) || undefined,
+        profile.antHr || undefined,
+        Number(athleteRpe) || undefined
       );
 
       const completedWorkout: Workout = {
@@ -184,16 +187,13 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
         giToleranceRating: giTolerance as 1 | 2 | 3 | 4 | 5,
         fuelingNotes: fuelingNotes.trim() || undefined,
         coachFeedback: feedbackText,
-        actualDfaAlpha1Avg: parsedFit?.estimatedDfaAlpha1,
-        tss: tssResult.tss,
-        intensityFactor: tssResult.intensityFactor,
-        zoneSenseBreakdown: parsedFit
-          ? {
-              aerobicPct: parsedFit.timeInAerobicPct,
-              transitionPct: parsedFit.timeInTransitionPct,
-              anaerobicPct: parsedFit.timeInAnaerobicPct,
-            }
-          : undefined,
+        actualElevationLossM: parsedFit ? parsedFit.totalDescentM : workout.actualElevationLossM,
+        tss: hasSuuntoTss ? workout.tss : tssResult.tss,
+        actualTss: hasSuuntoTss ? workout.actualTss : undefined,
+        intensityFactor: hasSuuntoTss ? workout.intensityFactor : tssResult.intensityFactor,
+        // ZoneSense solo si viene de Suunto; el .FIT no trae DFA a1 y la
+        // distribución por FC del .FIT no es ZoneSense.
+        zoneSenseBreakdown: workout.zoneSenseBreakdown,
       };
 
       onSave(completedWorkout);
@@ -367,9 +367,11 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                 <span>Objetivo Suunto ZoneSense & FC</span>
               </div>
               <div className="text-xs font-bold text-emerald-400 mt-0.5 font-mono">
-                {formatZoneSenseWithBpm(workout.zoneSenseTarget, profile.aetHr, profile.antHr)}
+                {workout.zoneSenseTarget
+                  ? describeZoneSenseTarget(workout.zoneSenseTarget)
+                  : 'Sin objetivo (actividad importada de Suunto)'}
               </div>
-              {profile.aetHr && (
+              {profile.aetHr > 0 && (
                 <div className="text-[10px] text-zinc-400 mt-0.5">
                   Límite AeT: &lt; {profile.aetHr} bpm
                 </div>
@@ -393,7 +395,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                   <span className="text-[10px] text-zinc-500 uppercase tracking-wider block font-semibold">TSS Sesión</span>
                   <div className="flex items-baseline gap-1 mt-0.5">
                     <span className="text-xl font-black text-amber-400 font-mono">
-                      {workout.tss || calculateWorkoutTss(workout.actualDurationMin || workout.plannedDurationMin, workout.actualAvgHr, profile.antHr || 166, workout.athleteRpe, workout.actualElevationGainM).tss}
+                      {getWorkoutLoad(workout, profile.antHr)?.tss ?? workout.plannedTss ?? calculateWorkoutTss(workout.plannedDurationMin, undefined, profile.antHr || undefined).tss}
                     </span>
                     <span className="text-[10px] text-zinc-500">TSS</span>
                   </div>
@@ -402,7 +404,11 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                   <span className="text-[10px] text-zinc-500 uppercase tracking-wider block font-semibold">Intensity Factor (IF)</span>
                   <div className="flex items-baseline gap-1 mt-0.5">
                     <span className="text-xl font-black text-cyan-400 font-mono">
-                      {(workout.intensityFactor || calculateWorkoutTss(workout.actualDurationMin || workout.plannedDurationMin, workout.actualAvgHr, profile.antHr || 166, workout.athleteRpe, workout.actualElevationGainM).intensityFactor).toFixed(2)}
+                      {workout.intensityFactor != null
+                        ? workout.intensityFactor.toFixed(2)
+                        : workout.suuntoWorkoutKey
+                          ? '—'
+                          : calculateWorkoutTss(workout.actualDurationMin || workout.plannedDurationMin, workout.actualAvgHr || undefined, profile.antHr || undefined, workout.athleteRpe).intensityFactor.toFixed(2)}
                     </span>
                     <span className="text-[10px] text-zinc-500">IF</span>
                   </div>
@@ -590,7 +596,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                     <strong className="block text-amber-200">Sincronización Suunto:</strong>
                     Si tu cuenta Suunto está conectada, pulsa <em>Sincronizar</em> en la pestaña Suunto y esta sesión se completará sola con
                     los datos reales del reloj. Para el análisis detallado, sube a continuación el archivo <strong>.FIT</strong> y Miguel
-                    extraerá la curva cardíaca y el desglose de <strong>ZoneSense (DFA &alpha;1)</strong>.
+                    extraerá la curva cardíaca, el desnivel y el tiempo por FC respecto a tus umbrales (el .FIT no incluye DFA &alpha;1).
                   </div>
                 </div>
 

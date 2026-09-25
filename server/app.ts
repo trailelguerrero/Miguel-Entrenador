@@ -63,17 +63,48 @@ app.post('/api/health/ai-test', async (_req: Request, res: Response) => {
   }
 });
 
+/** Disponibilidad: solo la que el atleta declara a mano; lo de Suunto es historial, no disponibilidad. */
+function availabilityLine(p: any): string {
+  const days = p?.availableDaysPerWeek;
+  if (days && p?.fieldSources?.availableDaysPerWeek === 'manual') {
+    return `Disponibilidad declarada por el atleta: ${days} días/semana${days <= 3 ? ' → como máximo 2 sesiones entre semana + tirada larga' : ''}.`;
+  }
+  if (days) return `Disponibilidad no declarada por el atleta. Según Suunto entrena de media ${days} días/semana (incluye otros deportes); no es un límite.`;
+  return 'Disponibilidad no declarada por el atleta.';
+}
+
+/** Zonas del reloj y, SOLO si hay tendencia sostenida, la recomendación de cambio. */
+function formatWatchZones(a: any): string {
+  if (!a?.watch) return 'sin datos';
+  const z = a.watch.zones;
+  const base = `FC máx ${a.watch.maxHr ?? '?'}; inicio Z2 ${z?.z2 ?? '?'}, Z3 ${z?.z3 ?? '?'}, Z4 ${z?.z4 ?? '?'}, Z5 ${z?.z5 ?? '?'}`;
+  const recs = (a.recommendations || []).map((r: any) => `${r.label} ${r.current}→${r.suggested} (${r.evidence})`);
+  return recs.length
+    ? `${base}. RECOMENDACIÓN POR TENDENCIA SOSTENIDA: ${recs.join('; ')}. Díselo al atleta.`
+    : `${base}. Sin tendencia sostenida que justifique cambiarlas: no recomiendes cambiar zonas por datos de un solo día.${(a.notes || []).length ? ` Notas: ${a.notes.join(' ')}` : ''}`;
+}
+
+function formatLoadContext(lc: any): string {
+  if (!lc) return '- Sin datos de carga ni recuperación.';
+  const lines: string[] = [];
+  if (lc.ctl != null) lines.push(`- CTL ${lc.ctl} · ATL ${lc.atl} · TSB ${lc.tsb} (TSS de Suunto)`);
+  for (const c of lc.recentCheckIns || []) {
+    lines.push(`- ${c.date}: HRV ${c.hrvRmssd} ms (referencia ${c.hrvBaseline} ms), sueño ${c.sleepHours} h${c.recoveryPct != null ? `, Recovery Suunto ${c.recoveryPct}%` : ''}, semáforo ${c.status}`);
+  }
+  return lines.length ? lines.join('\n') : '- Sin datos de carga ni recuperación.';
+}
+
 const MIGUEL_SYSTEM_INSTRUCTION = `
 Eres Miguel, un entrenador de Trail Running y Ultra Trail de élite. Eres el entrenador personal y amigo cercano del atleta.
 Tu tono es directo, motivador, empático pero sin pelos en la lengua: dices las cosas claras. Si el atleta corre demasiado rápido en días suaves ("zona basura" o "junk miles"), le frenas con explicaciones fisiológicas contundentes. Si está fatigado o su HRV/ZoneSense indica estrés celular, le ordenas descansar o bajar intensidad sin rodeos para protegerlo de lesiones y sobreentrenamiento.
 
 REGLA SUPREMA DE INTEGRIDAD DE DATOS (CERO ALUCINACIÓN O INVENCIÓN):
-- NUNCA inventes datos de Frecuencia Cardíaca ni métricas de Suunto ZoneSense (DFA alpha-1, desgloses de zonas, derivas, umbrales) ni utilices fórmulas estándar o genéricas (como 220-edad o zonas fijas arbitrarias).
+- NUNCA inventes datos de Frecuencia Cardíaca ni métricas de Suunto ZoneSense (colores, tiempo en zonas, umbrales) ni utilices fórmulas estándar o genéricas (como 220-edad o zonas fijas arbitrarias).
 - Los datos fisiológicos deben proceder EXCLUSIVAMENTE de:
   1. Suunto (a través de la sincronización de Suunto API, puente MCP o archivos .FIT reales subidos).
   2. El documento de historial del atleta en formato Markdown (.md) subido al sistema.
   3. Los registros explícitos de test de campo realizados por el atleta (ej. Test de deriva de 60 min).
-- Si en algún momento no se dispone de un dato real concreto (por ejemplo, falta la FC máxima real o el punto exacto de DFA a1 en subida), no lo inventes: pide al atleta que lo aporte en su archivo .md o que suba el archivo .fit de su reloj Suunto.
+- Si en algún momento no se dispone de un dato real concreto (por ejemplo, falta la FC máxima real o el tiempo en zonas de ZoneSense de una sesión), no lo inventes: pide al atleta que lo aporte en su archivo .md o que suba el archivo .fit de su reloj Suunto.
 
 Tus pilares fundamentales son:
 1. MANUAL DE CABECERA: "Training for the Uphill Athlete: A Manual for Mountain Runners and Ski Mountaineers" (Scott Johnston, Steve House y Kilian Jornet).
@@ -82,38 +113,37 @@ Tus pilares fundamentales son:
    - Fuerza sin máquinas: Step-ups en rocas/bancos, zancadas búlgaras con pausa isométrica, step-downs excéntricos para blindar los cuádriceps en bajadas, peso muerto rumano a una pierna y circuito de core lumbopélvico.
    - Trabajo de Resistencia Muscular (Muscular Endurance - ME): Subidas empinadas (>20-25% de pendiente) en power-hiking.
 
-2. SUUNTO ZONESENSE (DFA a1 - Detrended Fluctuation Analysis) Y TRADUCCIÓN A PULSACIONES (BPM):
-   - Eres un absoluto experto en ZoneSense. Mide la correlación fractal de la HRV durante el esfuerzo.
-   - REGLA CARDINAL DE CLARIDAD: Cuando menciones, expliques o prescribas un rango de DFA a1, NUNCA lo dejes como un valor abstracto aislado. SIEMPRE debes traducirlo e indicar de forma explícita las pulsaciones (BPM) exactas que corresponden a este atleta según sus umbrales individuales:
-     * DFA a1 ≥ 0.75 -> Estado aeróbico limpio (Z1-Z2), oxidación de grasas óptima: "por debajo de tu AeT (< 142 bpm)".
-     * DFA a1 0.75 a 0.50 -> Zona de transición aeróbica-anaeróbica (Tempo/Z3): "entre 143 y 166 bpm (entre tu AeT y AnT)".
-     * DFA a1 < 0.50 -> Régimen anaeróbico y glucolítico (Z4-Z5): "por encima de tu AnT (> 167 bpm)".
-     * DFA a1 > 0.85 -> Rodaje 100% regenerativo Z1: "estrictamente por debajo de 130 bpm".
-   - El atleta mira su reloj Suunto en carrera: al decirle "DFA a1 > 0.75", dale siempre la referencia en pulsaciones (< 142 bpm) para que pueda gestionarlo sin dudas.
-   - Sabes distinguir entre "deriva cardíaca por calor/deshidratación" (pulsaciones suben pero DFA a1 se mantiene alto) y "fatiga celular real" (DFA a1 cae en picado).
+2. SUUNTO ZONESENSE (CÓMO FUNCIONA Y CÓMO USARLO):
+   - ZoneSense mide la intensidad con DDFA (análisis de fluctuaciones sin tendencia DINÁMICO) sobre los intervalos R-R de la banda de pecho. Lo desarrolló la Universidad de Tampere (MoniCardi). NO es el DFA a1 clásico: no uses los cortes 0,75 / 0,50 ni hables de "valores de DFA a1" del reloj; el reloj muestra colores.
+   - Colores: VERDE = aeróbico (bajo el umbral aeróbico de ese día); AMARILLO = entre umbral aeróbico y anaeróbico; ROJO = por encima del umbral anaeróbico (zona VO2máx).
+   - REGLA CARDINAL: las zonas de ZoneSense NO equivalen a ninguna frecuencia cardíaca concreta. Se evalúan como desplazamiento respecto a la línea base aeróbica que el reloj fija en los primeros ~10 minutos suaves de CADA entreno. La misma FC puede ser verde un día y amarilla otro (fatiga, calor, cafeína, altitud) o en otro deporte. NUNCA traduzcas un color de ZoneSense a pulsaciones.
+   - Prescribe la intensidad en colores de ZoneSense (con banda de pecho). Las zonas de FC del reloj (AeT/AnT del perfil) son solo la referencia de respaldo cuando no hay banda; si las das, di explícitamente que son zonas de FC, no ZoneSense.
+   - Requisitos y límites: banda de pecho obligatoria; calentamiento suave de ~10 min para fijar la línea base (si arranca fuerte, la referencia sale mal); retraso de 1-2 min, así que sirve para esfuerzos continuos (rodajes, tiradas largas, subidas largas), no para series cortas ni fuerza.
+   - En tiradas largas a ritmo constante es normal que tienda hacia el amarillo con las horas (el índice es sensible a la duración y la fatiga): indícalo como señal para aflojar/caminar, no como error.
+   - Para la base aeróbica (Uphill Athlete), el objetivo es que la inmensa mayoría del tiempo esté en VERDE según el tiempo en zonas que registra Suunto.
 
 3. CÓMO SABER SI LA CUENTA DE SUUNTO ESTÁ CONECTADA O SI SUBIR EL ARCHIVO .FIT:
    - Si el atleta te pregunta cómo se conectan sus entrenamientos con Suunto:
      * En la pestaña 'Suunto & ZoneSense' → 'Conexión Suunto & Claude MCP' pulsa "Conectar Suunto" e inicia sesión con su cuenta Suunto (una sola vez por navegador). No necesita claves de desarrollador.
-     * Con la cuenta conectada (semáforo VERDE), el botón "Sincronizar" trae los últimos 28 días: resumen de cada entreno (duración, distancia, desnivel, FC media/máx, TSS y tiempo en zonas ZoneSense aeróbica/transición/anaeróbica) y, de cada noche, sueño, HRV y FC mínima. Las sesiones planificadas de ese día se marcan como completadas con los datos reales.
-     * La sincronización NO trae la serie segundo a segundo ni la curva de DFA a1: para ese análisis detallado de una sesión concreta, que exporte el archivo .fit desde la App Suunto y lo suba en la pestaña 'Suunto & ZoneSense' o en el detalle de la sesión.
-     * Del archivo .FIT el motor lee FC, cadencia, desnivel y velocidad; el DFA a1 se estima a partir del tiempo en zonas de FC (no es la curva exacta del reloj). Sé honesto con esto si te lo pregunta.
+     * Con la cuenta conectada (semáforo VERDE), el botón "Sincronizar" trae los entrenos de los últimos 365 días (para calcular CTL/ATL/TSB con el TSS de Suunto) y los últimos 28 días de sueño: resumen de cada entreno (duración, distancia, desnivel, FC media/máx, TSS y tiempo en zonas ZoneSense aeróbica/transición/anaeróbica) y, de cada noche, sueño, HRV y FC mínima. Las sesiones planificadas de ese día se marcan como completadas con los datos reales.
+     * La sincronización trae el tiempo en verde/amarillo/rojo de ZoneSense de cada entreno, pero NO la serie segundo a segundo: para ese análisis detallado de una sesión concreta, que exporte el archivo .fit desde la App Suunto y lo suba en la pestaña 'Suunto & ZoneSense' o en el detalle de la sesión.
+     * Del archivo .FIT el motor lee FC, cadencia, desnivel y velocidad. El .FIT NO trae ZoneSense: el reparto de zonas del .FIT es por FC respecto a AeT/AnT, no ZoneSense. Sé honesto con esto.
 
 4. OBJETIVO PRINCIPAL: Transvulcania 2027 en La Palma (73 km, +4.350m D+, -4.057m D-). Terreno volcánico, calor, crestería del Roque de los Muchachos a 2.426m y un descenso demoledor de 2.400m hasta el Puerto de Tazacorte.
 
-5. ESTRUCTURA SEMANAL DEL ATLETA: 4 días de entrenamiento por semana (3 entre semana + 1 tirada larga el fin de semana). Fuerza en casa o al aire libre sin material.
+5. ESTRUCTURA SEMANAL DEL ATLETA (REGLA FIJA): 3 sesiones entre semana (lunes a viernes) + 1 tirada larga en SÁBADO o DOMINGO (un fin de semana puede ser sábado y otro domingo; eliges tú según la semana). Algunas semanas puedes bajar a 2 sesiones entre semana si la fatiga lo aconseja (HRV, Recovery de Suunto, TSB) o si el atleta ha indicado menos disponibilidad; cuando lo hagas, explícale por qué. Fuerza en casa o al aire libre sin material.
 
 6. HISTORIAL DEPORTIVO (.MD): Conoce al dedillo el archivo .md del deportista si ha sido cargado. Cita sus carreras pasadas, sus puntos débiles y sus sensaciones históricas para demostrarle que le conoces de verdad.
 
 7. APRENDIZAJE CONTINUO Y CERO PLANES GENÉRICOS (100% PERSONALIZACIÓN Y ADAPTACIÓN):
    - Cada pupilo es un mundo biológico único. Odias las plantillas prefabricadas, planes enlatados y tablas genéricas de revista.
-   - Cada sesión que prescribes responde con precisión quirúrgica al estado de este atleta hoy: sus adaptaciones fisiológicas previas, sus puntos débiles registrados (ej: sobrecarga en sóleo izquierdo, fatiga excéntrica en bajadas), sus métricas reales de ZoneSense y su evolución de carga.
+   - Cada sesión que prescribes responde con precisión quirúrgica al estado de este atleta hoy: sus adaptaciones fisiológicas previas, sus puntos débiles registrados en su perfil o historial (nunca supongas lesiones que no consten), sus métricas reales de ZoneSense y su evolución de carga.
    - En cada sesión justificas exactamente el motivo personalizado ("Por qué para ti hoy") y qué regla aprendida de sesiones pasadas estás aplicando.
    - Aprendes de forma acumulativa y permanente: tras cada feedback, cada archivo .FIT analizado, cada caída de HRV o cada conversación, extraes nuevas conclusiones y las incorporas a tu modelo mental del pupilo.
 
 8. MONITORIZACIÓN DE PESO ÓPTIMO Y BIOMECÁNICA VERTICAL:
-   - Monitorizas de cerca la altura, peso actual y peso óptimo de carrera (Target: 67.5 kg) del atleta.
-   - Entiendes la física de escalada en montaña: en los +4.350m de D+ de Transvulcania, cada kilogramo extra requiere ~900 kcal más de gasto metabólico y aumenta brutalmente el estrés articular excéntrico en el descenso de 2.400m de El Time.
+   - Monitorizas la altura, peso actual y peso objetivo de carrera que figuren en sus datos (si no hay objetivo, no lo supongas).
+   - No des cifras de kcal o minutos ahorrados por kilo: no hay un dato validado para este atleta.
    - La pérdida de peso debe ser progresiva (300-400g/semana) mediante recomposición corporal y nunca con déficits calóricos severos que provoquen RED-S (Deficiencia Energética Relativa) o degradación muscular.
 
 9. DIRECCIÓN NUTRICIONAL, HIDRATACIÓN Y ENTRENAMIENTO GÁSTRICO (GUT TRAINING):
@@ -158,38 +188,38 @@ ${(coachMemory.coachNotebookNotes || []).map((n: string) => `  * ${n}`).join('\n
   * Experiencia en terreno volcánico (lapilli, picón, arena volcánica): ${advProfile.highMountain?.hasVolcanicTerrainExperience ? 'SÍ (conoce la tracción y abrasión del lapilli canario)' : 'NO (novato en arena/lapilli volcánico, advertir sobre polainas y fatiga de tobillos)'}
   * Notas sobre terreno volcánico: ${advProfile.highMountain?.volcanicTerrainNotes || 'Sin notas'}
   * Grado técnico: ${advProfile.highMountain?.technicalTerrainGrade === 'extreme_ridge_scree' ? 'Extremo / crestería y pedreras rotas' : advProfile.highMountain?.technicalTerrainGrade === 'technical_alpine_rocks' ? 'Alta montaña técnica con rocas' : 'Senderos moderados'}
-  * Altitud máxima alcanzada: ${advProfile.highMountain?.maxAltitudeReachedM || 2400}m
-  * Sensibilidad a la altitud/hipoxia: ${advProfile.highMountain?.altitudeSensitivity || 'ninguna'}
+  * Altitud máxima alcanzada: ${advProfile.highMountain?.maxAltitudeReachedM ? advProfile.highMountain.maxAltitudeReachedM + 'm' : 'Sin dato'}
+  * Sensibilidad a la altitud/hipoxia: ${advProfile.highMountain?.altitudeSensitivity || 'Sin dato'}
 - Tolerancia al Calor Documentada:
-  * Nivel: ${advProfile.heatTolerance?.level || 'moderada'}
+  * Nivel: ${advProfile.heatTolerance?.level || 'Sin dato'}
   * Historial de calambres en calor: ${advProfile.heatTolerance?.crampHistoryInHeat ? 'SÍ (vulnerable a calambres por deshidratación/sodio)' : 'NO'}
-  * Tasa de sudoración medida: ${advProfile.heatTolerance?.sweatRateDocumentedLitersPerHour ? advProfile.heatTolerance.sweatRateDocumentedLitersPerHour + ' L/h' : 'Estimada ~1.0-1.2 L/h'}
+  * Tasa de sudoración medida: ${advProfile.heatTolerance?.sweatRateDocumentedLitersPerHour ? advProfile.heatTolerance.sweatRateDocumentedLitersPerHour + ' L/h' : 'Sin medir'}
   * Perfil de sal / sudor: ${advProfile.heatTolerance?.sodiumLossProfile === 'salty_sweater_white_crust' ? 'Sudador salado (genera costra blanca, necesita 600-800 mg sodio/h)' : 'Pérdida de sal moderada/baja'}
-  * Estrategia de choque térmico: ${advProfile.heatTolerance?.heatStrategyNotes || 'Pautas de hidratación estándar'}
+  * Estrategia de choque térmico: ${advProfile.heatTolerance?.heatStrategyNotes || 'Sin dato'}
 - Cuestionario de Preferencias de Entrenamiento & Estilo de Vida:
-  * Franja horaria preferida: ${advProfile.trainingPreferences?.preferredTrainingTime || 'mañana temprana'}
-  * Terreno predilecto para tiradas largas: ${advProfile.trainingPreferences?.longRunPreferredTerrain || 'montaña técnica'}
-  * Deportes cruzados tolerados: ${advProfile.trainingPreferences?.crossTrainingSports?.join(', ') || 'Bicicleta, senderismo'}
+  * Franja horaria preferida: ${advProfile.trainingPreferences?.preferredTrainingTime || 'Sin dato'}
+  * Terreno predilecto para tiradas largas: ${advProfile.trainingPreferences?.longRunPreferredTerrain || 'Sin dato'}
+  * Deportes cruzados tolerados: ${advProfile.trainingPreferences?.crossTrainingSports?.join(', ') || 'Sin dato'}
   * Flexibilidad semanal: ${advProfile.trainingPreferences?.weeklyFlexibility === 'flexible_swap_days' ? 'Flexible (intercambiar días según imprevistos)' : 'Estructura fija'}
-  * Tolerancia a cinta de correr: ${advProfile.trainingPreferences?.treadmillTolerance || 'solo en emergencias climáticas'}
-  * Día preferido de descanso total: ${advProfile.trainingPreferences?.preferredRestDay || 'lunes'}
-  * Limitaciones de vida / trabajo: ${advProfile.trainingPreferences?.lifestyleConstraintsNotes || 'Jornada laboral estándar'}
+  * Tolerancia a cinta de correr: ${advProfile.trainingPreferences?.treadmillTolerance || 'Sin dato'}
+  * Día preferido de descanso total: ${advProfile.trainingPreferences?.preferredRestDay || 'Sin dato'}
+  * Limitaciones de vida / trabajo: ${advProfile.trainingPreferences?.lifestyleConstraintsNotes || 'Sin dato'}
 ` : '';
 
     const ultraExpContext = ultraExp ? `
-[EXPERIENCIA REAL EN ULTRA TRAIL Y CONDICIÓN DEL ATLETA (50 AÑOS)]:
-- Años corriendo ultratrail: ${athleteProfile?.yearsTrailRunning || 12} años
+[EXPERIENCIA EN ULTRA TRAIL Y CONDICIÓN DEL ATLETA]:
+- Años corriendo ultratrail: ${athleteProfile?.yearsTrailRunning ? athleteProfile.yearsTrailRunning + ' años' : 'Sin dato'}
 - Carrera más larga completada: ${ultraExp.longestRaceKm || 'N/A'} km (+${ultraExp.longestRaceElevationGainM || 'N/A'}m D+)
 - Ultras previas completadas: ${ultraExp.completedUltras || 'N/A'}
 - Habilidad en bajadas técnicas: ${ultraExp.downhillTechnicalAbility === 'expert_technical' ? 'Experto / cabra montesa' : ultraExp.downhillTechnicalAbility === 'intermediate' ? 'Intermedio (necesita cuidar cuádriceps)' : 'Básico / cauto'}
-- Técnica y uso de bastones: ${ultraExp.polesUsage || 'Pendiente'}
-- Calidad y horas de sueño habitual: ${ultraExp.sleepQualityAvgHours || 7}h/noche
-- Nivel de estrés laboral/vital: ${ultraExp.dailyWorkStressLevel || 'moderado'}
-- Asimilación y recuperación a sus 50 años: ${ultraExp.recoveryCapacityAt50 || 'Requiere mayor tiempo de recuperación neuromuscular (48-72h tras tiradas duras)'}
+- Técnica y uso de bastones: ${ultraExp.polesUsage || 'Sin dato'}
+- Calidad y horas de sueño habitual: ${ultraExp.sleepQualityAvgHours ? ultraExp.sleepQualityAvgHours + 'h/noche' : 'Sin dato'}
+- Nivel de estrés laboral/vital: ${ultraExp.dailyWorkStressLevel || 'Sin dato'}
+- Asimilación y recuperación: ${ultraExp.recoveryCapacityAt50 || 'Sin dato'}
 - Zonas vulnerables / lesiones históricas: ${ultraExp.vulnerableJointsOrTissues?.join(', ') || athleteProfile?.injuryHistory || 'Ninguna activa'}
-- Tolerancia al calor canario: ${ultraExp.heatTolerance || 'moderada'}
-- Historial digestivo / estómago: ${ultraExp.gutIssuesHistory || 'Tolerancia estándar'}
-- Motivación personal: "${ultraExp.personalMotivation || 'Superar el reto con salud y rigor'}"
+- Tolerancia al calor canario: ${ultraExp.heatTolerance || 'Sin dato'}
+- Historial digestivo / estómago: ${ultraExp.gutIssuesHistory || 'Sin dato'}
+- Motivación personal: ${ultraExp.personalMotivation ? '"' + ultraExp.personalMotivation + '"' : 'Sin dato'}
 ` : `
 - Historial de lesiones / puntos sensibles: ${athleteProfile?.injuryHistory || 'Sin datos'}
 `;
@@ -197,21 +227,23 @@ ${(coachMemory.coachNotebookNotes || []).map((n: string) => `  * ${n}`).join('\n
     const athleteContext = `
 [DATOS REALES DEL ATLETA - CERO DATOS INVENTADOS]
 - Nombre: ${athleteProfile?.name || 'Atleta'}
-- Edad: ${athleteProfile?.age || 50} años (Corredor veterano de ultratrail, respeta su experiencia pero cuida su recuperación neuromuscular)
-- Altura: ${athleteProfile?.heightCm || 176} cm
-- Peso Actual: ${athleteProfile?.weightKg || 71.5} kg
-- Peso Óptimo de Carrera: ${athleteProfile?.targetRaceWeightKg || 67.5} kg (Diferencia hacia meta: ${(Number(athleteProfile?.weightKg || 71.5) - Number(athleteProfile?.targetRaceWeightKg || 67.5)).toFixed(1)} kg)
+- Edad: ${athleteProfile?.age ? athleteProfile.age + ' años' : 'Sin dato'}
+- Altura: ${athleteProfile?.heightCm ? athleteProfile.heightCm + ' cm' : 'Sin dato'}
+- Peso Actual: ${athleteProfile?.weightKg ? athleteProfile.weightKg + ' kg' : 'Sin dato'}
+- Peso Objetivo de Carrera: ${athleteProfile?.targetRaceWeightKg ? athleteProfile.targetRaceWeightKg + ' kg' : 'Sin dato'}${athleteProfile?.weightKg && athleteProfile?.targetRaceWeightKg ? ` (Diferencia hacia meta: ${(Number(athleteProfile.weightKg) - Number(athleteProfile.targetRaceWeightKg)).toFixed(1)} kg)` : ''}
 - FC Reposo: ${athleteProfile?.restingHr ? athleteProfile.restingHr + ' bpm' : 'Pendiente de registrar en Suunto'}
 - FC Máx: ${athleteProfile?.maxHr ? athleteProfile.maxHr + ' bpm' : 'Pendiente de registrar en Suunto'}
-- Umbral Aeróbico (AeT): ${athleteProfile?.aetHr ? athleteProfile.aetHr + ' bpm' : 'Pendiente de registrar'}
-- Umbral Anaeróbico (AnT): ${athleteProfile?.antHr ? athleteProfile.antHr + ' bpm' : 'Pendiente de registrar'}
+- Umbral Aeróbico por FC (zonas del reloj, respaldo sin banda; NO es ZoneSense): ${athleteProfile?.aetHr ? athleteProfile.aetHr + ' bpm' : 'Pendiente de registrar'}
+- Umbral Anaeróbico por FC (zonas del reloj, respaldo sin banda; NO es ZoneSense): ${athleteProfile?.antHr ? athleteProfile.antHr + ' bpm' : 'Pendiente de registrar'}
 - Estado ADS (Síndrome Deficiencia Aeróbica): ${athleteProfile?.hasAds ? 'SÍ (necesita volumen estricto Z1/Z2)' : 'NO'}
 - Objetivo Principal: ${targetRace?.name || 'Transvulcania 2027'} (${targetRace?.distanceKm || 73}km, +${targetRace?.elevationGainM || 4350}m D+)
-- Disponibilidad: 4 días/semana (3 entre semana + tirada larga fin de semana). Sin gimnasio (solo peso corporal y aire libre).
+- Estructura semanal: 3 sesiones entre semana (o 2 si lo decides por fatiga/disponibilidad) + tirada larga en sábado o domingo.
+- ${availabilityLine(athleteProfile)}
 - Estado Biométrico Hoy (Suunto HRV/Sueño): ${currentReadiness ? JSON.stringify(currentReadiness) : 'Pendiente de sincronizar o check-in'}
 - Origen de Datos: ${athleteProfile?.dataSource || 'Registro / Suunto'}
 - VO2máx (Suunto): ${athleteProfile?.vo2Max ?? 'No disponible'}
 - HRV nocturna de referencia: ${athleteProfile?.baselineHrv ? athleteProfile.baselineHrv + ' ms' : 'Pendiente'}
+- Zonas de FC del reloj (carrera): ${formatWatchZones(athleteProfile?.watchZoneAdvice)}
 - Origen de cada dato del perfil (Suunto = calculado de su reloj; Manual = lo ha puesto o corregido el atleta): ${
       athleteProfile?.fieldSources && Object.keys(athleteProfile.fieldSources).length
         ? Object.entries(athleteProfile.fieldSources).map(([k, v]) => `${k}=${v === 'suunto' ? 'Suunto' : 'Manual'}`).join(', ')
@@ -250,7 +282,7 @@ ${memoryContext}
 // 2. Generate Plan / Microcycle Workouts
 app.post('/api/generate-plan', async (req: Request, res: Response) => {
   try {
-    const { athleteProfile, targetRace, weekStartDate, phaseFocus, existingWorkouts, athleteHistoryDoc, coachMemory } = req.body;
+    const { athleteProfile, targetRace, weekStartDate, phaseFocus, existingWorkouts, athleteHistoryDoc, coachMemory, loadContext } = req.body;
 
     const memoryContext = coachMemory ? `
 [APRENDIZAJES ACUMULADOS SOBRE ESTE ATLETA]:
@@ -268,14 +300,19 @@ Genera un microciclo semanal de entrenamiento de 7 días (comenzando el lunes ${
 - Cada sesión debe estar diseñada al 100% para ESTE atleta individual, teniendo en cuenta sus antecedentes, sus zonas fisiológicas exactas, sus debilidades mecánicas y las reglas aprendidas.
 - En cada sesión debes rellenar obligatoriamente "personalizedReasoning" (explicando en primera persona por qué prescribe esto para él, mencionando sus datos concretos) y "learnedAdjustment" (qué adaptación o regla de su memoria estás aplicando).
 
-El atleta dispone de 4 días de entrenamiento a la semana:
-- 3 sesiones entre semana (martes, miércoles y viernes, o adaptable).
-- 1 sesión de tirada larga el fin de semana (sábado o domingo) con desnivel positivo y descenso.
-- Los otros 3 días son DESCANSO TOTAL o movilidad ligera.
+[ESTRUCTURA SEMANAL OBLIGATORIA]:
+- 3 sesiones de carrera entre semana (lunes a viernes). Puedes reducirlas a 2 SOLO si el estado de fatiga de abajo lo aconseja o si la disponibilidad declarada por el atleta es menor; si reduces, explícalo en "weekSummary".
+- 1 tirada larga ("type": "long_mountain_run") en SÁBADO o DOMINGO, con desnivel positivo y descenso. Elige el día que mejor encaje esta semana (no tiene que ser siempre el mismo).
+- Nunca más de 3 sesiones entre semana, nunca tirada larga entre semana, nunca dos tiradas largas.
+- Los demás días: DESCANSO TOTAL o movilidad ligera ("type": "rest"). La fuerza sin material puede ir como "strength_core" y no cuenta como sesión de carrera.
+- ${availabilityLine(athleteProfile)}
+
+[ESTADO ACTUAL DE CARGA Y RECUPERACIÓN (datos reales)]:
+${formatLoadContext(loadContext)}
 
 [REGLA DE INTEGRIDAD]: Respeta rigurosamente los umbrales medidos:
-- AeT (Umbral Aeróbico): ${athleteProfile?.aetHr || 142} bpm (tope estricto para rodajes y tiradas)
-- AnT (Umbral Anaeróbico): ${athleteProfile?.antHr || 166} bpm
+- AeT (Umbral Aeróbico): ${athleteProfile?.aetHr ? athleteProfile.aetHr + ' bpm' : 'SIN DATO (no inventes pulsaciones)'} (tope de FC SOLO como respaldo sin banda; con banda de pecho la referencia es ZoneSense en verde)
+- AnT (Umbral Anaeróbico): ${athleteProfile?.antHr ? athleteProfile.antHr + ' bpm' : 'SIN DATO (no inventes pulsaciones)'}
 - ADS: ${athleteProfile?.hasAds ? 'SÍ (base comprometida, prohibido pasar de AeT en volumen)' : 'NO'}
 - Enfoque del mesociclo actual: ${phaseFocus || 'Base Aeróbica y Fortalecimiento Excéntrico al Aire Libre'}
 - Material: Cero gimnasio. Todo peso corporal, escalones, rocas o cuestas naturales.
@@ -301,7 +338,7 @@ Responde ÚNICAMENTE con un JSON válido estructurado así:
       "plannedElevationGainM": number (opcional),
       "targetHrMin": number,
       "targetHrMax": number,
-      "zoneSenseTarget": "DFA a1 > 0.75 (Aeróbico puro) | DFA a1 0.75 - 0.50 (Transición) | DFA a1 < 0.50 (Anaeróbico) | Regenerativo",
+      "zoneSenseTarget": "ZoneSense verde (aeróbico) | Regenerativo (verde, muy suave) | ZoneSense amarillo (entre umbrales) | ZoneSense rojo (sobre umbral anaeróbico)",
       "description": "Explicación detallada del objetivo metabólico y neuromuscular",
       "personalizedReasoning": "Por qué prescribo esto para ti hoy teniendo en cuenta tus datos específicos y sensaciones previas",
       "learnedAdjustment": "Regla aprendida aplicada aquí (ej: limitación de trote en >12% de pendiente / cuidado de sóleo)",
@@ -370,7 +407,7 @@ Responde en formato JSON:
     "type": "easy_run | rest | strength_core",
     "plannedDurationMin": number,
     "targetHrMax": number,
-    "zoneSenseTarget": "DFA a1 > 0.75 (Aeróbico puro) | Regenerativo",
+    "zoneSenseTarget": "ZoneSense verde (aeróbico) | Regenerativo (verde, muy suave)",
     "mainSet": "Instrucciones de la sesión adaptada",
     "warmup": "Calentamiento suave",
     "cooldown": "Estiramientos o vuelta a la calma",
@@ -418,14 +455,18 @@ Analiza la sesión de trail recién completada por el atleta y extrae un APRENDI
 - Distancia: ${fitMetrics?.totalDistanceKm || workout?.actualDistanceKm} km
 - Desnivel: +${fitMetrics?.totalAscentM || workout?.actualElevationGainM || 0}m D+ / -${fitMetrics?.totalDescentM || 0}m D-
 - FC Media: ${fitMetrics?.avgHeartRate || workout?.actualAvgHr} bpm | FC Máx: ${fitMetrics?.maxHeartRate || workout?.actualMaxHr} bpm
-- Umbral AeT del atleta: ${athleteProfile?.aetHr || 142} bpm
-- Distribución de zonas estimada:
-  * Aeróbico (DFA a1 >= 0.75 / HR <= AeT): ${fitMetrics?.timeInAerobicPct ?? 80}%
-  * Transición (DFA a1 0.75-0.50): ${fitMetrics?.timeInTransitionPct ?? 15}%
-  * Anaeróbico (DFA a1 < 0.50): ${fitMetrics?.timeInAnaerobicPct ?? 5}%
+- Umbrales del atleta: AeT ${athleteProfile?.aetHr ? athleteProfile.aetHr + ' bpm' : 'sin dato'} / AnT ${athleteProfile?.antHr ? athleteProfile.antHr + ' bpm' : 'sin dato'}
+- TSS (Suunto): ${workout?.actualTss ?? 'sin dato'}
+- Distribución de zonas: ${
+      workout?.zoneSenseBreakdown
+        ? `ZoneSense de Suunto → bajo AeT ${workout.zoneSenseBreakdown.aerobicPct}%, entre AeT y AnT ${workout.zoneSenseBreakdown.transitionPct}%, sobre AnT ${workout.zoneSenseBreakdown.anaerobicPct}%`
+        : fitMetrics?.hasHeartRate
+          ? `por FC del .FIT (NO es ZoneSense) → FC ≤ AeT ${fitMetrics.timeInAerobicPct}%, AeT–AnT ${fitMetrics.timeInTransitionPct}%, FC > AnT ${fitMetrics.timeInAnaerobicPct}%`
+          : 'sin datos de zonas (no las supongas)'
+    }
 
 [FEEDBACK DEL ATLETA]:
-- RPE (Esfuerzo percibido 1-10): ${athleteFeedback?.rpe || workout?.athleteRpe || 5}/10
+- RPE (Esfuerzo percibido 1-10): ${athleteFeedback?.rpe || workout?.athleteRpe ? (athleteFeedback?.rpe || workout?.athleteRpe) + '/10' : 'No indicado'}
 - Comentarios y sensaciones: "${athleteFeedback?.notes || workout?.athleteNotes || 'Sin comentarios adicionales'}"
 ${memoryContext}
 
@@ -556,7 +597,7 @@ Responde con un objeto JSON estructurado:
     "antHr": number o null,
     "maxHr": number o null,
     "restingHr": number o null,
-    "zoneSenseObservations": "Resumen de lo que observa en Suunto ZoneSense (DFA a1)",
+    "zoneSenseObservations": "Resumen del tiempo en verde/amarillo/rojo de ZoneSense (sin traducirlo a pulsaciones)",
     "keyRaces": ["Carrera 1", "Carrera 2"],
     "injuries": ["Lesión o sobrecarga detectada"],
     "weeklyVolumeKm": number o null

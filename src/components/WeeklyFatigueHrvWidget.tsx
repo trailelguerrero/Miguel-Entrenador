@@ -1,3 +1,4 @@
+import { localDateKey } from '../utils/trainingLoad';
 import React, { useState, useMemo } from 'react';
 import { 
   Activity, 
@@ -43,8 +44,9 @@ export const WeeklyFatigueHrvWidget: React.FC<WeeklyFatigueHrvWidgetProps> = ({
   const [activeTab, setActiveTab] = useState<'trends' | 'prediction' | 'daily_chart'>('prediction');
 
   // Baseline HRV
-  const baselineHrv = checkIns[0]?.hrvBaseline || 51;
-  const baselineRestingHr = profile.restingHr || 46;
+  // Misma HRV de referencia que el resto de la app: la del perfil
+  const baselineHrv = profile.baselineHrv || 0;
+  const baselineRestingHr = profile.restingHr || 0;
 
   // Compute Weekly Groupings (Last 28 days grouped into 4 blocks of 7 days)
   const weeklyTrends = useMemo<WeeklyHrvFatigueTrend[]>(() => {
@@ -56,16 +58,24 @@ export const WeeklyFatigueHrvWidget: React.FC<WeeklyFatigueHrvWidgetProps> = ({
     const weeks: WeeklyHrvFatigueTrend[] = [];
 
     const weekDefinitions = [
-      { index: 1, label: 'Semana 1 (Base & Adaptación)' },
-      { index: 2, label: 'Semana 2 (Carga Progresiva)' },
-      { index: 3, label: 'Semana 3 (Pico de Carga)' },
-      { index: 4, label: 'Semana 4 (Fatiga Acumulada)' },
+      { index: 1, label: 'Hace 3 semanas' },
+      { index: 2, label: 'Hace 2 semanas' },
+      { index: 3, label: 'Semana pasada' },
+      { index: 4, label: 'Últimos 7 días' },
     ];
+    // Media solo de los valores registrados (> 0); sin datos → 0
+    const avgOf = (vals: Array<number | undefined>) => {
+      const v = vals.filter((x): x is number => typeof x === 'number' && x > 0);
+      return v.length > 0 ? Math.round((v.reduce((a, b) => a + b, 0) / v.length) * 10) / 10 : 0;
+    };
 
+    // Semanas por FECHA (no por posición): la 4ª son los últimos 7 días hasta hoy
+    const today = new Date();
+    const keyDaysAgo = (n: number) => localDateKey(new Date(today.getFullYear(), today.getMonth(), today.getDate() - n));
     for (let w = 0; w < 4; w++) {
-      const startIdx = w * 7;
-      const endIdx = startIdx + 7;
-      let days = last28.slice(startIdx, endIdx);
+      const from = keyDaysAgo(27 - w * 7);
+      const to = keyDaysAgo(21 - w * 7);
+      let days = last28.filter(d => d.date >= from && d.date <= to);
 
       if (days.length === 0) {
         continue;
@@ -81,16 +91,16 @@ export const WeeklyFatigueHrvWidget: React.FC<WeeklyFatigueHrvWidgetProps> = ({
         } : d);
       }
 
-      const avgHrv = Math.round((days.reduce((acc, d) => acc + d.hrvRmssd, 0) / days.length) * 10) / 10;
-      const avgRestHr = Math.round((days.reduce((acc, d) => acc + d.restingHr, 0) / days.length) * 10) / 10;
-      const avgSleep = Math.round((days.reduce((acc, d) => acc + (d.sleepQuality || 80), 0) / days.length) * 10) / 10;
-      const avgSoreness = Math.round((days.reduce((acc, d) => acc + (d.muscleSoreness || 3), 0) / days.length) * 10) / 10;
-      const avgStress = Math.round((days.reduce((acc, d) => acc + (d.stressLevel || 3), 0) / days.length) * 10) / 10;
-      const avgReadiness = Math.round((days.reduce((acc, d) => acc + d.readinessScore, 0) / days.length));
+      const avgHrv = avgOf(days.map(d => d.hrvRmssd));
+      const avgRestHr = avgOf(days.map(d => d.restingHr));
+      const avgSleep = avgOf(days.map(d => d.sleepQuality));
+      const avgSoreness = avgOf(days.map(d => d.muscleSoreness));
+      const avgStress = avgOf(days.map(d => d.stressLevel));
+      const avgReadiness = Math.round(avgOf(days.map(d => d.readinessScore)));
       
       const amberRedCount = days.filter(d => d.status === 'moderate' || d.status === 'fatigued').length;
-      const hrvDevPct = Math.round(((avgHrv - baselineHrv) / baselineHrv) * 1000) / 10;
-      const restHrDelta = Math.round((avgRestHr - baselineRestingHr) * 10) / 10;
+      const hrvDevPct = baselineHrv > 0 && avgHrv > 0 ? Math.round(((avgHrv - baselineHrv) / baselineHrv) * 1000) / 10 : 0;
+      const restHrDelta = baselineRestingHr > 0 && avgRestHr > 0 ? Math.round((avgRestHr - baselineRestingHr) * 10) / 10 : 0;
 
       let classification: WeeklyHrvFatigueTrend['fatigueClassification'] = 'optimal_recovery';
       if (hrvDevPct < -12 || restHrDelta >= 3.5 || amberRedCount >= 5) {
@@ -124,7 +134,14 @@ export const WeeklyFatigueHrvWidget: React.FC<WeeklyFatigueHrvWidgetProps> = ({
   }, [checkIns, baselineHrv, baselineRestingHr, isSimulating, simulatedHrv, simulatedRestingHr]);
 
   // Current week trend
-  const currentWeek = weeklyTrends[weeklyTrends.length - 1] || weeklyTrends[0];
+  // Sin check-ins en las últimas 4 semanas: semana vacía (sin datos, no inventada)
+  const emptyWeek: WeeklyHrvFatigueTrend = {
+    weekIndex: 4, weekLabel: 'Últimos 7 días', startDate: '', endDate: '',
+    avgHrvRmssd: 0, baselineHrv, hrvDeviationPct: 0, avgRestingHr: 0, restingHrDelta: 0,
+    avgSleepQuality: 0, avgMuscleSoreness: 0, avgStressLevel: 0, avgReadinessScore: 0,
+    amberRedDaysCount: 0, totalDays: 0, fatigueClassification: 'optimal_recovery', isCurrentWeek: true,
+  };
+  const currentWeek = weeklyTrends[weeklyTrends.length - 1] || emptyWeek;
   const selectedWeek = weeklyTrends.find(w => w.weekIndex === selectedWeekIndex) || currentWeek;
 
   // Deload Prediction Engine based on Uphill Athlete & Autonomic Biomarkers
@@ -192,7 +209,7 @@ export const WeeklyFatigueHrvWidget: React.FC<WeeklyFatigueHrvWidgetProps> = ({
       suggestedVolumeReductionPct: 45,
       coachMiguelPrescription: {
         maxHeartRateCap: 130, // Strict Z1 recovery, well below AeT 142
-        zoneSenseTarget: 'DFA a1 > 0.85 (Regenerativo puro: < 130 bpm)',
+        zoneSenseTarget: 'Regenerativo (verde, muy suave)',
         weeklyVolumeHours: 3.2, // ~45% reduction from ~5.8h
         prohibitedElements: [
           'Tiradas > 75 minutos o ritmos tempo Z3/Z4',
@@ -208,7 +225,7 @@ export const WeeklyFatigueHrvWidget: React.FC<WeeklyFatigueHrvWidgetProps> = ({
         ],
         recoveryInterventions: [
           'Dormir 8h+ con ventilación fresca para maximizar HRV nocturna',
-          'Masaje miofascial con pelota en fascia plantar y sóleo izquierdo',
+          'Masaje miofascial con pelota en fascia plantar y sóleos',
           'Hidratación con 500 mg de sales en agua tibia tras cada rodaje suave',
           'Prueba de HRV matutina el viernes para confirmar rebote parasimpático'
         ]
@@ -242,6 +259,14 @@ export const WeeklyFatigueHrvWidget: React.FC<WeeklyFatigueHrvWidgetProps> = ({
         );
     }
   };
+
+  if (weeklyTrends.length === 0) {
+    return (
+      <div className="bg-stone-900 border border-stone-800 rounded-3xl p-6 text-sm text-stone-400">
+        No hay check-ins de HRV en las últimas 4 semanas. Sincroniza Suunto o registra el check-in matutino para ver la tendencia de fatiga.
+      </div>
+    );
+  }
 
   return (
     <div className="bg-stone-900 border border-stone-800 rounded-3xl p-6 sm:p-7 shadow-2xl space-y-6">

@@ -54,20 +54,24 @@ export function deriveProfileFromSuunto(
   // Umbrales: ZoneSense si Suunto los calculó; si no, tus zonas de FC de Suunto.
   const zsAet = recentFirst.find((w) => validHr(w.zoneSenseAerobicThreshold))?.zoneSenseAerobicThreshold;
   const zsAnt = recentFirst.find((w) => validHr(w.zoneSenseAnaerobicThreshold))?.zoneSenseAnaerobicThreshold;
-  const zones = recentFirst.find((w) => w.hrZoneLowerLimits && validHr(w.hrZoneLowerLimits.z3))?.hrZoneLowerLimits;
+  // Las zonas del reloj son por deporte (en carrera no son las mismas que en
+  // pilates o bici): se usan las del último entreno de CARRERA.
+  const zones = recentFirst.find(
+    (w) => RUNNING_IDS.has(w.activityId ?? -1) && w.hrZoneLowerLimits && validHr(w.hrZoneLowerLimits.z3),
+  )?.hrZoneLowerLimits;
   if (validHr(zsAet)) {
     values.aetHr = Math.round(zsAet);
-    evidence.aetHr = 'Umbral aeróbico medido por Suunto ZoneSense (DFA a1).';
+    evidence.aetHr = 'FC del umbral aeróbico según Suunto ZoneSense.';
   } else if (zones && validHr(zones.z3)) {
     values.aetHr = zones.z3;
-    evidence.aetHr = `Límite superior de tu Zona 2 de FC en Suunto (${zones.z3} bpm).`;
+    evidence.aetHr = `Inicio de tu Zona 3 de FC para carrera en Suunto (${zones.z3} bpm).`;
   }
   if (validHr(zsAnt)) {
     values.antHr = Math.round(zsAnt);
-    evidence.antHr = 'Umbral anaeróbico medido por Suunto ZoneSense (DFA a1).';
+    evidence.antHr = 'FC del umbral anaeróbico según Suunto ZoneSense.';
   } else if (zones && validHr(zones.z5)) {
     values.antHr = zones.z5;
-    evidence.antHr = `Límite superior de tu Zona 4 de FC en Suunto (${zones.z5} bpm).`;
+    evidence.antHr = `Inicio de tu Zona 5 de FC para carrera en Suunto (${zones.z5} bpm).`;
   }
   if (values.aetHr && values.antHr && values.antHr > values.aetHr) {
     const spread = values.antHr - values.aetHr;

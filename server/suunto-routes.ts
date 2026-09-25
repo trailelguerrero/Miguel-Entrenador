@@ -14,12 +14,16 @@ import type { Express, Request, Response } from 'express';
 import { createHash, randomBytes } from 'node:crypto';
 import type { SuuntoAuth } from '../src/types/index.js';
 import { deriveProfileFromSuunto } from './suunto-profile.js';
+import { computeWatchZoneAdvice } from './zone-advice.js';
 import { mapSuuntoCheckIns, mapSuuntoWorkouts, SuuntoRecoveryDay, SuuntoSleepSession, SuuntoWorkoutRow } from './suunto-map.js';
 
 const MCP_URL = (process.env.SUUNTO_MCP_URL || 'https://mcp-ten-kappa.vercel.app').replace(/\/+$/, '');
 const OAUTH_COOKIE = 'suunto_oauth';
 const MAX_SYNC_DAYS = 28; // límite de la 247 Data API de Suunto
-const PROFILE_WORKOUT_DAYS = 90; // historial de workouts para calcular el perfil
+// Historial de workouts: el CTL (media exponencial de 42 días) necesita
+// meses de historial para coincidir con el de Suunto. El MCP admite hasta 365.
+const WORKOUT_HISTORY_DAYS = 365;
+const PROFILE_WORKOUT_DAYS = 90; // ventana de workouts para calcular el perfil
 
 class ReconnectNeededError extends Error {}
 
@@ -246,12 +250,13 @@ export function registerSuuntoRoutes(app: Express) {
       const to = isoDate(new Date(Date.now() + 24 * 3600 * 1000));
       const from = isoDate(new Date(Date.now() - (rangeDays - 1) * 24 * 3600 * 1000));
 
-      // Workouts: 90 días para calcular el perfil (día de tirada larga, FC máx…);
-      // al calendario solo van los del rango pedido. Sueño/recovery: máx. 28 días.
-      const profileFrom = isoDate(new Date(Date.now() - (PROFILE_WORKOUT_DAYS - 1) * 24 * 3600 * 1000));
+      // Workouts: 365 días (historial completo para CTL/ATL/TSB). El perfil
+      // (día de tirada larga, FC máx…) usa los últimos 90. Sueño/recovery: máx. 28 días.
+      const historyFrom = isoDate(new Date(Date.now() - (WORKOUT_HISTORY_DAYS - 1) * 24 * 3600 * 1000));
+      const profileFromMs = Date.now() - PROFILE_WORKOUT_DAYS * 24 * 3600 * 1000;
       const fetchWorkouts = async (token: string) => {
         try {
-          return await callMcpTool(token, 'suunto_list_workouts_summary', { from: profileFrom, to });
+          return await callMcpTool(token, 'suunto_list_workouts_summary', { from: historyFrom, to });
         } catch (err) {
           // MCP antiguo (máx. 28 días en este tool): se usa el rango corto
           if (err instanceof ReconnectNeededError || !/rango máximo/i.test((err as Error).message)) throw err;
@@ -278,19 +283,27 @@ export function registerSuuntoRoutes(app: Express) {
       const [workoutRows, sleepRows, recoveryRows] = results as [SuuntoWorkoutRow[], SuuntoSleepSession[], SuuntoRecoveryDay[]];
       const allWorkoutRows = Array.isArray(workoutRows) ? workoutRows : [];
       const sleepList = Array.isArray(sleepRows) ? sleepRows : [];
-      const fromMs = Date.parse(from);
-      const workouts = mapSuuntoWorkouts(allWorkoutRows.filter((w) => w.startTime >= fromMs));
-      const checkIns = mapSuuntoCheckIns(sleepList, Array.isArray(recoveryRows) ? recoveryRows : []);
-      const profileFromSuunto = deriveProfileFromSuunto(allWorkoutRows, sleepList);
+      const workouts = mapSuuntoWorkouts(allWorkoutRows);
+      const profileFromSuunto = deriveProfileFromSuunto(
+        allWorkoutRows.filter((w) => w.startTime >= profileFromMs),
+        sleepList,
+      );
+      const checkIns = mapSuuntoCheckIns(
+        sleepList,
+        Array.isArray(recoveryRows) ? recoveryRows : [],
+        profileFromSuunto.values.baselineHrv,
+      );
+      const oldest = workouts.reduce<string | null>((min, w) => (!min || w.date < min ? w.date : min), null);
 
       res.json({
         success: true,
-        message: `Sincronizado con Suunto: ${workouts.length} entrenamientos y ${checkIns.length} días de sueño/HRV (${from} → hoy).`,
+        message: `Sincronizado con Suunto: ${workouts.length} entrenamientos (${oldest ?? historyFrom} → hoy) y ${checkIns.length} días de sueño/HRV (${from} → hoy).`,
         workouts,
         checkIns,
         lastSync: new Date().toISOString(),
         newAuth: refreshed ? auth : undefined,
         profileFromSuunto,
+        watchZoneAdvice: computeWatchZoneAdvice(allWorkoutRows),
       });
     } catch (err: any) {
       if (err instanceof ReconnectNeededError) {

@@ -16,7 +16,8 @@
  * - > 1.50: The Danger Zone (Substantially elevated overtraining & tissue breakdown risk > 35-50%).
  */
 
-import { Workout, PMCDataPoint } from '../types';
+import { Workout } from '../types';
+import { buildDailyLoadMap, buildDailyLoadSeries, localDateKey } from './trainingLoad';
 
 export type ACWRZone = 'undertraining' | 'sweet_spot' | 'overload_risk' | 'danger_overtraining';
 
@@ -56,52 +57,19 @@ export interface ACWRSummary {
 }
 
 /**
- * Builds a continuous date-indexed TSS map for at least 60 days
- * combining actual workouts and PMC historical data points.
+ * Builds a continuous date-indexed TSS map (oldest → today) from the
+ * athlete's COMPLETED workouts only (Suunto TSS when available).
+ * Days without training count as 0 TSS.
  */
 export function buildContinuousTssMap(
   workouts: Workout[],
-  pmcData: PMCDataPoint[],
-  daysCount: number = 60
+  daysCount: number = 60,
+  antHr?: number
 ): Map<string, { tss: number; titles: string[] }> {
   const map = new Map<string, { tss: number; titles: string[] }>();
-  const today = new Date();
-
-  // Initialize dates
-  for (let i = daysCount - 1; i >= 0; i--) {
-    const d = new Date(today);
-    d.setDate(today.getDate() - i);
-    const dateStr = d.toISOString().split('T')[0];
-    map.set(dateStr, { tss: 0, titles: [] });
+  for (const day of buildDailyLoadSeries(workouts, daysCount, antHr)) {
+    map.set(day.date, { tss: day.tss, titles: day.titles });
   }
-
-  // Populate from PMC baseline
-  if (pmcData && pmcData.length > 0) {
-    for (const p of pmcData) {
-      if (map.has(p.date)) {
-        map.set(p.date, {
-          tss: Number(p.tss) || 0,
-          titles: p.workoutTitle ? [p.workoutTitle] : []
-        });
-      }
-    }
-  }
-
-  // Populate / override from actual Workouts
-  if (workouts && workouts.length > 0) {
-    for (const w of workouts) {
-      if (map.has(w.date)) {
-        const current = map.get(w.date)!;
-        const workoutTss = w.actualTss || w.plannedTss || 
-          Math.round(((w.actualDurationMin || w.plannedDurationMin || 60) / 60) * 55);
-        current.tss += workoutTss;
-        if (w.title && !current.titles.includes(w.title)) {
-          current.titles.push(w.title);
-        }
-      }
-    }
-  }
-
   return map;
 }
 
@@ -170,18 +138,23 @@ export function getACWRZone(acwr: number): {
  */
 export function calculateACWRSummary(
   workouts: Workout[],
-  pmcData: PMCDataPoint[]
+  antHr?: number
 ): ACWRSummary {
-  // We need at least 56 days of daily TSS to have full 28-day chronic windows
-  const daysNeeded = 56;
-  const tssMap = buildContinuousTssMap(workouts, pmcData, daysNeeded);
+  // At least 56 days for full 28-day chronic windows; the EWMA uses the whole
+  // history since the first completed workout (starting at 0, no seed value).
+  const loggedDates = [...buildDailyLoadMap(workouts, antHr).keys()].sort();
+  const today = localDateKey();
+  const firstDate = loggedDates[0] && loggedDates[0] < today ? loggedDates[0] : today;
+  const daysSinceFirst = Math.round((new Date(today).getTime() - new Date(firstDate).getTime()) / 86400000) + 1;
+  const daysNeeded = Math.max(56, daysSinceFirst);
+  const tssMap = buildContinuousTssMap(workouts, daysNeeded, antHr);
   const sortedDates = Array.from(tssMap.keys()).sort();
 
   const series28d: ACWRDataPoint[] = [];
 
   // EWMA tracking state
-  let ewmaAcute = 45;
-  let ewmaChronic = 45;
+  let ewmaAcute = 0;
+  let ewmaChronic = 0;
   const acuteAlpha = 2 / (7 + 1);   // ~0.25
   const chronicAlpha = 2 / (28 + 1); // ~0.069
 
@@ -209,21 +182,19 @@ export function calculateACWRSummary(
       for (let j = Math.max(0, i - 27); j <= i; j++) {
         chronicSum += tssMap.get(sortedDates[j])?.tss || 0;
       }
-      // Avoid division by zero, min chronic load = 8
-      const safeChronicSum = Math.max(224, chronicSum); // 224 TSS in 28d = 8 TSS/day minimum
-      const chronicAvg = Math.round((safeChronicSum / 28) * 10) / 10;
+      const chronicAvg = Math.round((chronicSum / 28) * 10) / 10;
 
-      // ACWR standard ratio
-      const rawAcwr = acuteAvg / chronicAvg;
+      // ACWR standard ratio (0 when there is no chronic load yet)
+      const rawAcwr = chronicSum > 0 ? (acuteSum / 7) / (chronicSum / 28) : 0;
       const roundedAcwr = Math.round(rawAcwr * 100) / 100;
 
       // EWMA ratio
-      const safeEwmaChronic = Math.max(8, ewmaChronic);
-      const roundedEwma = Math.round((ewmaAcute / safeEwmaChronic) * 100) / 100;
+      const roundedEwma = ewmaChronic > 0 ? Math.round((ewmaAcute / ewmaChronic) * 100) / 100 : 0;
 
       const zoneInfo = getACWRZone(roundedAcwr);
 
-      const d = new Date(dateStr);
+      const [yy, mm, dd] = dateStr.split('-').map(Number);
+      const d = new Date(yy, mm - 1, dd);
       const dayLabel = `${d.getDate()} ${d.toLocaleString('es-ES', { month: 'short' })}`;
 
       series28d.push({
@@ -271,7 +242,7 @@ export function calculateACWRSummary(
     actionableSteps.push('Evita saltar de golpe de 35 a 70 km semanales; reparte la carga en 4 días.');
     actionableSteps.push('Introduce sesiones de fuerza excéntrica para preparar los sóleos.');
   } else if (latestPoint.acwr <= 1.30) {
-    coachTacticalAdvice = `Excelente dosificación: Ratio ACWR en ${latestPoint.acwr.toFixed(2)} (Sweet Spot de Gabbett). Estás construyendo fitness mitocondrial sólido para Transvulcania 73K sin saturar el sistema nervioso. La regla de oro aquí es la regularidad: no te dejes llevar por la euforia acelerando en las cuestas; continúa vigilando que tu DFA a1 se mantenga en Zona 2 (&ge; 0.75).`;
+    coachTacticalAdvice = `Excelente dosificación: Ratio ACWR en ${latestPoint.acwr.toFixed(2)} (Sweet Spot de Gabbett). Estás construyendo fitness mitocondrial sólido para Transvulcania 73K sin saturar el sistema nervioso. La regla de oro aquí es la regularidad: no te dejes llevar por la euforia acelerando en las cuestas; continúa vigilando que ZoneSense se mantenga en verde en los rodajes.`;
     actionableSteps.push('Continúa con el plan previsto sin modificaciones bruscas.');
     actionableSteps.push('Prioriza la hidratación con 500-650 mg/h de sodio en tiradas de fin de semana.');
     actionableSteps.push('Monitorea que tu HRV nocturna se mantenga dentro del rango basal.');

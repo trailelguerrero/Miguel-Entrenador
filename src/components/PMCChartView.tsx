@@ -9,7 +9,6 @@ import {
   Info, 
   Calendar, 
   Zap, 
-  Mountain,
   Heart,
   Sliders,
   Calculator,
@@ -21,13 +20,12 @@ import {
 } from 'lucide-react';
 import { PMCDataPoint, AthleteProfile, Workout } from '../types';
 import { StorageService } from '../services/storage';
-import { generateSamplePMCData } from '../services/sampleData';
 import { 
   calculateWorkoutTss, 
   getTsbZoneDiagnosis, 
-  getRampRateDiagnosis,
-  calculatePmcSeriesFromWorkouts 
+  getRampRateDiagnosis
 } from '../utils/pmcCalculations';
+import { computePmcSeries, countEstimatedWorkouts, CTL_DAYS, ATL_DAYS } from '../utils/trainingLoad';
 
 interface PMCChartViewProps {
   profile?: AthleteProfile;
@@ -40,96 +38,32 @@ export const PMCChartView: React.FC<PMCChartViewProps> = ({ profile: propProfile
 
   // Time range selector
   const [timeRange, setTimeRange] = useState<'14d' | '30d' | '42d' | '90d'>('42d');
-  const [loadMetricMode, setLoadMetricMode] = useState<'standard' | 'mountain'>('standard');
   const [hoveredPoint, setHoveredPoint] = useState<PMCDataPoint | null>(null);
 
   // Quick TSS Simulator state
   const [simDuration, setSimDuration] = useState<number>(75);
-  const [simAvgHr, setSimAvgHr] = useState<number>(profile.aetHr || 142);
+  const [simAvgHr, setSimAvgHr] = useState<number>(profile.aetHr || 0);
   const [simRpe, setSimRpe] = useState<number>(6);
-  const [simDescent, setSimDescent] = useState<number>(600);
 
-  // Generate or retrieve PMC data based on actual workouts and profile
+  // Serie PMC calculada con todo el historial de entrenos completados
+  // (TSS de Suunto cuando existe). Se muestra solo el rango elegido.
+  const allDataPoints: PMCDataPoint[] = useMemo(
+    () => computePmcSeries(workouts, profile.antHr),
+    [workouts, profile.antHr]
+  );
   const fullDataPoints: PMCDataPoint[] = useMemo(() => {
     const days = timeRange === '14d' ? 14 : timeRange === '30d' ? 30 : timeRange === '42d' ? 42 : 90;
-    
-    // Retrieve base PMC series (contains full 90-day progressive training history)
-    let baseSeries = StorageService.getPMCData();
-    if (!baseSeries || baseSeries.length < 90) {
-      baseSeries = generateSamplePMCData(90);
-      StorageService.savePMCData(baseSeries);
-    }
-
-    // If there are specific workouts recorded in the calendar/database, synchronize them
-    if (workouts && workouts.length > 0) {
-      const workoutsByDate: Record<string, Workout[]> = {};
-      workouts.forEach(w => {
-        if (!workoutsByDate[w.date]) workoutsByDate[w.date] = [];
-        workoutsByDate[w.date].push(w);
-      });
-
-      let modified = false;
-      const ctlDecay = 1 - Math.exp(-1 / 42);
-      const atlDecay = 1 - Math.exp(-1 / 7);
-
-      const updatedSeries = baseSeries.map(p => ({ ...p }));
-      for (let i = 0; i < updatedSeries.length; i++) {
-        const pt = updatedSeries[i];
-        const dayWs = workoutsByDate[pt.date];
-        if (dayWs && dayWs.length > 0) {
-          let dayTss = 0;
-          let dayMTss = 0;
-          let dPlus = 0;
-          let dMinus = 0;
-          let titles: string[] = [];
-
-          for (const w of dayWs) {
-            const dur = w.completed && w.actualDurationMin ? w.actualDurationMin : w.plannedDurationMin;
-            const hr = w.completed && w.actualAvgHr ? w.actualAvgHr : (w.targetHrMin && w.targetHrMax ? (w.targetHrMin + w.targetHrMax) / 2 : undefined);
-            const elevLoss = (w.completed && w.actualElevationGainM !== undefined ? w.actualElevationGainM : (w.plannedElevationGainM || 0));
-            const calc = calculateWorkoutTss(dur, hr, profile.antHr || 166, w.athleteRpe, elevLoss);
-            dayTss += calc.tss;
-            dayMTss += calc.mountainTss;
-            dPlus += (w.completed && w.actualElevationGainM !== undefined) ? w.actualElevationGainM : (w.plannedElevationGainM || 0);
-            dMinus += elevLoss;
-            if (w.title) titles.push(w.title);
-          }
-
-          if (dayTss > 0) {
-            pt.tss = dayTss;
-            pt.mountainTss = dayMTss;
-            pt.elevationGainM = dPlus;
-            pt.elevationLossM = dMinus;
-            if (titles.length > 0) pt.workoutTitle = titles.join(' + ');
-            modified = true;
-          }
-        }
-      }
-
-      // If any real workouts overlaid onto the series, recalculate EWMA forward
-      if (modified) {
-        for (let i = 1; i < updatedSeries.length; i++) {
-          const prev = updatedSeries[i - 1];
-          const curr = updatedSeries[i];
-          const load = loadMetricMode === 'mountain' ? curr.mountainTss : curr.tss;
-          curr.ctl = Math.round((prev.ctl + (load - prev.ctl) * ctlDecay) * 10) / 10;
-          curr.atl = Math.round((prev.atl + (load - prev.atl) * atlDecay) * 10) / 10;
-          curr.tsb = Math.round((curr.ctl - curr.atl) * 10) / 10;
-          if (i >= 7) {
-            curr.rampRate = Math.round((curr.ctl - updatedSeries[i - 7].ctl) * 10) / 10;
-          }
-        }
-        return updatedSeries.slice(-days);
-      }
-    }
-
-    return baseSeries.slice(-days);
-  }, [workouts, timeRange, profile.antHr, profile.aetHr, loadMetricMode]);
+    return allDataPoints.slice(-days);
+  }, [allDataPoints, timeRange]);
+  const estimatedCount = useMemo(
+    () => countEstimatedWorkouts(workouts, profile.antHr, fullDataPoints[0]?.date),
+    [workouts, profile.antHr, fullDataPoints]
+  );
 
   if (fullDataPoints.length === 0) {
     return (
       <div className="p-8 text-center text-zinc-400 bg-zinc-900 rounded-2xl border border-zinc-800">
-        No hay datos suficientes de carga para generar el PMC.
+        No hay entrenamientos completados todavía. Sincroniza Suunto o registra una sesión para generar el PMC.
       </div>
     );
   }
@@ -140,7 +74,7 @@ export const PMCChartView: React.FC<PMCChartViewProps> = ({ profile: propProfile
 
   // Calculate 7-day accumulated TSS
   const last7DaysPoints = fullDataPoints.slice(-7);
-  const totalTss7d = last7DaysPoints.reduce((sum, p) => sum + (loadMetricMode === 'standard' ? p.tss : p.mountainTss), 0);
+  const totalTss7d = last7DaysPoints.reduce((sum, p) => sum + p.tss, 0);
   const avgDailyTss7d = Math.round(totalTss7d / 7);
 
   // SVG Chart Dimensions
@@ -153,7 +87,7 @@ export const PMCChartView: React.FC<PMCChartViewProps> = ({ profile: propProfile
   // Scales for dual axes
   // Left Axis: CTL, ATL, and Daily TSS
   const maxLoad = Math.max(
-    ...fullDataPoints.map(p => Math.max(p.ctl, p.atl, (loadMetricMode === 'standard' ? p.tss : p.mountainTss) * 0.7)),
+    ...fullDataPoints.map(p => Math.max(p.ctl, p.atl, p.tss * 0.7)),
     80
   );
 
@@ -203,16 +137,16 @@ export const PMCChartView: React.FC<PMCChartViewProps> = ({ profile: propProfile
   const simResult = calculateWorkoutTss(
     simDuration,
     simAvgHr,
-    profile.antHr || 165,
-    simRpe,
-    simDescent
+    profile.antHr || undefined,
+    simRpe
   );
 
-  // Projected impact of simulation on today's ATL and TSB
-  const ctlDecay = 1 - Math.exp(-1 / 42);
-  const atlDecay = 1 - Math.exp(-1 / 7);
-  const projCtl = Math.round((latest.ctl + (simResult.tss - latest.ctl) * ctlDecay) * 10) / 10;
-  const projAtl = Math.round((latest.atl + (simResult.tss - latest.atl) * atlDecay) * 10) / 10;
+  // Impacto de la sesión simulada sobre el día de hoy: se recalcula el punto
+  // de hoy a partir de ayer, sumando el TSS simulado al TSS ya hecho hoy.
+  const prevPoint = allDataPoints.length >= 2 ? allDataPoints[allDataPoints.length - 2] : { ctl: 0, atl: 0 };
+  const todayTssWithSim = latest.tss + simResult.tss;
+  const projCtl = Math.round((prevPoint.ctl + (todayTssWithSim - prevPoint.ctl) / CTL_DAYS) * 10) / 10;
+  const projAtl = Math.round((prevPoint.atl + (todayTssWithSim - prevPoint.atl) / ATL_DAYS) * 10) / 10;
   const projTsb = Math.round((projCtl - projAtl) * 10) / 10;
 
   return (
@@ -229,8 +163,13 @@ export const PMCChartView: React.FC<PMCChartViewProps> = ({ profile: propProfile
                 Modelo Científico Dr. Coggan & Dr. Banister
               </span>
               <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 text-xs border border-emerald-500/30 flex items-center gap-1 font-semibold">
-                <CheckCircle2 className="w-3.5 h-3.5" /> Fórmulas Validadas (Sin Estimaciones Arbitrarias)
+                <CheckCircle2 className="w-3.5 h-3.5" /> TSS de Suunto · {allDataPoints.length} días de historial
               </span>
+              {estimatedCount > 0 && (
+                <span className="px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 text-xs border border-amber-500/30 font-semibold" title="Entrenos completados sin TSS de Suunto: su TSS se estima con FC media / RPE y puede no coincidir con Suunto">
+                  {estimatedCount} entreno(s) con TSS estimado
+                </span>
+              )}
             </div>
 
             <h1 className="text-2xl sm:text-3xl font-black text-zinc-100 flex items-center gap-3">
@@ -365,7 +304,7 @@ export const PMCChartView: React.FC<PMCChartViewProps> = ({ profile: propProfile
             <Heart className="w-4 h-4 text-rose-400" />
           </div>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-3xl font-black text-zinc-100 font-mono">{profile.antHr || 165}</span>
+            <span className="text-3xl font-black text-zinc-100 font-mono">{profile.antHr || '—'}</span>
             <span className="text-xs text-zinc-400">bpm</span>
           </div>
           <div className="mt-2 pt-2 border-t border-zinc-800 text-[11px] text-zinc-400 flex justify-between">
@@ -404,29 +343,6 @@ export const PMCChartView: React.FC<PMCChartViewProps> = ({ profile: propProfile
 
           {/* Time & Mode Controls */}
           <div className="flex flex-wrap items-center gap-2">
-            {/* TSS Mode Toggle (Standard Coggan vs Uphill Mountain) */}
-            <div className="flex items-center bg-zinc-950 p-1 rounded-xl border border-zinc-800 text-xs">
-              <button
-                onClick={() => setLoadMetricMode('standard')}
-                className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
-                  loadMetricMode === 'standard' ? 'bg-zinc-800 text-zinc-100 shadow-sm' : 'text-zinc-400 hover:text-zinc-200'
-                }`}
-                title="TSS Fisiológico estándar (hrTSS / Coggan 2003)"
-              >
-                TSS Estándar
-              </button>
-              <button
-                onClick={() => setLoadMetricMode('mountain')}
-                className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1 ${
-                  loadMetricMode === 'mountain' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'text-zinc-400 hover:text-zinc-200'
-                }`}
-                title="TSS ajustado con daño excéntrico por desnivel negativo D-"
-              >
-                <Mountain className="w-3 h-3" />
-                Mountain TSS
-              </button>
-            </div>
-
             {/* Range Selector */}
             <div className="flex items-center bg-zinc-950 p-1 rounded-xl border border-zinc-800 text-xs">
               {(['14d', '30d', '42d', '90d'] as const).map((r) => (
@@ -571,7 +487,7 @@ export const PMCChartView: React.FC<PMCChartViewProps> = ({ profile: propProfile
               {/* Daily TSS Bars */}
               {fullDataPoints.map((p, idx) => {
                 const x = getX(idx);
-                const dayTssVal = loadMetricMode === 'standard' ? p.tss : p.mountainTss;
+                const dayTssVal = p.tss;
                 const barWidth = Math.max(3, Math.min(10, graphWidth / fullDataPoints.length - 2));
                 const barHeight = (dayTssVal / maxLoad) * graphHeight;
                 const y = padding.top + graphHeight - barHeight;
@@ -986,26 +902,9 @@ export const PMCChartView: React.FC<PMCChartViewProps> = ({ profile: propProfile
                 className="w-full accent-rose-500 cursor-pointer"
               />
               <div className="flex justify-between text-[10px] text-zinc-500 mt-0.5 font-mono">
-                <span>AeT: {profile.aetHr || 148} bpm</span>
-                <span>AnT (LTHR): {profile.antHr || 165} bpm</span>
+                <span>AeT: {profile.aetHr || '—'} bpm</span>
+                <span>AnT (LTHR): {profile.antHr || '—'} bpm</span>
               </div>
-            </div>
-
-            {/* Descent (Eccentric load) */}
-            <div>
-              <div className="flex justify-between font-semibold mb-1">
-                <span className="text-zinc-300">Desnivel negativo bajado (D-):</span>
-                <span className="text-emerald-400 font-mono font-bold">-{simDescent} m</span>
-              </div>
-              <input
-                type="range"
-                min="0"
-                max="3000"
-                step="50"
-                value={simDescent}
-                onChange={(e) => setSimDescent(Number(e.target.value))}
-                className="w-full accent-emerald-500 cursor-pointer"
-              />
             </div>
 
             {/* RPE fallback selector */}
@@ -1044,19 +943,11 @@ export const PMCChartView: React.FC<PMCChartViewProps> = ({ profile: propProfile
                   {simResult.intensityFactor < 0.75 ? 'Resistencia Z1/Z2' : simResult.intensityFactor < 0.90 ? 'Tempo / Asimilación' : 'Umbral AnT'}
                 </span>
               </div>
-
-              <div className="bg-zinc-900 p-2.5 rounded-xl border border-zinc-800">
-                <span className="text-[10px] text-zinc-400 block">Mountain TSS (con D-)</span>
-                <span className="text-sm font-mono font-bold text-emerald-400">{simResult.mountainTss} mTSS</span>
-                <span className="text-[9px] text-zinc-500 block mt-0.5">
-                  +{Math.round((simDescent / 1000) * 8)} pts por daño excéntrico
-                </span>
-              </div>
             </div>
 
             {/* Formula verification string */}
             <div className="p-2.5 rounded-xl bg-zinc-900/60 border border-zinc-800 text-[10px] text-zinc-400 font-mono">
-              <span className="text-zinc-500 block">Cálculo matemático:</span>
+              <span className="text-zinc-500 block">Cálculo (estimación; Suunto calcula su propio TSS):</span>
               {simResult.formulaExplanation}
             </div>
 

@@ -1,4 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { computePmcSeries, getWorkoutLoad } from './utils/trainingLoad';
+import { analyzeWeekStructure, mondayOfKey, addDaysKey } from './utils/weekStructure';
+import { localDateKey } from './utils/trainingLoad';
 import { Navbar } from './components/Navbar';
 import { MorningBanner } from './components/MorningBanner';
 import { CalendarView } from './components/CalendarView';
@@ -60,6 +63,8 @@ export default function App() {
   const [targetRace, setTargetRace] = useState<TargetRace>(StorageService.getTargetRace());
   const [secondaryRaces, setSecondaryRaces] = useState<TargetRace[]>(StorageService.getSecondaryRaces());
   const [workouts, setWorkouts] = useState<Workout[]>(StorageService.getWorkouts());
+  // PMC real (CTL/ATL/TSB) calculado desde los entrenos completados, TSS de Suunto
+  const pmcData = useMemo(() => computePmcSeries(workouts, profile.antHr), [workouts, profile.antHr]);
   const [todayCheckIn, setTodayCheckIn] = useState<DailyCheckIn | undefined>(StorageService.getTodayCheckIn());
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(StorageService.getChatMessages());
   const [suuntoConfig, setSuuntoConfig] = useState<SuuntoIntegrationConfig>(StorageService.getSuuntoConfig());
@@ -264,10 +269,6 @@ export default function App() {
         return res.message;
       }
 
-      const summary = StorageService.mergeSuuntoSync(res.workouts || [], res.checkIns || []);
-      setWorkouts(StorageService.getWorkouts());
-      setTodayCheckIn(StorageService.getTodayCheckIn());
-
       // Perfil automático: Suunto rellena sus campos (sin pisar los manuales)
       if (res.profileFromSuunto) {
         const { profile: newProfile, changed } = applySuuntoProfile(StorageService.getProfile(), res.profileFromSuunto);
@@ -283,6 +284,28 @@ export default function App() {
           askMiguelAboutSuuntoProfile(newProfile, changed);
         }
       }
+
+      // Aviso de zonas del reloj: solo aparece con una tendencia sostenida
+      if (res.watchZoneAdvice) {
+        const prevKeys = new Set((StorageService.getProfile().watchZoneAdvice?.recommendations || []).map((r) => `${r.field}:${r.suggested}`));
+        const withAdvice = { ...StorageService.getProfile(), watchZoneAdvice: res.watchZoneAdvice };
+        setProfile(withAdvice);
+        StorageService.saveProfile(withAdvice);
+        const fresh = res.watchZoneAdvice.recommendations.filter((r) => !prevKeys.has(`${r.field}:${r.suggested}`));
+        if (fresh.length) {
+          showToast({
+            type: 'warning',
+            title: 'Revisa las zonas de FC de tu reloj',
+            message: fresh.map((r) => `${r.label}: ${r.current} → ${r.suggested}`).join(' • '),
+            duration: 9000,
+          });
+        }
+      }
+
+      // Después del perfil, para que los check-ins usen su HRV de referencia
+      const summary = StorageService.mergeSuuntoSync(res.workouts || [], res.checkIns || []);
+      setWorkouts(StorageService.getWorkouts());
+      setTodayCheckIn(StorageService.getTodayCheckIn());
 
       const message = `${res.message} Nuevos: ${summary.addedWorkouts} entrenos añadidos, ${summary.completedPlanned} sesiones planificadas completadas, ${summary.checkInsAdded} check-ins.`;
       handleUpdateSuuntoConfig({
@@ -361,8 +384,9 @@ export default function App() {
     if (selectedWorkout && selectedWorkout.id === workout.id) {
       setSelectedWorkout(workout);
     }
+    const completedTss = workout.completed ? getWorkoutLoad(workout, profile.antHr)?.tss : undefined;
     const tssInfo = workout.completed 
-      ? (workout.actualTss || workout.plannedTss ? ` • ${workout.actualTss || workout.plannedTss} TSS` : '')
+      ? (completedTss != null ? ` • ${completedTss} TSS` : '')
       : (workout.plannedTss ? ` • ${workout.plannedTss} TSS` : '');
     showToast({
       type: 'success',
@@ -382,24 +406,20 @@ export default function App() {
   };
 
   const handleScheduleDeload = (startDateStr?: string) => {
-    // Generate 4 regenerative sessions for the deload microcycle (-45% volume, 100% Z1 sub-130 bpm)
-    const baseDate = new Date();
-    baseDate.setDate(baseDate.getDate() + 2); // Start in 2 days or next cycle
+    // 4 sesiones regenerativas de descarga, en ZoneSense verde muy cómodo.
+    // Empiezan en la fecha pedida o, si no se indica, dentro de 2 días.
+    const startKey = startDateStr || addDaysKey(localDateKey(), 2);
     
     const deloadWorkouts: Workout[] = [
       {
         id: `deload-w1-${Date.now()}`,
-        date: new Date(baseDate.getTime() + 0 * 86400000).toISOString().split('T')[0],
+        date: addDaysKey(startKey, 0),
         title: 'Microciclo Descarga: Rodaje Regenerativo Z1 Suave',
         type: 'easy_run',
         plannedDurationMin: 35,
         plannedDistanceKm: 5.2,
         plannedElevationGainM: 80,
-        plannedTss: 20,
-        intensityFactor: 0.74,
-        targetHrMin: 115,
-        targetHrMax: 130,
-        zoneSenseTarget: 'Regenerativo',
+        zoneSenseTarget: 'Regenerativo (verde, muy suave)',
         description: 'Microciclo de Descarga prescrito por Miguel. Rodaje 100% regenerativo sin impacto articular ni pendientes pronunciadas.',
         personalizedReasoning: 'Reducción del 45% del volumen para permitir rebote del sistema nervioso parasimpático tras la sobrecarga acumulada del Mesociclo 2.',
         learnedAdjustment: 'Prohibidas las subidas pronunciadas y el trabajo excéntrico de bajada. Mantener respiración nasal constante.',
@@ -410,17 +430,13 @@ export default function App() {
       },
       {
         id: `deload-w2-${Date.now() + 1}`,
-        date: new Date(baseDate.getTime() + 2 * 86400000).toISOString().split('T')[0],
+        date: addDaysKey(startKey, 2),
         title: 'Microciclo Descarga: Fartlek Dinámico de Movilidad & Soltura',
         type: 'easy_run',
         plannedDurationMin: 40,
         plannedDistanceKm: 6.0,
         plannedElevationGainM: 100,
-        plannedTss: 24,
-        intensityFactor: 0.75,
-        targetHrMin: 118,
-        targetHrMax: 132,
-        zoneSenseTarget: 'Regenerativo',
+        zoneSenseTarget: 'Regenerativo (verde, muy suave)',
         description: 'Cambios sutiles de cadencia (175-180 ppm) para soltar piernas sin activar la glucólisis ni elevar el cortisol.',
         personalizedReasoning: 'Activa la propiocepción y la elasticidad fascial sin estrés metabólico.',
         learnedAdjustment: '3 series de sóleo excéntrico en escalón 3-1-1 al terminar para mantener sano el tendón de Aquiles.',
@@ -431,37 +447,29 @@ export default function App() {
       },
       {
         id: `deload-w3-${Date.now() + 2}`,
-        date: new Date(baseDate.getTime() + 4 * 86400000).toISOString().split('T')[0],
+        date: addDaysKey(startKey, 4),
         title: 'Microciclo Descarga: Rodaje Asimilación & Respiración Nasal',
         type: 'easy_run',
         plannedDurationMin: 45,
         plannedDistanceKm: 6.8,
         plannedElevationGainM: 120,
-        plannedTss: 28,
-        intensityFactor: 0.75,
-        targetHrMin: 118,
-        targetHrMax: 130,
-        zoneSenseTarget: 'Regenerativo',
+        zoneSenseTarget: 'Regenerativo (verde, muy suave)',
         description: 'Sesión aeróbica de baja tensión para consolidar las adaptaciones mitocondriales del bloque anterior.',
         personalizedReasoning: 'Consolidación de la base aeróbica y depósitos de glucógeno.',
         warmup: '8 min caminando.',
-        mainSet: '32 min continuos manteniendo DFA a1 en verde oscuro en reloj Suunto. Hidratación con 400 mg de sales.',
+        mainSet: '32 min continuos en ZoneSense verde y muy cómodo. Hidratación con 400 mg de sales.',
         cooldown: '5 min marcha relajada.',
         completed: false,
       },
       {
         id: `deload-w4-${Date.now() + 3}`,
-        date: new Date(baseDate.getTime() + 6 * 86400000).toISOString().split('T')[0],
+        date: addDaysKey(startKey, 6),
         title: 'Microciclo Descarga: Rodaje Corto & Test de Sensaciones',
         type: 'easy_run',
         plannedDurationMin: 50,
         plannedDistanceKm: 7.5,
         plannedElevationGainM: 150,
-        plannedTss: 32,
-        intensityFactor: 0.76,
-        targetHrMin: 120,
-        targetHrMax: 132,
-        zoneSenseTarget: 'DFA a1 > 0.75 (Aeróbico puro)',
+        zoneSenseTarget: 'Regenerativo (verde, muy suave)',
         description: 'Cierre del microciclo de descarga. Evaluación de recuperación muscular y pulso basal matutino.',
         personalizedReasoning: 'Confirmación de recuperación parasimpática antes de iniciar el siguiente mesociclo de resistencia muscular.',
         warmup: '10 min trote suave.',
@@ -477,7 +485,7 @@ export default function App() {
     const msg: ChatMessage = {
       id: `deload-msg-${Date.now()}`,
       role: 'assistant',
-      content: `🛡️ **Microciclo de Descarga Programado en tu Calendario**\n\nHe insertado 4 sesiones regenerativas reduciendo el volumen semanal en un -45% (3.2 horas totales) y limitando tu frecuencia cardíaca a un máximo de 130 bpm (100% Zona 1, DFA a1 > 0.85).\n\nCon esto permitiremos que tu HRV rMSSD vuelva a elevarse por encima de los 51 ms basales y que tus sóleos y cuádriceps asimilen los más de 5.200m D- acumulados en las últimas semanas. ¡Descanso inteligente es parte del entrenamiento hacia Transvulcania 2027!`,
+      content: `🛡️ **Microciclo de Descarga Programado en tu Calendario**\n\nHe insertado ${deloadWorkouts.length} sesiones regenerativas (${Math.round(deloadWorkouts.reduce((acc, w) => acc + w.plannedDurationMin, 0) / 6) / 10} h en total) a partir del ${startKey}. Con banda de pecho: ZoneSense en verde y muy cómodo todo el tiempo. Sin banda: claramente por debajo de tu umbral aeróbico por FC${profile.aetHr ? ` (${profile.aetHr} ppm)` : ''}.\n\nLa idea es dejar que tu HRV vuelva a tu referencia${profile.baselineHrv ? ` (${profile.baselineHrv} ms)` : ''} antes de volver a cargar.`,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       contextType: 'plan_adaptation'
     };
@@ -601,52 +609,73 @@ Tus células y tu sistema nervioso autónomo están pidiendo tregua. No fuerces 
     }
   };
 
-  // Generate 7-day week with Miguel (4 days training: 3 midweek + 1 weekend long run)
+  // Generar semana con Miguel: 3 sesiones entre semana (o 2 si Miguel lo
+  // decide por fatiga o disponibilidad) + tirada larga en sábado o domingo.
   const handleGenerateWeekWithMiguel = async (weekStartDateStr: string) => {
     setIsGeneratingPlan(true);
     try {
+      const monday = mondayOfKey(weekStartDateStr);
+      const latestPmc = pmcData[pmcData.length - 1];
+      const recentCheckIns = [...StorageService.getCheckIns()]
+        .sort((x, y) => x.date.localeCompare(y.date))
+        .slice(-7)
+        .map((c) => ({
+          date: c.date,
+          hrvRmssd: c.hrvRmssd,
+          hrvBaseline: c.hrvBaseline,
+          sleepHours: c.sleepHours,
+          recoveryPct: c.readinessScore,
+          status: c.status,
+        }));
       const plan = await ApiService.generatePlan(
         profile,
         targetRace,
-        weekStartDateStr,
+        monday,
         'Base Aeróbica Estricta & Preparación para Transvulcania 2027',
         historyDoc,
-        coachMemory
+        coachMemory,
+        { ctl: latestPmc?.ctl, atl: latestPmc?.atl, tsb: latestPmc?.tsb, recentCheckIns }
       );
 
-      // Merge generated workouts into calendar
-      const existing = [...workouts];
-      const newWorkouts = plan.workouts.map((w, index) => {
-        // Compute date based on Monday start
-        const startDate = new Date(weekStartDateStr);
-        const targetDate = new Date(startDate);
-        targetDate.setDate(startDate.getDate() + index);
-        const dateStr = targetDate.toISOString().split('T')[0];
+      // Fechas de la semana (lunes..domingo) en hora local
+      const sunday = addDaysKey(monday, 6);
+      const newWorkouts: Workout[] = plan.workouts.map((w, index) => {
+        const fallbackDate = addDaysKey(monday, Math.min(index, 6));
+        const date = w.date && w.date >= monday && w.date <= sunday ? w.date : fallbackDate;
         return {
           ...w,
-          id: `gen-${dateStr}-${Date.now()}-${index}`,
-          date: w.date || dateStr,
+          id: `gen-${date}-${Date.now()}-${index}`,
+          date,
           completed: false,
         };
       });
 
-      // Filter out duplicates for those exact dates if empty
-      const nonOverlapping = existing.filter(
-        (ex) => !newWorkouts.some((nw) => nw.date === ex.date)
+      // Solo se sustituyen sesiones PLANIFICADAS sin completar de esos días.
+      // Nunca se borran entrenos hechos ni actividades importadas de Suunto.
+      const newDates = new Set(newWorkouts.map((nw) => nw.date));
+      const kept = workouts.filter(
+        (ex) => ex.completed || !!ex.suuntoWorkoutKey || !newDates.has(ex.date)
       );
 
-      const combined = [...nonOverlapping, ...newWorkouts];
+      const combined = [...kept, ...newWorkouts];
       handleSaveWorkouts(combined);
+
+      // Resumen con la estructura REAL que ha devuelto Miguel
+      const structure = analyzeWeekStructure(newWorkouts, monday);
+      const structureLine = `Estructura: ${structure.midweekPlanned} sesiones entre semana + tirada larga ${structure.longRunDay ? `el ${structure.longRunDay}` : '(no planificada)'}.`;
+      const warningLine = structure.issues.length
+        ? `\n\n⚠️ El plan generado no cumple la regla 3 (o 2) + tirada larga: ${structure.issues.join('; ')}. Revísalo o vuelve a generarlo.`
+        : '';
 
       // Add Miguel's summary message to the chat
       const chatMsg: ChatMessage = {
         id: `plan-gen-${Date.now()}`,
         role: 'assistant',
-        content: `He preparado el microciclo semanal comenzando el lunes ${weekStartDateStr} para tu camino a Transvulcania 2027.
+        content: `He preparado el microciclo semanal comenzando el lunes ${monday}.
 
 ${plan.weekSummary}
 
-Son exactamente 4 días de carga (3 entre semana y la tirada larga del fin de semana con desnivel), más trabajo de fuerza en casa sin máquinas y 3 días de asimilación/descanso. Ya puedes ver los entrenamientos directamente en tu calendario.`,
+${structureLine} Ya puedes ver los entrenamientos en tu calendario.${warningLine}`,
         timestamp: new Date().toISOString(),
         contextType: 'general',
       };
@@ -791,6 +820,7 @@ Son exactamente 4 días de carga (3 entre semana y la tirada larga del fin de se
           isAdapting={isAdaptingSession}
           isSetupIncomplete={!profile.setupCompleted}
           onOpenSetupGuide={() => setIsSetupGuideOpen(true)}
+          watchZoneAdvice={profile.watchZoneAdvice}
         />
 
         {/* Quick Weight & Biomechanics Widget */}
@@ -828,7 +858,7 @@ Son exactamente 4 días de carga (3 entre semana y la tirada larga del fin de se
             targetRace={targetRace}
             workouts={workouts}
             checkIns={StorageService.getCheckIns()}
-            pmcData={StorageService.getPMCData()}
+            pmcData={pmcData}
             suuntoConfig={suuntoConfig}
             onNavigateTab={(tab) => setActiveTab(tab)}
             onScheduleDeload={handleScheduleDeload}
@@ -838,6 +868,7 @@ Son exactamente 4 días de carga (3 entre semana y la tirada larga del fin de se
         {activeTab === 'performance' && (
           <PerformanceSummaryView
             profile={profile}
+            workouts={workouts}
             checkIns={StorageService.getCheckIns()}
             onScheduleDeload={handleScheduleDeload}
             onOpenFartlekGenerator={() => setIsFartlekModalOpen(true)}
@@ -1013,6 +1044,7 @@ Son exactamente 4 días de carga (3 entre semana y la tirada larga del fin de se
         }}
         initialDateStr={selectedAddDate}
         defaultAetHr={profile.aetHr}
+        defaultAntHr={profile.antHr}
       />
 
       <FartlekGeneratorModal
@@ -1090,7 +1122,7 @@ Son exactamente 4 días de carga (3 entre semana y la tirada larga del fin de se
 
       {/* Footer */}
       <footer className="border-t border-zinc-900 bg-zinc-950/80 py-4 text-center text-xs text-zinc-600">
-        <p>Uphill Coach AI • Basado en <em>Training for the Uphill Athlete</em> & Suunto ZoneSense (DFA a1)</p>
+        <p>Uphill Coach AI • Basado en <em>Training for the Uphill Athlete</em> & Suunto ZoneSense</p>
       </footer>
 
       {/* Offline Mountain Indicator */}
