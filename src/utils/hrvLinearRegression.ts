@@ -30,7 +30,7 @@ export interface ProjectedPoint {
   dayLabel: string;
   daysAhead: number;          // 1 to 7
   projectedHrv: number;       // baseline regression projection
-  simulatedHrv: number;       // projection adjusted for selected load scenario
+  simulatedHrv: number;       // = projectedHrv (sin ajustes por escenario: no hay dato que los respalde)
   confidenceLower: number;    // lower 90% prediction band
   confidenceUpper: number;    // upper 90% prediction band
   swcLower: number;
@@ -44,7 +44,6 @@ export type FatigueRiskLevel =
   | 'stable_adaptation'       // Neutral slope within normal SWC band
   | 'supercompensation';      // Positive slope, rebounding parasympathetic activity
 
-export type LoadScenario = 'current_load' | 'deload_35' | 'increase_20';
 
 export interface LinearRegressionResult {
   n: number;
@@ -80,9 +79,11 @@ export interface LinearRegressionResult {
 export function calculateHrvPredictiveRegression(
   checkIns: DailyCheckIn[],
   workouts: Workout[],
-  profile: AthleteProfile,
-  scenario: LoadScenario = 'current_load'
+  profile: AthleteProfile
 ): LinearRegressionResult {
+  // Solo la HRV nocturna medida por Suunto (sincronización); los check-ins
+  // manuales no entran en la tendencia.
+  checkIns = checkIns.filter(c => c.source === 'suunto');
   // Compute standard deviation of all known check-ins for the SWC band (Plews & Altini, 2017)
   // Solo valores reales; nunca se rellenan con datos de ejemplo.
   const knownHrvValues: number[] = [];
@@ -214,17 +215,6 @@ export function calculateHrvPredictiveRegression(
   const projectedPoints: ProjectedPoint[] = [];
   const latestDateObj = new Date(dateStrings[dateStrings.length - 1] + 'T12:00:00');
 
-  // Scenario adjustments for slope/trajectory:
-  // - current_load: pure linear continuation
-  // - deload_35: vagal rebound (+0.65 ms/day acceleration relative to trend)
-  // - increase_20: autonomic strain acceleration (-0.55 ms/day relative to trend)
-  let scenarioSlopeModifier = 0;
-  if (scenario === 'deload_35') {
-    scenarioSlopeModifier = 0.65;
-  } else if (scenario === 'increase_20') {
-    scenarioSlopeModifier = -0.55;
-  }
-
   let daysUntilSwcCrossover: number | null = null;
   const currentHrv7d = rolling7d.length > 0 ? rolling7d[rolling7d.length - 1] : 0;
 
@@ -239,9 +229,8 @@ export function calculateHrvPredictiveRegression(
     const rawProjected = slopeDaily * futureIndex + intercept;
     const projectedHrv = Math.round(rawProjected * 10) / 10;
 
-    // Simulated with scenario adjustments
-    const simulatedRaw = rawProjected + (scenarioSlopeModifier * k);
-    const simulatedHrv = Math.round(simulatedRaw * 10) / 10;
+    // Proyección pura de tu tendencia (sin escenarios inventados)
+    const simulatedHrv = projectedHrv;
 
     // Prediction interval (90% confidence corridor, t approx 1.70 for df=28)
     const sePred = stdError * Math.sqrt(1 + (1 / n) + (Math.pow(futureIndex - meanX, 2) / (ssXX || 1)));

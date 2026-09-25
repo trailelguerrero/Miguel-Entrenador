@@ -14,6 +14,7 @@ import type { Express, Request, Response } from 'express';
 import { createHash, randomBytes } from 'node:crypto';
 import type { SuuntoAuth } from '../src/types/index.js';
 import { deriveProfileFromSuunto } from './suunto-profile.js';
+import { computeWatchZoneAdvice } from './zone-advice.js';
 import { mapSuuntoCheckIns, mapSuuntoWorkouts, SuuntoRecoveryDay, SuuntoSleepSession, SuuntoWorkoutRow } from './suunto-map.js';
 
 const MCP_URL = (process.env.SUUNTO_MCP_URL || 'https://mcp-ten-kappa.vercel.app').replace(/\/+$/, '');
@@ -302,6 +303,7 @@ export function registerSuuntoRoutes(app: Express) {
         lastSync: new Date().toISOString(),
         newAuth: refreshed ? auth : undefined,
         profileFromSuunto,
+        watchZoneAdvice: computeWatchZoneAdvice(allWorkoutRows),
       });
     } catch (err: any) {
       if (err instanceof ReconnectNeededError) {

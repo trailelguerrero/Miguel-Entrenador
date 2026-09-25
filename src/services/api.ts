@@ -7,7 +7,8 @@ import {
   SuuntoAuth,
   SuuntoProfileSuggestion,
   CoachLearnedMemory,
-  CoachLearnedInsight
+  CoachLearnedInsight,
+  WatchZoneAdvice
 } from '../types';
 
 import { ApiError, apiStatus } from './apiStatus';
@@ -212,6 +213,7 @@ export const ApiService = {
     lastSync?: string;
     newAuth?: SuuntoAuth;
     profileFromSuunto?: SuuntoProfileSuggestion;
+    watchZoneAdvice?: WatchZoneAdvice;
   }> {
     return await apiFetch('/api/suunto/sync-history', { auth, days }, 'suunto', 'Error en la sincronización con Suunto', {
       // 401 needsReconnect no es un fallo de la API: lo gestiona App (pide reconectar)

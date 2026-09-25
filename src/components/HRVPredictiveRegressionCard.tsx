@@ -19,7 +19,6 @@ import {
 import { DailyCheckIn, Workout, AthleteProfile } from '../types';
 import { 
   calculateHrvPredictiveRegression, 
-  LoadScenario, 
   HistoricalRegressionPoint, 
   ProjectedPoint 
 } from '../utils/hrvLinearRegression';
@@ -39,7 +38,6 @@ export const HRVPredictiveRegressionCard: React.FC<HRVPredictiveRegressionCardPr
   onScheduleDeload,
   onNavigateTab,
 }) => {
-  const [selectedScenario, setSelectedScenario] = useState<LoadScenario>('current_load');
   const [hoveredPoint, setHoveredPoint] = useState<{
     type: 'historical' | 'projected';
     hist?: HistoricalRegressionPoint;
@@ -51,8 +49,8 @@ export const HRVPredictiveRegressionCard: React.FC<HRVPredictiveRegressionCardPr
 
   // Compute regression and forward projections
   const regression = useMemo(() => {
-    return calculateHrvPredictiveRegression(checkIns, workouts, profile, selectedScenario);
-  }, [checkIns, workouts, profile, selectedScenario]);
+    return calculateHrvPredictiveRegression(checkIns, workouts, profile);
+  }, [checkIns, workouts, profile]);
 
   // SVG Chart Geometry Constants
   const width = 860;
@@ -293,77 +291,8 @@ export const HRVPredictiveRegressionCard: React.FC<HRVPredictiveRegressionCardPr
 
       </div>
 
-      {/* Interactive Scenario Selector (What-if Analysis) */}
-      <div className="bg-zinc-950/80 p-4 rounded-2xl border border-zinc-800 space-y-3">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <Sliders className="w-4 h-4 text-amber-400" />
-            <span className="text-xs font-bold text-zinc-200 uppercase tracking-wider">
-              Simulador de Decisiones de Carga para la Próxima Semana
-            </span>
-          </div>
-          <span className="text-[11px] text-zinc-400">
-            Evalúa cómo responderá tu variabilidad cardíaca según el volumen elegido:
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-          
-          {/* Scenario 1: Current Load */}
-          <button
-            onClick={() => setSelectedScenario('current_load')}
-            className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
-              selectedScenario === 'current_load'
-                ? 'bg-zinc-900 border-cyan-500 ring-1 ring-cyan-500/40 text-cyan-200'
-                : 'bg-zinc-900/40 border-zinc-800 hover:bg-zinc-900 text-zinc-400'
-            }`}
-          >
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-bold text-zinc-200">1. Mantener Carga Actual</span>
-              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300">Inercia</span>
-            </div>
-            <p className="text-[11px] text-zinc-400">
-              Proyección matemática pura de los últimos 30 días sin variar volumen.
-            </p>
-          </button>
-
-          {/* Scenario 2: Active Deload */}
-          <button
-            onClick={() => setSelectedScenario('deload_35')}
-            className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
-              selectedScenario === 'deload_35'
-                ? 'bg-emerald-950/30 border-emerald-500 ring-1 ring-emerald-500/40 text-emerald-200'
-                : 'bg-zinc-900/40 border-zinc-800 hover:bg-zinc-900 text-zinc-400'
-            }`}
-          >
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-bold text-emerald-400">2. Aplicar Descarga (-35% TSS)</span>
-              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold">Rebote</span>
-            </div>
-            <p className="text-[11px] text-zinc-400">
-              Simula el rebote parasimpático acelerado (+0.65 ms/día) hacia la supercompensación.
-            </p>
-          </button>
-
-          {/* Scenario 3: Increase Load */}
-          <button
-            onClick={() => setSelectedScenario('increase_20')}
-            className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
-              selectedScenario === 'increase_20'
-                ? 'bg-rose-950/30 border-rose-500 ring-1 ring-rose-500/40 text-rose-200'
-                : 'bg-zinc-900/40 border-zinc-800 hover:bg-zinc-900 text-zinc-400'
-            }`}
-          >
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-bold text-rose-400">3. Incrementar Carga (+20% TSS)</span>
-              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 font-bold">Sobrecarga</span>
-            </div>
-            <p className="text-[11px] text-zinc-400">
-              Evalúa el riesgo de forzar entrenamientos adicionales y acelerar la supresión.
-            </p>
-          </button>
-
-        </div>
+      <div className="bg-zinc-950/80 p-3 rounded-2xl border border-zinc-800 text-[11px] text-zinc-400">
+        Proyección a 7 días de tu propia tendencia de HRV nocturna (datos de Suunto), con su banda de confianza. No se simulan escenarios de carga: no hay datos que digan cuánto cambia tu HRV al subir o bajar la carga.
       </div>
 
       {/* SVG Dual Stage Chart: Historical 30 Days + Future 7-Day Forecast */}
@@ -573,7 +502,7 @@ export const HRVPredictiveRegressionCard: React.FC<HRVPredictiveRegressionCardPr
             <path
               d={projectedLinePath}
               fill="none"
-              stroke={selectedScenario === 'deload_35' ? '#10b981' : regression.slopeDaily < 0 ? '#f43f5e' : '#06b6d4'}
+              stroke={regression.slopeDaily < 0 ? '#f43f5e' : '#06b6d4'}
               strokeWidth="2.5"
               strokeDasharray="6 4"
             />

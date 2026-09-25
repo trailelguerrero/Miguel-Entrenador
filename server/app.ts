@@ -73,6 +73,17 @@ function availabilityLine(p: any): string {
   return 'Disponibilidad no declarada por el atleta.';
 }
 
+/** Zonas del reloj y, SOLO si hay tendencia sostenida, la recomendación de cambio. */
+function formatWatchZones(a: any): string {
+  if (!a?.watch) return 'sin datos';
+  const z = a.watch.zones;
+  const base = `FC máx ${a.watch.maxHr ?? '?'}; inicio Z2 ${z?.z2 ?? '?'}, Z3 ${z?.z3 ?? '?'}, Z4 ${z?.z4 ?? '?'}, Z5 ${z?.z5 ?? '?'}`;
+  const recs = (a.recommendations || []).map((r: any) => `${r.label} ${r.current}→${r.suggested} (${r.evidence})`);
+  return recs.length
+    ? `${base}. RECOMENDACIÓN POR TENDENCIA SOSTENIDA: ${recs.join('; ')}. Díselo al atleta.`
+    : `${base}. Sin tendencia sostenida que justifique cambiarlas: no recomiendes cambiar zonas por datos de un solo día.${(a.notes || []).length ? ` Notas: ${a.notes.join(' ')}` : ''}`;
+}
+
 function formatLoadContext(lc: any): string {
   if (!lc) return '- Sin datos de carga ni recuperación.';
   const lines: string[] = [];
@@ -232,6 +243,7 @@ ${(coachMemory.coachNotebookNotes || []).map((n: string) => `  * ${n}`).join('\n
 - Origen de Datos: ${athleteProfile?.dataSource || 'Registro / Suunto'}
 - VO2máx (Suunto): ${athleteProfile?.vo2Max ?? 'No disponible'}
 - HRV nocturna de referencia: ${athleteProfile?.baselineHrv ? athleteProfile.baselineHrv + ' ms' : 'Pendiente'}
+- Zonas de FC del reloj (carrera): ${formatWatchZones(athleteProfile?.watchZoneAdvice)}
 - Origen de cada dato del perfil (Suunto = calculado de su reloj; Manual = lo ha puesto o corregido el atleta): ${
       athleteProfile?.fieldSources && Object.keys(athleteProfile.fieldSources).length
         ? Object.entries(athleteProfile.fieldSources).map(([k, v]) => `${k}=${v === 'suunto' ? 'Suunto' : 'Manual'}`).join(', ')

@@ -448,6 +448,24 @@ export interface AthleteProfile {
   /** Explicación de cómo se calculó cada valor. */
   suuntoEvidence?: Partial<Record<SuuntoProfileField, string>>;
   suuntoProfileUpdatedAt?: string;
+  /** Aviso para cambiar las zonas de FC del reloj (solo con tendencia sostenida). */
+  watchZoneAdvice?: WatchZoneAdvice;
+}
+
+export interface WatchZoneRecommendation {
+  field: 'maxHr' | 'aetHr' | 'antHr';
+  label: string;
+  current: number;
+  suggested: number;
+  direction: 'up' | 'down';
+  evidence: string;
+}
+
+export interface WatchZoneAdvice {
+  checkedAt: string;
+  watch: { maxHr: number | null; zones: { z2: number | null; z3: number | null; z4: number | null; z5: number | null } | null; sport: string } | null;
+  recommendations: WatchZoneRecommendation[];
+  notes: string[];
 }
 
 /** Campos del perfil que se calculan a partir de los datos de Suunto. */

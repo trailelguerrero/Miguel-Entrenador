@@ -284,6 +284,23 @@ export default function App() {
         }
       }
 
+      // Aviso de zonas del reloj: solo aparece con una tendencia sostenida
+      if (res.watchZoneAdvice) {
+        const prevKeys = new Set((StorageService.getProfile().watchZoneAdvice?.recommendations || []).map((r) => `${r.field}:${r.suggested}`));
+        const withAdvice = { ...StorageService.getProfile(), watchZoneAdvice: res.watchZoneAdvice };
+        setProfile(withAdvice);
+        StorageService.saveProfile(withAdvice);
+        const fresh = res.watchZoneAdvice.recommendations.filter((r) => !prevKeys.has(`${r.field}:${r.suggested}`));
+        if (fresh.length) {
+          showToast({
+            type: 'warning',
+            title: 'Revisa las zonas de FC de tu reloj',
+            message: fresh.map((r) => `${r.label}: ${r.current} → ${r.suggested}`).join(' • '),
+            duration: 9000,
+          });
+        }
+      }
+
       // Después del perfil, para que los check-ins usen su HRV de referencia
       const summary = StorageService.mergeSuuntoSync(res.workouts || [], res.checkIns || []);
       setWorkouts(StorageService.getWorkouts());
@@ -818,6 +835,7 @@ ${structureLine} Ya puedes ver los entrenamientos en tu calendario.${warningLine
           isAdapting={isAdaptingSession}
           isSetupIncomplete={!profile.setupCompleted}
           onOpenSetupGuide={() => setIsSetupGuideOpen(true)}
+          watchZoneAdvice={profile.watchZoneAdvice}
         />
 
         {/* Quick Weight & Biomechanics Widget */}
