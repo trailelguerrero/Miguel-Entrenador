@@ -123,19 +123,19 @@ export function calculateWorkoutTss(
 }
 
 /**
- * Returns scientifically validated diagnosis of Training Stress Balance (TSB)
- * based on Joe Friel's and Dr. Andrew Coggan's established zones.
+ * Orientative reading of Training Stress Balance (TSB) using the commonly
+ * cited Friel/Coggan bands (general guidance, not validated for this athlete).
  */
 export function getTsbZoneDiagnosis(tsb: number): TSBZoneDiagnosis {
   if (tsb < -30) {
     return {
       zone: 'danger',
-      label: 'Riesgo Severo de Sobreentrenamiento (Fatiga Crítica)',
+      label: 'Fatiga muy alta (TSB muy negativo)',
       rangeDescription: 'TSB < -30',
       textColor: 'text-rose-400',
       bgColor: 'bg-rose-950/40',
       borderColor: 'border-rose-500/40',
-      scientificExplanation: 'La fatiga aguda (ATL) supera a la forma física (CTL) en más de 30 puntos. Se produce inmunosupresión temporal, depleción glucogénica crónica y estrés neuroendocrino severo.',
+      scientificExplanation: 'La fatiga aguda (ATL) supera a la forma física (CTL) en más de 30 puntos: acumulas mucha más carga reciente de la habitual.',
       actionRecommendation: 'Microciclo de descarga inmediato (-40% a -50% de volumen) o descanso pasivo de 48-72h antes de cualquier trabajo de intensidad.',
     };
   }

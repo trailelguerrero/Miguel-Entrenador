@@ -2,7 +2,7 @@
 // (Workout y DailyCheckIn).
 import type { DailyCheckIn, Workout, WorkoutType } from '../src/types/index.js';
 import { computeReadiness } from '../src/utils/readiness.js';
-import { normalizeSuuntoZoneSense, toStoredBreakdown } from '../src/brain/zonesense.js';
+import { breakdownIsReliable, normalizeSuuntoZoneSense, toStoredBreakdown } from '../src/brain/zonesense.js';
 
 /** Fila de la tool `suunto_list_workouts_summary`. */
 export interface SuuntoWorkoutRow {
@@ -28,6 +28,8 @@ export interface SuuntoWorkoutRow {
   zoneSenseAerobicThreshold?: number | null;
   zoneSenseAnaerobicThreshold?: number | null;
   vo2Max?: number | null;
+  /** Actividad añadida a mano en la app de Suunto (sin reloj ni FC). */
+  isManuallyAdded?: boolean | null;
 }
 
 /** Fila de la tool `suunto_get_sleep`. */
@@ -52,7 +54,8 @@ export interface SuuntoRecoveryDay {
 // esta cuenta: 1 = carrera, 10 = bici de montaña, 51 = pilates. El resto son
 // los ids estándar de Suunto; cualquier id no listado cae en 'cross_training'.
 const RUNNING_IDS = new Set([1, 22]); // carrera, trail running
-const STRENGTH_IDS = new Set([20, 23, 51]); // gimnasio exterior, gimnasio, pilates
+// 51 y 120: pilates; 73: entrenamiento funcional (confirmados con las descripciones de esta cuenta)
+const STRENGTH_IDS = new Set([20, 23, 51, 73, 120]); // gimnasio exterior, gimnasio, pilates, funcional
 
 const SPORT_NAMES: Record<number, string> = {
   0: 'Caminata',
@@ -65,6 +68,8 @@ const SPORT_NAMES: Record<number, string> = {
   23: 'Gimnasio',
   24: 'Marcha nórdica',
   51: 'Pilates',
+  73: 'Entrenamiento funcional',
+  120: 'Pilates',
 };
 
 function round(n: number, decimals = 0): number {
@@ -76,10 +81,18 @@ function localDate(startTime: number, offsetMin: number): string {
   return new Date(startTime + offsetMin * 60_000).toISOString().slice(0, 10);
 }
 
+/** Más de este % del tiempo medido en amarillo/rojo = no fue un rodaje suave. */
+export const INTENSITY_RUN_PCT = 20;
+
 function workoutType(row: SuuntoWorkoutRow, durationMin: number): WorkoutType {
   const id = row.activityId ?? -1;
   if (RUNNING_IDS.has(id)) {
-    return durationMin > 90 || (row.totalAscentM ?? 0) > 500 ? 'long_mountain_run' : 'easy_run';
+    if (durationMin > 90 || (row.totalAscentM ?? 0) > 500) return 'long_mountain_run';
+    // Con ZoneSense fiable se clasifica por lo que pasó de verdad, no solo por la duración
+    const z = normalizeSuuntoZoneSense(row);
+    const b = z ? toStoredBreakdown(z, row.totalTimeSec) : null;
+    if (b && breakdownIsReliable(b) && b.transitionPct + b.anaerobicPct > INTENSITY_RUN_PCT) return 'intensity_run';
+    return 'easy_run';
   }
   if (STRENGTH_IDS.has(id)) return 'strength_core';
   return 'cross_training';
@@ -95,7 +108,7 @@ export function mapSuuntoWorkouts(rows: SuuntoWorkoutRow[]): Workout[] {
     // ZoneSense: traducción explícita de los nombres de Suunto a colores
     // (src/brain/zonesense.ts). La "Anaerobic zone" de Suunto es el AMARILLO.
     const zs = normalizeSuuntoZoneSense(row);
-    const zoneSenseBreakdown = zs ? toStoredBreakdown(zs) : undefined;
+    const zoneSenseBreakdown = zs ? toStoredBreakdown(zs, row.totalTimeSec) : undefined;
 
     const title = row.description?.trim() || `${sport}${distanceKm ? ` ${distanceKm} km` : ''} (Suunto)`;
 
@@ -107,7 +120,10 @@ export function mapSuuntoWorkouts(rows: SuuntoWorkoutRow[]): Workout[] {
       type,
       plannedDurationMin: durationMin,
       // Sin objetivo de intensidad: es una actividad ya hecha, no una sesión planificada
-      description: `Actividad importada de Suunto (${sport}).`,
+      description: row.isManuallyAdded
+        ? `Actividad añadida a mano en Suunto (${sport}): sin FC; su TSS es el valor fijo que asigna Suunto, no una medida.`
+        : `Actividad importada de Suunto (${sport}).`,
+      ...(row.isManuallyAdded ? { suuntoManualEntry: true } : {}),
       mainSet: '',
       completed: true,
       actualDurationMin: durationMin,
@@ -136,7 +152,12 @@ export function mapSuuntoCheckIns(
   baselineHrv?: number,
 ): DailyCheckIn[] {
   const nights = new Map<string, SuuntoSleepSession>();
+  const naps = new Map<string, number>();
   for (const s of sleep) {
+    if (s.isNap && s.durationMin) {
+      const day = s.wakeDate || s.date;
+      naps.set(day, (naps.get(day) ?? 0) + s.durationMin);
+    }
     if (s.isNap || !s.durationMin || s.avgHRV == null) continue;
     const morning = s.wakeDate || addDays(s.date, 1);
     const prev = nights.get(morning);
@@ -170,6 +191,7 @@ export function mapSuuntoCheckIns(
         readinessScore: balance != null ? Math.round(balance * 100) : undefined,
         recoverySamples: rec?.samples ?? undefined,
         status: readiness.status,
+        ...(naps.get(date) ? { napMinutes: Math.round(naps.get(date)!) } : {}),
         coachAdvice: `${readiness.coachAdvice} (Datos de Suunto: sueño ${sleepHours} h, HRV ${hrvRmssd} ms vs referencia ${hrvBaseline} ms.${balanceNote})`,
         suggestedAction: readiness.suggestedAction,
         source: 'suunto',

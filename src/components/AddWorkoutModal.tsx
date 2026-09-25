@@ -113,6 +113,7 @@ export const AddWorkoutModal: React.FC<AddWorkoutModalProps> = ({
                 <option value="long_mountain_run">Tirada Larga Montaña con D+</option>
                 <option value="muscular_endurance">Muscular Endurance (Cuestas ME)</option>
                 <option value="hill_intervals">Series en Subida</option>
+                <option value="intensity_run">Carrera con intensidad</option>
                 <option value="strength_core">Fuerza en Casa / Outdoor</option>
                 <option value="drift_test">Test de Deriva Cardíaca</option>
                 <option value="cross_training">Entrenamiento Cruzado</option>

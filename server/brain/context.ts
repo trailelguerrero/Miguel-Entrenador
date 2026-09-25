@@ -32,7 +32,7 @@ export function formatLoadContext(lc: any): string {
   if (lc.ctl != null) lines.push(`- ${tag('derived')} CTL ${lc.ctl} · ATL ${lc.atl} · TSB ${lc.tsb}${lc.weeklyTss != null ? ` · TSS últimos 7 días ${lc.weeklyTss}` : ''}`);
   if (lc.loadHistory) lines.push(`- ${tag('derived')} ${describeLoadHistory(lc.loadHistory)}`);
   for (const c of lc.recentCheckIns || []) {
-    lines.push(`- ${c.date}: ${c.fromSuunto ? `${tag('real')} (Suunto)` : `${tag('real')} (declarado por el atleta)`} HRV ${c.hrvRmssd} ms (referencia ${c.hrvBaseline} ms), sueño ${c.sleepHours} h${c.recoveryPct != null ? `, Recovery Suunto ${c.recoveryPct}%` : ''}, semáforo ${tag('derived')} ${c.status}`);
+    lines.push(`- ${c.date}: ${c.fromSuunto ? `${tag('real')} (Suunto)` : `${tag('real')} (declarado por el atleta)`} HRV ${c.hrvRmssd} ms (referencia ${c.hrvBaseline} ms), sueño ${c.sleepHours} h${c.napMinutes ? ` (+ ${c.napMinutes} min que Suunto marcó como siesta; puede ser parte de la noche, no se suman)` : ''}${c.recoveryPct != null ? `, Recovery Suunto ${c.recoveryPct}%` : ''}, semáforo ${tag('derived')} ${c.status}`);
   }
   // El estado de hoy se recalcula aquí con los datos crudos; el del cliente solo puede endurecerlo
   const today = verifyTodayReadiness(lc);
@@ -93,4 +93,24 @@ export function resolveReadinessState(body: any): ReadinessState {
     plannedWorkout: plannedFrom(originalWorkout),
   });
   return strictestReadiness(computed, readinessState);
+}
+
+/** Carrera objetivo por defecto (si la app no la envía). */
+export const DEFAULT_TARGET = { name: 'Transvulcania 2027', distanceKm: 73, elevationGainM: 4350, elevationLossM: 4057, location: 'La Palma', dateConfirmed: false } as const;
+
+/**
+ * La carrera objetivo en texto para Miguel, a partir de los DATOS de la app (no escrita
+ * a mano en el prompt): si el atleta cambia de objetivo, Miguel cambia con él.
+ */
+export function describeTargetRace(t: any): string {
+  const r = t && typeof t === 'object' && t.name ? t : DEFAULT_TARGET;
+  const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null);
+  const parts = [
+    r.date ? `fecha ${r.date}${r.dateConfirmed === false ? ' (ESTIMADA: la organización aún no la ha publicado; dilo si la mencionas)' : ''}` : 'fecha sin dato',
+    n(r.distanceKm) ? `${r.distanceKm} km` : 'distancia sin dato',
+    n(r.elevationGainM) ? `+${r.elevationGainM} m D+` : 'D+ sin dato',
+    n(r.elevationLossM) ? `-${r.elevationLossM} m D-` : null,
+    r.location ? `en ${r.location}` : null,
+  ].filter(Boolean);
+  return `${r.name}: ${parts.join(', ')}.${r.terrainDescription ? ` Terreno: ${r.terrainDescription}` : ''}`;
 }

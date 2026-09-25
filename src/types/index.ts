@@ -3,6 +3,7 @@ export type WorkoutType =
   | 'long_mountain_run' 
   | 'muscular_endurance' 
   | 'hill_intervals' 
+  | 'intensity_run' // carrera importada de Suunto con > 20 % del tiempo en amarillo/rojo de ZoneSense
   | 'strength_core' 
   | 'drift_test' 
   | 'cross_training' 
@@ -76,6 +77,8 @@ export interface Workout {
     aerobicPct: number; // ZoneSense verde (aeróbico)
     transitionPct: number; // ZoneSense amarillo (entre umbrales)
     anaerobicPct: number; // ZoneSense rojo (sobre umbral anaeróbico)
+    /** % de la duración del entreno que ZoneSense llegó a medir (los % de color son sobre ese tiempo). */
+    measuredPct?: number;
   };
   athleteRpe?: number; // 1 to 10
   athleteNotes?: string;
@@ -102,6 +105,8 @@ export interface Workout {
 
   // Sincronización con Suunto: workoutKey de Suunto, para no importar dos veces la misma actividad
   suuntoWorkoutKey?: string;
+  /** Añadido a mano en la app de Suunto (sin pulsómetro): su TSS es un valor fijo de Suunto, no medido. */
+  suuntoManualEntry?: boolean;
 }
 
 export interface WorkoutFuelingGuideline {
@@ -270,6 +275,8 @@ export interface TargetRace {
   terrainDescription: string;
   targetPaceOrTime?: string;
   notes?: string;
+  /** false = fecha estimada (la organización aún no la ha publicado). */
+  dateConfirmed?: boolean;
   /** De dónde sale cada dato: 'web' = verificado con fuentes; 'athlete' = lo introdujo el atleta. Sin entrada = sin dato. */
   dataSources?: Partial<Record<RaceDataField, 'web' | 'athlete'>>;
   /** Páginas que respaldan los datos verificados. */
@@ -571,6 +578,12 @@ export type SuuntoProfileValues = Partial<Pick<AthleteProfile, SuuntoProfileFiel
 export interface SuuntoProfileSuggestion {
   values: SuuntoProfileValues;
   evidence: Partial<Record<SuuntoProfileField, string>>;
+  /**
+   * Campos que Suunto rellenó antes y que ya no se pueden deducir de forma fiable
+   * (p. ej. umbrales sacados de las zonas de fábrica del reloj): se vacían si
+   * siguen siendo de Suunto. Los que el atleta puso a mano no se tocan.
+   */
+  cleared?: SuuntoProfileField[];
 }
 
 // 5. Performance Summary & Mesocycle Progression Types
@@ -638,6 +651,13 @@ export interface DailyCheckIn {
   coachAdvice: string;
   suggestedAction?: 'maintain' | 'downgrade_easy' | 'full_rest' | 'swap_with_rest';
   source?: 'suunto'; // presente si el check-in viene de la sincronización con Suunto
+  /**
+   * Minutos que Suunto marcó como "siesta" y terminaron ese día. No se suman a
+   * sleepHours: Suunto no da la hora y a veces son tramos de la propia noche.
+   */
+  napMinutes?: number;
+  /** Check-in de ejemplo (modo prueba): se borra al salir del modo prueba. */
+  isSample?: boolean;
 }
 
 export interface Mesocycle {

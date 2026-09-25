@@ -5,6 +5,7 @@ import { localDateKey } from './utils/trainingLoad';
 import { buildBrainContext, summarizeWeekWorkouts } from './brain/context';
 import { addPending, isAppliedRule } from './brain/memory';
 import { Navbar } from './components/Navbar';
+import { SuuntoSyncBar } from './components/SuuntoSyncBar';
 import { MorningBanner } from './components/MorningBanner';
 import { CalendarView } from './components/CalendarView';
 import { CoachChat } from './components/CoachChat';
@@ -536,6 +537,7 @@ Tus células y tu sistema nervioso autónomo están pidiendo tregua. No fuerces 
     if (isTestDataActive) {
       setIsClearDataModalOpen(true);
     } else {
+      if (!confirm('¿Cargar datos de ejemplo?\n\nSe AÑADEN entrenos, check-ins y registros ficticios para probar la app; tus datos se conservan. Mientras estén cargados, CTL/ATL/TSB y las gráficas mezclan datos de ejemplo. Al sincronizar Suunto o quitar la prueba se eliminan.')) return;
       StorageService.loadFullTestData();
       setWorkouts(StorageService.getWorkouts());
       setTodayCheckIn(StorageService.getTodayCheckIn());
@@ -649,15 +651,22 @@ Tus células y tu sistema nervioso autónomo están pidiendo tregua. No fuerces 
 
       // Fechas de la semana (lunes..domingo) en hora local
       const sunday = addDaysKey(monday, 6);
-      const newWorkouts: Workout[] = plan.workouts.map((w, index) => {
-        const fallbackDate = addDaysKey(monday, Math.min(index, 6));
-        const date = w.date && w.date >= monday && w.date <= sunday ? w.date : fallbackDate;
-        return {
-          ...w,
-          id: `gen-${date}-${Date.now()}-${index}`,
-          date,
-          completed: false,
-        };
+      // Fechas fuera de la semana: se usa el día de su posición solo si está libre;
+      // si no, se descarta (antes se amontonaban varias sesiones en el domingo).
+      const usedDates = new Set(plan.workouts.map((w) => w.date).filter((d) => d && d >= monday && d <= sunday));
+      const droppedDates: string[] = [];
+      const newWorkouts: Workout[] = plan.workouts.flatMap((w, index) => {
+        let date = w.date;
+        if (!(date && date >= monday && date <= sunday)) {
+          const byPosition = index <= 6 ? addDaysKey(monday, index) : null;
+          if (!byPosition || usedDates.has(byPosition)) {
+            droppedDates.push(w.title || w.date || `sesión ${index + 1}`);
+            return [];
+          }
+          date = byPosition;
+          usedDates.add(date);
+        }
+        return [{ ...w, id: `gen-${date}-${Date.now()}-${index}`, date, completed: false }];
       });
 
       // Solo se sustituyen sesiones PLANIFICADAS sin completar de esos días.
@@ -673,9 +682,11 @@ Tus células y tu sistema nervioso autónomo están pidiendo tregua. No fuerces 
       // Resumen con la estructura REAL que ha devuelto Miguel
       const structure = analyzeWeekStructure(newWorkouts, monday);
       const structureLine = `Estructura: ${structure.midweekPlanned} sesiones entre semana + tirada larga ${structure.longRunDay ? `el ${structure.longRunDay}` : '(no planificada)'}.`;
-      const notesLine = plan.validationNotes?.length
-        ? `\n\nCorrecciones automáticas del sistema: ${plan.validationNotes.join(' ')}`
-        : '';
+      const allNotes = [
+        ...(plan.validationNotes || []),
+        ...(droppedDates.length ? [`Sesiones sin fecha válida descartadas: ${droppedDates.join(', ')}.`] : []),
+      ];
+      const notesLine = allNotes.length ? `\n\nCorrecciones automáticas del sistema: ${allNotes.join(' ')}` : '';
       const warningLine = structure.issues.length
         ? `\n\n⚠️ El plan generado no cumple la regla 3 (o 2) + tirada larga: ${structure.issues.join('; ')}. Revísalo o vuelve a generarlo.`
         : '';
@@ -858,6 +869,9 @@ ${structureLine} Ya puedes ver los entrenamientos en tu calendario.${warningLine
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-24 md:pb-6 space-y-6">
         
+        {/* Sincronizar con Suunto desde la pantalla principal (o conectarlo) */}
+        <SuuntoSyncBar config={suuntoConfig} isSyncing={isSyncingSuunto} onSync={() => void handleSyncSuunto()} />
+
         {/* Morning Readiness & Fatigue Warning Banner */}
         <MorningBanner
           checkIn={todayCheckIn}

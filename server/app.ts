@@ -16,10 +16,10 @@ import {
 } from './brain/prompts/routes.js';
 import { RACE_EXTRACTION_SYSTEM, RACE_SEARCH_SYSTEM, buildRaceAdvicePrompt, buildRaceExtractionPrompt, buildRaceSearchPrompt } from './brain/prompts/race.js';
 import { resolveReadinessState } from './brain/context.js';
-import { sanitizeAdaptation, sanitizePlanWorkouts } from './brain/decision/validate.js';
-import { filterRaceAdvice, RACE_NUMERIC_FIELDS, RACE_TEXT_FIELDS, verifyRaceInfo } from './brain/decision/race.js';
+import { applyTodayReadinessToPlan, sanitizeAdaptation, sanitizePlanWorkouts } from './brain/decision/validate.js';
+import { filterRaceAdvice, RACE_NUMERIC_FIELDS, RACE_TEXT_FIELDS, targetFigures, verifyRaceInfo } from './brain/decision/race.js';
 import { verifyHistoryNumbers } from './brain/decision/history.js';
-import { buildKnowledgeBlock, buildKnowledgeQuery, buildMemoryBlock, chatTurnsFromBody } from './brain/prompts/knowledge.js';
+import { RETRIEVED_DATA_RULE, buildKnowledgeBlock, buildKnowledgeQuery, buildMemoryBlock, chatTurnsFromBody, withRetrievedContext } from './brain/prompts/knowledge.js';
 import { MemoryMatch, indexConversation, searchConversationMemory } from './rag/conversationMemory.js';
 import { KnowledgeError } from './rag/supabase.js';
 import { getConversation, listConversations, parseIncomingMessages, saveConversation } from './rag/chatStore.js';
@@ -275,9 +275,11 @@ app.post('/api/chat', async (req: Request, res: Response) => {
     // el contexto completo (perfil, carga…) incrustado en el último mensaje.
     const knowledge = await findContext(buildKnowledgeQuery(chatTurnsFromBody(req.body)), req.body?.sessionId);
 
+    // Lo recuperado va en el mensaje del atleta, marcado como dato (no en el system prompt)
+    const retrieved = buildKnowledgeBlock(knowledge.matches) + buildMemoryBlock(knowledge.memories);
     const text = await runAi(res, {
-      system: MIGUEL_SYSTEM_INSTRUCTION + buildKnowledgeBlock(knowledge.matches) + buildMemoryBlock(knowledge.memories),
-      input: conversation,
+      system: MIGUEL_SYSTEM_INSTRUCTION + (retrieved ? RETRIEVED_DATA_RULE : ''),
+      input: withRetrievedContext(conversation, retrieved),
       temperature: 0.7,
     });
 
@@ -308,7 +310,9 @@ app.post('/api/generate-plan', async (req: Request, res: Response) => {
     const parsed = parseModelJson(text);
     // El código garantiza las reglas: sin FC inventada, colores canónicos, nutrición con evidencia
     const checked = sanitizePlanWorkouts(parsed.workouts, athleteProfile, weekStartDate, nutritionEvidence);
-    res.json({ ...parsed, workouts: checked.workouts, validationNotes: checked.notes, structureIssues: checked.structureIssues });
+    // La sesión de hoy del plan, recortada a los límites del motor de readiness
+    const today = applyTodayReadinessToPlan(checked.workouts, req.body?.loadContext, athleteProfile);
+    res.json({ ...parsed, workouts: today.workouts, validationNotes: [...checked.notes, ...today.corrections], structureIssues: checked.structureIssues });
   } catch (err) {
     sendAiError(res, '/api/generate-plan', err);
   }
@@ -436,7 +440,7 @@ app.post('/api/race-info', async (req: Request, res: Response) => {
     if (Object.keys(verified.fields).length > 0 && Date.now() - t0 < 30_000) {
       const adviceText = await runAi(res, {
         system: MIGUEL_SYSTEM_INSTRUCTION,
-        input: buildRaceAdvicePrompt(raceName, verified),
+        input: buildRaceAdvicePrompt(raceName, verified, req.body?.targetRace),
         json: true,
       });
       strategicAdvice = parseModelJson(adviceText).strategicAdvice || null;
@@ -444,7 +448,7 @@ app.post('/api/race-info', async (req: Request, res: Response) => {
     // Barrera en código: se quitan las frases con cifras que no están verificadas ni se derivan de ellas
     let message: string | undefined;
     if (strategicAdvice) {
-      const filtered = filterRaceAdvice(strategicAdvice, verified);
+      const filtered = filterRaceAdvice(strategicAdvice, verified, targetFigures(req.body?.targetRace));
       if (filtered.removed.length) {
         console.warn(`[race-info] cifras sin respaldo en el consejo: ${filtered.removed.join(', ')}`);
         message = filtered.advice

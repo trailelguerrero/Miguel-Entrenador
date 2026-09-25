@@ -23,16 +23,20 @@ export interface BrainCheckInSummary {
   status: string;
   /** true si HRV/sueño vienen de Suunto (dato REAL); si no, los declaró el atleta. */
   fromSuunto: boolean;
+  /** "Siestas" de Suunto que terminaron ese día (no sumadas al sueño). */
+  napMinutes?: number;
 }
 
 export interface BrainContext {
+  /** Fecha local del atleta (YYYY-MM-DD): el servidor no conoce su zona horaria. */
+  today: string;
   ctl?: number;
   atl?: number;
   tsb?: number;
   weeklyTss?: number;
   loadHistory: LoadHistoryInfo;
   recentCheckIns: BrainCheckInSummary[];
-  /** Estado de hoy según el motor de readiness (null si no hay check-in de hoy). */
+  /** Estado de hoy según el motor de readiness (sin check-in: solo con la carga → 'unknown' o más estricto). */
   todayReadiness: ReadinessState | null;
   /** Datos crudos de hoy con los que el servidor recalcula (y verifica) todayReadiness. */
   todayReadinessInputs: TodayReadinessInputs | null;
@@ -59,6 +63,9 @@ export function buildBrainContext(
   const sorted = [...checkIns].sort((a, b) => a.date.localeCompare(b.date));
   const todayCi = sorted.find((c) => c.date === today) ?? null;
 
+  // Sin check-in de hoy también se evalúa: la carga (TSB, TSS de 7 días) puede
+  // bastar para subir el nivel, y sin datos de recuperación no se permiten series.
+  const planned = plannedToday ? { type: plannedToday.type, plannedDurationMin: plannedToday.plannedDurationMin } : null;
   const todayReadinessInputs: TodayReadinessInputs | null = todayCi
     ? {
         hrvRmssd: todayCi.hrvRmssd,
@@ -67,14 +74,13 @@ export function buildBrainContext(
         muscleSoreness: todayCi.muscleSoreness,
         stressLevel: todayCi.stressLevel,
         recoveryPct: todayCi.readinessScore,
-        plannedWorkout: plannedToday ? { type: plannedToday.type, plannedDurationMin: plannedToday.plannedDurationMin } : null,
+        plannedWorkout: planned,
       }
-    : null;
-  const todayReadiness = todayReadinessInputs
-    ? evaluateReadiness({ ...todayReadinessInputs, tsb: latest?.tsb, weeklyTss, weeklyThresholds: weeklyLoadThresholds(latest?.ctl) })
-    : null;
+    : { plannedWorkout: planned };
+  const todayReadiness = evaluateReadiness({ ...todayReadinessInputs, tsb: latest?.tsb, weeklyTss, weeklyThresholds: weeklyLoadThresholds(latest?.ctl) });
 
   return {
+    today,
     ctl: latest?.ctl,
     atl: latest?.atl,
     tsb: latest?.tsb,
@@ -88,6 +94,7 @@ export function buildBrainContext(
       recoveryPct: c.readinessScore,
       status: c.status,
       fromSuunto: c.source === 'suunto',
+      ...(c.napMinutes ? { napMinutes: c.napMinutes } : {}),
     })),
     todayReadiness,
     todayReadinessInputs,

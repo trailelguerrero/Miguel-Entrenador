@@ -231,7 +231,7 @@ export const ReportPdfModal: React.FC<ReportPdfModalProps> = ({
                 <div className="text-sm font-black text-zinc-100 print:text-zinc-900">{targetRace.name}</div>
                 <div className="text-zinc-400 print:text-zinc-600 space-y-0.5">
                   <div>Distancia: <strong>{targetRace.distanceKm} km</strong> | Desnivel: <strong>+{targetRace.elevationGainM}m D+</strong></div>
-                  <div>Fecha Objetivo: <strong>{targetRace.date}</strong></div>
+                  <div>Fecha Objetivo: <strong>{targetRace.date}</strong>{targetRace.dateConfirmed === false ? ' (por confirmar)' : ''}</div>
                   <div>Prioridad: <strong>{targetRace.priority}</strong> (Transvulcania Ultra)</div>
                 </div>
               </div>

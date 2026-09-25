@@ -750,10 +750,10 @@ export const PMCChartView: React.FC<PMCChartViewProps> = ({ profile: propProfile
                 <span className="text-[10px] text-zinc-400 font-mono">Constante τ = 42d</span>
               </div>
               <div className="font-mono bg-zinc-900 p-2 rounded-lg text-[11px] text-zinc-200 border border-zinc-800">
-                CTL_t = CTL_(t-1) + (TSS_t - CTL_(t-1)) × (1 - e^(-1/42))
+                CTL_t = CTL_(t-1) + (TSS_t - CTL_(t-1)) / 42
               </div>
               <p className="text-zinc-400 text-[11px] leading-relaxed">
-                Media móvil exponencial con decaimiento de 42 días (λ ≈ 0.0235). Representa el <strong>Fitness</strong> (densidad mitocondrial y volumen asimilado).
+                Media móvil exponencial de 42 días (factor 1/42 ≈ 0,0238, el mismo que usa el código). Representa el <strong>Fitness</strong> (densidad mitocondrial y volumen asimilado).
               </p>
             </div>
 
@@ -763,10 +763,10 @@ export const PMCChartView: React.FC<PMCChartViewProps> = ({ profile: propProfile
                 <span className="text-[10px] text-zinc-400 font-mono">Constante τ = 7d</span>
               </div>
               <div className="font-mono bg-zinc-900 p-2 rounded-lg text-[11px] text-zinc-200 border border-zinc-800">
-                ATL_t = ATL_(t-1) + (TSS_t - ATL_(t-1)) × (1 - e^(-1/7))
+                ATL_t = ATL_(t-1) + (TSS_t - ATL_(t-1)) / 7
               </div>
               <p className="text-zinc-400 text-[11px] leading-relaxed">
-                Media móvil con decaimiento rápido de 7 días (λ ≈ 0.1331). Representa la <strong>Fatiga</strong> aguda inducida por las sesiones recientes.
+                Media móvil exponencial de 7 días (factor 1/7 ≈ 0,143, el mismo que usa el código). Representa la <strong>Fatiga</strong> aguda inducida por las sesiones recientes.
               </p>
             </div>
 

@@ -15,7 +15,7 @@
  * 2. When plotted against Weekly Training Load (7d rolling TSS / volume):
  *    - Optimal Adaptation: High/increasing load + HRV 7d within or above the normal SWC band.
  *    - Functional Overreaching (FOR): Acute high load + transient moderate dip (< 3 days), rebounding quickly.
- *    - Non-Functional Overreaching (NFOR): High/sustained weekly load + persistent suppression of HRV 7d
+ *    - 'non_functional_overreaching' (shown as "fatiga acumulada", not a clinical diagnosis): very high weekly load + HRV 7d below the SWC band
  *      below the Smallest Worthwhile Change (SWC) threshold (< -10% to -15% of baseline) for 3+ consecutive days.
  *    - Deload / Supercompensation: Load drops (-40% to -50%) + HRV 7d rebounds above baseline.
  */
@@ -258,9 +258,10 @@ export function calculateHRVLoadCorrelation(
 
     let status: OverreachingType = 'optimal_adaptation';
 
-    if (isHighLoad && isSuppressed) {
+    // Gravedad coherente: la fatiga acumulada exige MÁS carga que la carga alta asumida
+    if (isVeryHighLoad && isSuppressed) {
       status = 'non_functional_overreaching';
-    } else if (isVeryHighLoad && !isSuppressed && hrv7dAvg <= baselineHrv) {
+    } else if (isHighLoad && hrv7dAvg > 0 && hrv7dAvg <= baselineHrv) {
       status = 'functional_overreaching';
     } else if (isLowLoad && hrv7dAvg >= baselineHrv) {
       status = 'recovery_deload';
@@ -374,55 +375,46 @@ export function calculateHRVLoadCorrelation(
   const isDeloadRecommended = latest.status === 'non_functional_overreaching' || latest.hrv7dAvg < swcLower;
 
   // Format status UI styling & Coach Miguel's verdict
-  let statusLabel = 'Adaptación Óptima (SNA Equilibrado)';
+  let statusLabel = 'Tendencia estable';
   let statusColor = 'text-emerald-400';
   let statusBgColor = 'bg-emerald-500/10';
   let statusBorderColor = 'border-emerald-500/30';
-  let riskAssessment = 'Riesgo Mínimo de Sobreentrenamiento (< 5%)';
+  let riskAssessment = 'Sin señales de fatiga acumulada en la tendencia';
   let coachVerdict = '';
   const actionableRecommendations: string[] = [];
+  // Esto es la TENDENCIA de 7 días (carga frente a HRV), no un diagnóstico clínico:
+  // qué hacer HOY lo decide el motor de readiness (semáforo del día).
+  const TODAY_RULE = 'Qué sesión hacer hoy lo decide el semáforo del día (check-in y motor de readiness).';
 
   if (latest.status === 'non_functional_overreaching') {
-    statusLabel = 'Sobre-esfuerzo No Funcional (Alerta de Fatiga)';
+    statusLabel = 'Tendencia: fatiga acumulada';
     statusColor = 'text-rose-400';
     statusBgColor = 'bg-rose-500/10';
     statusBorderColor = 'border-rose-500/30';
-    riskAssessment = 'Riesgo Elevado de Sobreentrenamiento Simpático (35-45%)';
-    coachVerdict = `¡Atención fisiológica! Tu media móvil de HRV 7d ha caído a ${latest.hrv7dAvg} ms (${hrvDeltaFromBaselinePct}% por debajo de tu línea base de ${baselineHrv} ms) mientras sostienes una carga semanal alta de ${latest.weeklyTss} TSS (${latest.weeklyKm} km). Esta divergencia es el signo clínico clásico de Sobre-esfuerzo No Funcional (NFOR): tus ramas parasimpáticas no dan abasto para reparar el tejido muscular y el tono cardíaco. Insistir con entrenamientos de intensidad o tiradas de desnivel provocará un estancamiento severo de cara a Transvulcania.`;
-    actionableRecommendations.push('Programa de inmediato 3-4 días de descarga activa o descanso absoluto.');
-    actionableRecommendations.push('Limita toda actividad de carrera a rodajes regenerativos: ZoneSense en verde y muy cómodo.');
-    actionableRecommendations.push('Suprime temporalmente los descensos rápidos para evitar inflamación excéntrica.');
-    actionableRecommendations.push('Prioriza higiene de sueño (> 8 horas) y reposición con carbohidratos complejos y sales.');
+    riskAssessment = 'Carga alta con la HRV media por debajo de tu banda normal';
+    coachVerdict = `Tu HRV media de 7 días está en ${latest.hrv7dAvg} ms (${hrvDeltaFromBaselinePct}% frente a tu referencia de ${baselineHrv} ms) con una carga semanal alta de ${latest.weeklyTss} TSS. Esta combinación, si se mantiene, es compatible con fatiga acumulada: conviene bajar la carga unos días y vigilar si la HRV se recupera. ${TODAY_RULE}`;
+    actionableRecommendations.push('Baja la carga unos días (rodajes en ZoneSense verde, sin series) y vigila si la HRV media vuelve a tu banda normal.');
+    actionableRecommendations.push('Si además hay dolor, mal sueño o bajo rendimiento durante varios días, consúltalo con un profesional sanitario.');
   } else if (latest.status === 'functional_overreaching') {
-    statusLabel = 'Sobre-esfuerzo Funcional (Sobrecarga Controlada)';
+    statusLabel = 'Tendencia: carga alta asumida';
     statusColor = 'text-amber-400';
     statusBgColor = 'bg-amber-500/10';
     statusBorderColor = 'border-amber-500/30';
-    riskAssessment = 'Fatiga Aguda Controlada (Riesgo Moderado ~15%)';
-    coachVerdict = `Te encuentras en fase de Sobre-esfuerzo Funcional (FOR). Estás acumulando un volumen potente de ${latest.weeklyTss} TSS semanal y tu media de HRV 7d (${latest.hrv7dAvg} ms) está ligeramente comprimida pero dentro del margen fisiológico esperado. Es el estímulo que necesitamos para generar supercompensación mitocondrial, pero debes planificar un día de descanso o rodaje muy suave en las próximas 48 horas.`;
-    actionableRecommendations.push('Mantén la tirada larga del fin de semana pero sé riguroso con los ritmos sub-AeT.');
-    actionableRecommendations.push('Realiza descarga miofascial en sóleos y cuádriceps tras las sesiones.');
-    actionableRecommendations.push('Si mañana la HRV puntual cae por debajo de 42 ms, sustituye el entreno por descanso activo.');
+    riskAssessment = 'Carga por encima de lo habitual con la HRV media algo baja';
+    coachVerdict = `Llevas ${latest.weeklyTss} TSS esta semana y tu HRV media de 7 días (${latest.hrv7dAvg} ms) está algo por debajo de tu referencia, aún dentro de tu banda normal. Es un estímulo fuerte: planifica algo más suave en los próximos días. ${TODAY_RULE}`;
+    actionableRecommendations.push('Mantén los rodajes en ZoneSense verde y reserva la intensidad para cuando el semáforo del día esté en verde.');
   } else if (latest.status === 'recovery_deload') {
-    statusLabel = 'Fase de Asimilación / Supercompensación';
+    statusLabel = 'Tendencia: descarga y recuperación';
     statusColor = 'text-cyan-400';
     statusBgColor = 'bg-cyan-500/10';
     statusBorderColor = 'border-cyan-500/30';
-    riskAssessment = 'Óptima Asimilación & Cero Riesgo';
-    coachVerdict = `Respuesta de libro: la carga semanal se ha relajado a ${latest.weeklyTss} TSS y tu tono parasimpático ha respondido elevando la media móvil de HRV a ${latest.hrv7dAvg} ms. Tus células están asimilando los miles de metros de desnivel acumulados. En 48 horas estarás listo para iniciar un nuevo bloque de progresión aeróbica.`;
-    actionableRecommendations.push('Disfruta de la frescura muscular; no aceleres el ritmo antes de tiempo.');
-    actionableRecommendations.push('Aprovecha para realizar los tests de movilidad y fuerza de core.');
-    actionableRecommendations.push('Revisa la pauta de hidratación y carbohidratos para el próximo microciclo.');
+    riskAssessment = 'Carga baja con la HRV media recuperada';
+    coachVerdict = `La carga semanal ha bajado a ${latest.weeklyTss} TSS y tu HRV media de 7 días ha subido a ${latest.hrv7dAvg} ms: la tendencia indica recuperación. ${TODAY_RULE}`;
+    actionableRecommendations.push('Buen momento para retomar la progresión de forma gradual.');
   } else {
-    statusLabel = 'Adaptación Óptima (SNA Equilibrado)';
-    statusColor = 'text-emerald-400';
-    statusBgColor = 'bg-emerald-500/10';
-    statusBorderColor = 'border-emerald-500/30';
-    riskAssessment = 'Mínimo Riesgo de Sobreentrenamiento (< 5%)';
-    coachVerdict = `Equilibrio autonómico perfecto. Con ${latest.weeklyTss} TSS de carga semanal acumulada, tu media móvil de HRV 7d (${latest.hrv7dAvg} ms) se sitúa firmemente en el Sweet Spot de tu banda normal (${swcLower} - ${swcUpper} ms). Tu sistema nervioso autónomo digiere la carga de subida sin estrés simpático crónico. Continúa con el plan previsto hacia Transvulcania.`;
-    actionableRecommendations.push('Continúa con la estructura 3 + tirada larga manteniendo los rodajes en ZoneSense verde.');
-    actionableRecommendations.push('Mantén la ingesta de 55-60 g/h de carbohidratos en salidas superiores a 90 minutos.');
-    actionableRecommendations.push('Monitorea tu check-in matutino para consolidar la tendencia.');
+    riskAssessment = 'HRV media dentro de tu banda normal';
+    coachVerdict = `Con ${latest.weeklyTss} TSS esta semana, tu HRV media de 7 días (${latest.hrv7dAvg} ms) está dentro de tu banda normal (${swcLower} - ${swcUpper} ms): no hay señales de fatiga acumulada. ${TODAY_RULE}`;
+    actionableRecommendations.push('Sigue con la estructura del plan y el check-in de cada mañana.');
   }
 
   // Resting HR 7d and Delta
@@ -560,35 +552,35 @@ export function calculateHRVLoadCorrelation(
       let isOverreaching = false;
 
       const bThr = weekSlice[weekSlice.length - 1].loadThresholds;
-      if (bThr && weeklyTss > bThr.high && avgHrv > 0 && avgHrv < swcLower) {
+      if (bThr && weeklyTss > bThr.veryHigh && avgHrv > 0 && avgHrv < swcLower) {
         status = 'non_functional_overreaching';
-        statusLabel = 'Sobreentrenamiento (NFOR)';
+        statusLabel = 'Fatiga acumulada';
         badgeBg = 'bg-rose-500/20';
         badgeText = 'text-rose-400';
         badgeBorder = 'border-rose-500/40';
         isOverreaching = true;
-        coachVerdict = `¡Alarma de sobreentrenamiento! Carga acumulada muy alta (${weeklyTss} TSS) coincidiendo con un desplome del rMSSD medio (${avgHrv} ms, por debajo del umbral de ${swcLower} ms). Bloqueo autonómico parasimpático.`;
-      } else if (bThr && weeklyTss > bThr.veryHigh && avgHrv > 0 && avgHrv < baselineHrv) {
+        coachVerdict = `Carga muy alta (${weeklyTss} TSS) con la HRV media (${avgHrv} ms) por debajo de tu banda normal (${swcLower} ms): compatible con fatiga acumulada.`;
+      } else if (bThr && weeklyTss > bThr.high && avgHrv > 0 && avgHrv < baselineHrv) {
         status = 'functional_overreaching';
-        statusLabel = 'Sobre-esfuerzo Funcional (FOR)';
+        statusLabel = 'Carga alta asumida';
         badgeBg = 'bg-amber-500/20';
         badgeText = 'text-amber-400';
         badgeBorder = 'border-amber-500/40';
-        coachVerdict = `Sobrecarga controlada (${weeklyTss} TSS). Fatiga aguda asumible pero requiere día de descarga en las próximas 48h.`;
+        coachVerdict = `Carga alta (${weeklyTss} TSS) con la HRV media algo por debajo de tu referencia: estímulo fuerte, conviene algo más suave después.`;
       } else if (bThr && weeklyTss < bThr.low && avgHrv >= baselineHrv * 0.96) {
         status = 'deload';
-        statusLabel = 'Semana de Descarga / Frescura';
+        statusLabel = 'Descarga / recuperación';
         badgeBg = 'bg-cyan-500/20';
         badgeText = 'text-cyan-400';
         badgeBorder = 'border-cyan-500/40';
-        coachVerdict = `Microciclo regenerativo (${weeklyTss} TSS). Reabsorción de fatiga y supercompensación de glucógeno y fibras musculares.`;
+        coachVerdict = `Carga baja (${weeklyTss} TSS) con la HRV media recuperada.`;
       } else {
         status = 'optimal';
-        statusLabel = 'Adaptación Óptima';
+        statusLabel = 'Estable';
         badgeBg = 'bg-emerald-500/20';
         badgeText = 'text-emerald-400';
         badgeBorder = 'border-emerald-500/40';
-        coachVerdict = `Equilibrio fisiológico modélico (${weeklyTss} TSS, HRV ${avgHrv} ms). El sistema parasimpático digiere el volumen sin estrés residual.`;
+        coachVerdict = `Carga ${weeklyTss} TSS con la HRV media (${avgHrv} ms) en tu banda normal.`;
       }
 
       weeklyBlocks.push({

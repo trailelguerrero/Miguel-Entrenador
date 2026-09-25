@@ -41,7 +41,18 @@ export function applySuuntoProfile(
     next.fieldSources![field] = 'suunto';
   }
 
-  next.suuntoValues = { ...profile.suuntoValues, ...suggestion.values };
+  // Lo que Suunto ya no puede deducir de forma fiable se vacía (solo si sigue siendo de Suunto)
+  const suuntoValues = { ...profile.suuntoValues, ...suggestion.values };
+  for (const field of suggestion.cleared || []) {
+    delete (suuntoValues as any)[field];
+    if (next.fieldSources![field] !== 'suunto') continue;
+    const empty = field === 'hasAds' ? false : field === 'preferredLongRunDay' ? next[field] : 0;
+    if (next[field] !== empty) changed.push({ field, from: next[field], to: empty });
+    (next as any)[field] = empty;
+    delete next.fieldSources![field];
+  }
+
+  next.suuntoValues = suuntoValues;
   next.suuntoEvidence = { ...profile.suuntoEvidence, ...suggestion.evidence };
   next.suuntoProfileUpdatedAt = new Date().toISOString();
   next.hasConnectedSuunto = true;

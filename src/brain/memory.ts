@@ -29,6 +29,9 @@ export const CRITICAL_CATEGORIES: CoachLearnedInsight['category'][] = ['biomecha
 /** Pendientes del chat: se olvidan a los 30 días y se guardan como mucho 20. */
 export const PENDING_MAX_DAYS = 30;
 export const PENDING_MAX = 20;
+/** Máximo de observaciones/hipótesis y de caducadas/descartadas que se pasan a Miguel. */
+export const PROMPT_MAX_WATCH = 15;
+export const PROMPT_MAX_OLD = 10;
 
 export const INSIGHT_CATEGORIES: CoachLearnedInsight['category'][] = [
   'physiology_zonesense',
@@ -175,6 +178,42 @@ export interface EvidenceContext {
 /** Fuentes que son lo que cuenta el atleta (no una sesión medida). */
 const SUBJECTIVE_SOURCES: InsightEvidence['source'][] = ['chat', 'athlete_note'];
 
+/** Palabras que no distinguen un aprendizaje de otro. */
+const STOP = new Set(['para', 'como', 'cuando', 'pero', 'porque', 'desde', 'hasta', 'entre', 'sobre', 'tras', 'durante', 'despues', 'antes', 'mucho', 'poco', 'mas', 'menos', 'muy', 'esta', 'este', 'esto', 'tiene', 'hace', 'sesion', 'sesiones', 'entreno', 'entrenos', 'atleta', 'siempre', 'veces']);
+const words = (s: string) => new Set(normSummary(s).split(/[^a-z0-9ñ]+/).filter((w) => w.length >= 4 && !STOP.has(w)));
+
+/** Parecido entre dos observaciones: palabras clave compartidas / las de la más corta. */
+export function observationSimilarity(a: string, b: string): number {
+  const wa = words(a);
+  const wb = words(b);
+  if (!wa.size || !wb.size) return 0;
+  let shared = 0;
+  for (const w of wa) if (wb.has(w)) shared++;
+  return shared / Math.min(wa.size, wb.size);
+}
+
+/** Umbral para considerar que un "hallazgo nuevo" es el mismo que uno existente. */
+export const SAME_INSIGHT_SIMILARITY = 0.6;
+
+/**
+ * Aprendizaje existente de la misma categoría que dice lo mismo que un hallazgo nuevo.
+ * Evita que una misma observación, redactada distinta cada vez, quede repartida en
+ * varias observaciones de 1 evidencia que nunca llegan a regla.
+ */
+export function findSimilarInsight(insights: CoachLearnedInsight[], category: CoachLearnedInsight['category'], observation: string): CoachLearnedInsight | null {
+  let best: CoachLearnedInsight | null = null;
+  let bestScore = SAME_INSIGHT_SIMILARITY;
+  for (const i of insights) {
+    if (i.category !== category) continue;
+    const score = observationSimilarity(i.observation, observation);
+    if (score >= bestScore) {
+      best = i;
+      bestScore = score;
+    }
+  }
+  return best;
+}
+
 let idSeq = 0;
 const newId = () => `insight-${Date.now()}-${idSeq++}`;
 
@@ -187,7 +226,10 @@ export function applyEvidence(
 ): { memory: CoachLearnedMemory; changes: string[] } {
   const insights = [...(memory.insights || [])];
   const changes: string[] = [];
-  for (const item of items) {
+  for (const raw of items) {
+    // Hallazgo "nuevo" que ya existe con otras palabras → evidencia del existente
+    const similar = raw.insightId == null && raw.category && raw.observation ? findSimilarInsight(insights, raw.category, raw.observation) : null;
+    const item: EvidenceItem = similar ? { insightId: similar.id, supports: true, summary: raw.summary } : raw;
     const ev: InsightEvidence = { date: ctx.date, source: ctx.source, supports: item.supports, summary: item.summary, refId: ctx.refId };
     if (item.critical) ev.critical = true;
     const idx = item.insightId ? insights.findIndex((i) => i.id === item.insightId) : -1;
@@ -245,10 +287,12 @@ export function describeMemoryForPrompt(memory: CoachLearnedMemory | null | unde
     const { support, against } = countEvidence(i.evidence);
     return `  * [${i.id}] [${i.category}] ${i.observation}${i.ruleForFuturePlans ? ` → ${i.ruleForFuturePlans}` : ''} (${STATUS_LABEL[i.status!]}; ${support} a favor, ${against} en contra; última ${i.lastEvidenceAt})`;
   };
+  // Topes para que el prompt no crezca sin límite (lo más reciente primero)
+  const recent = (xs: CoachLearnedInsight[], n: number) => [...xs].sort((a, b) => String(b.lastEvidenceAt).localeCompare(String(a.lastEvidenceAt))).slice(0, n);
   const rules = all.filter((i) => isAppliedRule(i.status));
-  const watch = all.filter((i) => i.status === 'observation' || i.status === 'hypothesis');
-  const expired = all.filter((i) => i.status === 'expired');
-  const refuted = all.filter((i) => i.status === 'refuted');
+  const watch = recent(all.filter((i) => i.status === 'observation' || i.status === 'hypothesis'), PROMPT_MAX_WATCH);
+  const expired = recent(all.filter((i) => i.status === 'expired'), PROMPT_MAX_OLD);
+  const refuted = recent(all.filter((i) => i.status === 'refuted'), PROMPT_MAX_OLD);
   return [
     '[MEMORIA DE MIGUEL — estado calculado por código a partir de evidencias]',
     `REGLAS QUE SE APLICAN (≥${PROVISIONAL_MIN} evidencias a favor):`,
@@ -268,7 +312,12 @@ export function confirmPending(memory: CoachLearnedMemory, pendingId: string, to
   const p = (memory.pendingEvidence || []).find((x) => x.id === pendingId);
   if (!p) return { memory, changes: [] as string[] };
   const rest = (memory.pendingEvidence || []).filter((x) => x.id !== pendingId);
-  const r = applyEvidence({ ...memory, pendingEvidence: rest }, sanitizeEvidenceItems([p.item], memory), {
+  const items = sanitizeEvidenceItems([p.item], memory);
+  if (!items.length) {
+    // El aprendizaje al que apuntaba ya no existe (se borró): se avisa en vez de perderlo en silencio
+    return { memory: { ...memory, pendingEvidence: rest }, changes: [`No se pudo anotar "${p.item.summary}": el aprendizaje al que se refería ya no existe.`] };
+  }
+  const r = applyEvidence({ ...memory, pendingEvidence: rest }, items, {
     date: p.date,
     source: 'chat',
     refId: p.refId,

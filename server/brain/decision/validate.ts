@@ -8,6 +8,7 @@ import type { AthleteProfile, IntensitySource, Workout } from '../../../src/type
 import { resolveIntensityPrescription, type IntensityPrescription } from '../../../src/brain/intensity.js';
 import { normalizeZoneSenseTarget, TARGET_COLOR, colorRank } from '../../../src/brain/zonesense.js';
 import type { ReadinessState } from '../../../src/brain/readiness.js';
+import { verifyTodayReadiness } from '../context.js';
 import { analyzeWeekStructure } from '../../../src/utils/weekStructure.js';
 
 /** Evidencia nutricional real del atleta (la envía el cliente). */
@@ -21,7 +22,7 @@ export interface NutritionEvidence {
 }
 
 const VALID_SOURCES: IntensitySource[] = ['zonesense', 'heart_rate_measured', 'rpe', 'terrain', 'unknown'];
-const INTERVAL_TYPES = new Set(['hill_intervals', 'muscular_endurance']);
+const INTERVAL_TYPES = new Set(['hill_intervals', 'muscular_endurance', 'intensity_run']);
 
 const pos = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0;
 
@@ -152,4 +153,29 @@ export function sanitizeAdaptation(
   }
   fixIntensity(w, resolveIntensityPrescription(profile), corrections, w.title || 'Sesión adaptada');
   return { adapted: w, corrections };
+}
+
+/**
+ * El plan semanal también respeta el estado de HOY: si el plan trae una sesión para
+ * hoy, se recorta a los límites del motor de readiness (recalculado con esa sesión).
+ * `loadContext.today` es la fecha local del atleta.
+ */
+export function applyTodayReadinessToPlan(
+  workouts: any[],
+  loadContext: any,
+  profile: Partial<AthleteProfile> | undefined,
+): { workouts: any[]; corrections: string[] } {
+  const today = typeof loadContext?.today === 'string' ? loadContext.today : null;
+  const idx = today ? workouts.findIndex((w) => w?.date === today) : -1;
+  if (idx < 0 || !loadContext?.todayReadinessInputs) return { workouts, corrections: [] };
+  const w = workouts[idx];
+  const state = verifyTodayReadiness({
+    ...loadContext,
+    todayReadinessInputs: { ...loadContext.todayReadinessInputs, plannedWorkout: { type: w.type, plannedDurationMin: w.plannedDurationMin } },
+  });
+  if (!state) return { workouts, corrections: [] };
+  const { adapted, corrections } = sanitizeAdaptation(w, state, profile);
+  const out = [...workouts];
+  out[idx] = adapted;
+  return { workouts: out, corrections: corrections.map((c) => `Hoy (${today}): ${c}`) };
 }

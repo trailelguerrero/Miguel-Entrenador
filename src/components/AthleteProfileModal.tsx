@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { hasAerobicDeficiency } from '../utils/uphillAthlete';
 import { 
   X, 
   User, 
@@ -189,9 +190,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
   const heightM = (heightCm || 0) / 100;
   const currentBmi = weightKg > 0 && heightM > 0 ? (weightKg / (heightM * heightM)).toFixed(1) : '—';
   const weightDiff = Number((weightKg - targetRaceWeightKg).toFixed(1));
-  const estimatedCaloriesSaved = Math.round(Math.max(0, weightDiff) * 9.81 * 4.35 / 0.23);
-  const estimatedMinutesSaved = Math.round(Math.max(0, weightDiff) * 6.5);
-  const hasAds = (antHr - aetHr) > 20 || ((antHr - aetHr) / antHr) > 0.1;
+  const hasAds = hasAerobicDeficiency(aetHr, antHr) === true;
 
   const toggleJoint = (joint: string) => {
     setSelectedJoints(prev => 
@@ -1197,7 +1196,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
                   </div>
                   {weightDiff > 0 && (
                     <p className="text-zinc-500 leading-relaxed">
-                      En los <strong className="text-zinc-300">+4.350m de D+</strong> de Transvulcania, alcanzar los {targetRaceWeightKg} kg te ahorrará <strong className="text-emerald-400">~{estimatedCaloriesSaved} kcal</strong> de esfuerzo metabólico (~{estimatedMinutesSaved} min menos en carrera).
+                      Cada kilo menos es menos trabajo en los <strong className="text-zinc-300">+4.350 m de D+</strong> de la Transvulcania. La app no calcula kcal ni minutos ahorrados: no hay un dato validado para ti. Baja de forma progresiva (300–400 g/semana), sin déficits severos.
                     </p>
                   )}
                 </div>

@@ -27,10 +27,19 @@ export interface IntensityPrescription {
 
 type Measurable = 'aetHr' | 'antHr' | 'maxHr';
 
+/** ¿La FC máx coincide con la fórmula 220 − edad? Entonces no es medida (típico valor de fábrica del reloj). */
+export function isFormulaMaxHr(profile: Partial<AthleteProfile> | undefined): boolean {
+  const age = profile?.age;
+  const max = profile?.maxHr;
+  return typeof age === 'number' && age > 0 && typeof max === 'number' && max > 0 && Math.abs(max - (220 - age)) <= 1;
+}
+
 function measured(profile: Partial<AthleteProfile> | undefined, field: Measurable): number | null {
   const v = profile?.[field];
   if (typeof v !== 'number' || !(v > 0)) return null;
   const src = profile?.fieldSources?.[field];
+  // La FC máx de Suunto que es justo 220 − edad es la fórmula, no una medida (si la fijas a mano, vale)
+  if (field === 'maxHr' && src === 'suunto' && isFormulaMaxHr(profile)) return null;
   return src === 'suunto' || src === 'manual' ? v : null;
 }
 
@@ -48,7 +57,7 @@ export function resolveIntensityPrescription(
   const missing: string[] = [];
   if (aetHr == null) missing.push('umbral aeróbico por FC medido');
   if (antHr == null) missing.push('umbral anaeróbico por FC medido');
-  if (maxHr == null) missing.push('FC máxima medida');
+  if (maxHr == null) missing.push(isFormulaMaxHr(profile) ? 'FC máxima medida (la del reloj es 220 − edad)' : 'FC máxima medida');
 
   const hrAllowed = aetHr != null;
   let primary: IntensitySource;

@@ -91,7 +91,11 @@ export const CoachMemoryView: React.FC<CoachMemoryViewProps> = ({
 
   const pending = memory.pendingEvidence || [];
   const appliedCount = memory.insights.filter((i) => isAppliedRule(i.status)).length;
-  const handleConfirmPending = (id: string) => onUpdateMemory(confirmPending(memory, id, localDateKey()).memory);
+  const handleConfirmPending = (id: string) => {
+    const r = confirmPending(memory, id, localDateKey());
+    onUpdateMemory(r.memory);
+    if (r.changes.length) setMiguelFeedback(r.changes.join(' · '));
+  };
   const handleDiscardPending = (id: string) => onUpdateMemory(discardPending(memory, id));
 
   const getStatusBadge = (status: CoachLearnedInsight['status']) => {

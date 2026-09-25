@@ -241,12 +241,14 @@ export const ApiService = {
   async getRaceInfo(
     raceName: string,
     approximateDate?: string,
-    distanceKm?: number
+    distanceKm?: number,
+    targetRace?: TargetRace
   ): Promise<RaceInfoResult> {
     return await apiFetch('/api/race-info', {
         raceName,
         approximateDate,
         distanceKm,
+        targetRace,
       }, 'ai', 'Error al consultar datos de la carrera');
   },
 
