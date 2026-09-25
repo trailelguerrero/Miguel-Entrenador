@@ -276,6 +276,8 @@ export interface TargetRace {
   webSources?: { title: string; uri: string }[];
   /** Datos que la búsqueda no pudo verificar. */
   unverifiedFields?: RaceDataField[];
+  /** Avisos de coherencia entre datos (p. ej. distancia y desnivel de páginas distintas). */
+  dataWarnings?: string[];
   verifiedAt?: string;
 }
 
@@ -288,6 +290,8 @@ export interface RaceInfoResult {
   unverified: RaceDataField[];
   sources: { title: string; uri: string }[];
   queries: string[];
+  /** Avisos de coherencia entre campos. */
+  warnings?: string[];
   strategicAdvice: string | null;
   message?: string;
   checkedAt?: string;
@@ -335,6 +339,8 @@ export interface InsightEvidence {
   summary: string;
   /** Sesión, nota o conversación de origen (una misma fuente cuenta una sola vez). */
   refId?: string;
+  /** Evidencia en contra GRAVE (lesión, dolor agudo, sobreentrenamiento): anula el aprendizaje. */
+  critical?: boolean;
 }
 
 /** Evidencia propuesta desde el chat, pendiente de que el atleta la confirme. */
@@ -346,6 +352,7 @@ export interface PendingMemoryEvidence {
     insightId: string | null;
     supports: boolean;
     summary: string;
+    critical?: boolean;
     category?: CoachLearnedInsight['category'];
     observation?: string;
     hypothesis?: string;

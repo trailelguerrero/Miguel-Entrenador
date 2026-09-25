@@ -16,7 +16,7 @@ import {
 import { RACE_EXTRACTION_SYSTEM, RACE_SEARCH_SYSTEM, buildRaceAdvicePrompt, buildRaceExtractionPrompt, buildRaceSearchPrompt } from './brain/prompts/race.js';
 import { resolveReadinessState } from './brain/context.js';
 import { sanitizeAdaptation, sanitizePlanWorkouts } from './brain/decision/validate.js';
-import { RACE_NUMERIC_FIELDS, RACE_TEXT_FIELDS, verifyRaceInfo } from './brain/decision/race.js';
+import { adviceUsesOnlyVerifiedNumbers, RACE_NUMERIC_FIELDS, RACE_TEXT_FIELDS, verifyRaceInfo } from './brain/decision/race.js';
 import { verifyHistoryNumbers } from './brain/decision/history.js';
 import { buildKnowledgeBlock, buildKnowledgeQuery, buildMemoryBlock, chatTurnsFromBody } from './brain/prompts/knowledge.js';
 import { MemoryMatch, indexConversation, searchConversationMemory } from './rag/conversationMemory.js';
@@ -369,7 +369,7 @@ app.post('/api/race-info', async (req: Request, res: Response) => {
     // Paso 1: búsqueda REAL en Google (Gemini grounding). Sin búsqueda no hay datos.
     const search = await searchWithGemini(RACE_SEARCH_SYSTEM, buildRaceSearchPrompt(raceName, approximateDate, distanceKm));
     if (search.sources.length === 0) {
-      return res.json({ verified: false, fields: {}, unverified: [...RACE_NUMERIC_FIELDS, ...RACE_TEXT_FIELDS], sources: [], queries: search.queries, strategicAdvice: null,
+      return res.json({ verified: false, fields: {}, unverified: [...RACE_NUMERIC_FIELDS, ...RACE_TEXT_FIELDS], sources: [], queries: search.queries, warnings: [], strategicAdvice: null,
         message: 'La búsqueda no devolvió ninguna fuente: no se rellena ningún dato. Introdúcelos a mano.' });
     }
 
@@ -395,8 +395,14 @@ app.post('/api/race-info', async (req: Request, res: Response) => {
       });
       strategicAdvice = parseModelJson(adviceText).strategicAdvice || null;
     }
+    // Barrera en código: un consejo con cifras que no están verificadas no se muestra
+    let message: string | undefined;
+    if (strategicAdvice && !adviceUsesOnlyVerifiedNumbers(strategicAdvice, verified)) {
+      strategicAdvice = null;
+      message = 'El consejo de Miguel citaba cifras que no están verificadas y se ha descartado.';
+    }
 
-    res.json({ verified: true, ...verified, strategicAdvice, checkedAt: new Date().toISOString() });
+    res.json({ verified: true, ...verified, strategicAdvice, message, checkedAt: new Date().toISOString() });
   } catch (err) {
     sendAiError(res, '/api/race-info', err);
   }

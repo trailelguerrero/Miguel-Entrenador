@@ -251,7 +251,7 @@ export const CoachMemoryView: React.FC<CoachMemoryViewProps> = ({
                     <p>{p.item.summary}</p>
                     <p className="text-[11px] text-stone-400 mt-0.5">
                       {target
-                        ? `${p.item.supports ? 'Apoya' : 'Contradice'}: "${target.observation}"`
+                        ? `${p.item.supports ? 'Apoya' : p.item.critical ? 'Contradice (GRAVE)' : 'Contradice'}: "${target.observation}"`
                         : `Nuevo hallazgo: "${p.item.observation}"`}{' '}
                       · {p.date}
                     </p>
@@ -349,7 +349,7 @@ export const CoachMemoryView: React.FC<CoachMemoryViewProps> = ({
                   <ul className="space-y-0.5">
                     {(insight.evidence || []).slice(-4).map((e, k) => (
                       <li key={k} className="text-[11px] text-stone-400">
-                        <span className={e.supports ? 'text-emerald-400' : 'text-red-400'}>{e.supports ? '+' : '−'}</span> {e.date}: {e.summary}
+                        <span className={e.supports ? 'text-emerald-400' : 'text-red-400'}>{e.supports ? '+' : e.critical ? '−− GRAVE' : '−'}</span> {e.date}: {e.summary}
                       </li>
                     ))}
                   </ul>

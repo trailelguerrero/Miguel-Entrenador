@@ -76,12 +76,12 @@ ${describeMemoryForPrompt(coachMemory, localDateKey())}
 `;
 
   const athleteContext = `
-[DATOS REALES DEL ATLETA - CERO DATOS INVENTADOS]
+[DATOS REALES DEL ATLETA - CERO DATOS INVENTADOS] (todo ${tag('real')}: medido o declarado por el atleta, salvo lo marcado de otra forma)
 - Nombre: ${athleteProfile?.name || 'Atleta'}
 - Edad: ${athleteProfile?.age ? athleteProfile.age + ' años' : 'Sin dato'}
 - Altura: ${athleteProfile?.heightCm ? athleteProfile.heightCm + ' cm' : 'Sin dato'}
 - Peso Actual: ${athleteProfile?.weightKg ? athleteProfile.weightKg + ' kg' : 'Sin dato'}
-- Peso Objetivo de Carrera: ${athleteProfile?.targetRaceWeightKg ? athleteProfile.targetRaceWeightKg + ' kg' : 'Sin dato'}${athleteProfile?.weightKg && athleteProfile?.targetRaceWeightKg ? ` (Diferencia hacia meta: ${(Number(athleteProfile.weightKg) - Number(athleteProfile.targetRaceWeightKg)).toFixed(1)} kg)` : ''}
+- Peso Objetivo de Carrera: ${athleteProfile?.targetRaceWeightKg ? athleteProfile.targetRaceWeightKg + ' kg' : 'Sin dato'}${athleteProfile?.weightKg && athleteProfile?.targetRaceWeightKg ? ` (${tag('derived')} Diferencia hacia meta: ${(Number(athleteProfile.weightKg) - Number(athleteProfile.targetRaceWeightKg)).toFixed(1)} kg)` : ''}
 - FC Reposo: ${athleteProfile?.restingHr ? athleteProfile.restingHr + ' bpm' : 'Pendiente de registrar en Suunto'}
 - FC Máx: ${athleteProfile?.maxHr ? athleteProfile.maxHr + ' bpm' : 'Pendiente de registrar en Suunto'}
 - Umbral Aeróbico por FC (zonas del reloj, respaldo sin banda; NO es ZoneSense): ${athleteProfile?.aetHr ? athleteProfile.aetHr + ' bpm' : 'Pendiente de registrar'}

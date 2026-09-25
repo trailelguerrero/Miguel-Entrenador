@@ -130,10 +130,11 @@ export const PeriodizationView: React.FC<PeriodizationViewProps> = ({
       priority: newRacePriority,
       location: val<string>('location', undefined) ?? '',
       terrainDescription: val<string>('terrainDescription', undefined) ?? '',
-      notes: info?.strategicAdvice ?? undefined,
+      notes: info?.strategicAdvice ?? info?.message ?? undefined,
       dataSources,
       webSources: info?.sources ?? [],
       unverifiedFields: info ? info.unverified : ['name', 'date', 'distanceKm', 'elevationGainM', 'elevationLossM', 'location', 'terrainDescription', 'altitudeRange'],
+      dataWarnings: info?.warnings?.length ? info.warnings : undefined,
       verifiedAt: info?.checkedAt,
     };
 
@@ -335,6 +336,10 @@ export const PeriodizationView: React.FC<PeriodizationViewProps> = ({
                     Sin verificar: {r.unverifiedFields.map((f) => RACE_FIELD_NAMES[f]).join(', ')}
                   </p>
                 )}
+
+                {r.dataWarnings?.map((w, i) => (
+                  <p key={i} className="text-[11px] text-amber-300/80">⚠ {w}</p>
+                ))}
 
                 {r.webSources && r.webSources.length > 0 && (
                   <div className="text-[11px] text-zinc-500 space-y-0.5">

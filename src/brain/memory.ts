@@ -9,7 +9,10 @@
  *   ≥ 3 a favor                    → regla provisional (se aplica)
  *   ≥ 5 a favor y ninguna en contra → regla consolidada (se aplica)
  *   cada evidencia en contra baja un nivel; por debajo de observación → descartada
- *   90 días sin evidencias nuevas  → caducada (no se aplica hasta nueva evidencia)
+ *   evidencia en contra GRAVE (lesión, dolor agudo, sobreentrenamiento) → descartada
+ *     hasta que acumule ≥ 3 evidencias a favor POSTERIORES (solo cuentan esas)
+ *   90 días sin evidencias nuevas  → caducada (no se aplica hasta nueva evidencia;
+ *     la nueva evidencia la reactiva con todo su historial)
  *
  * Una misma sesión o nota solo cuenta una vez por aprendizaje (refId).
  */
@@ -20,6 +23,11 @@ export const CONSOLIDATED_MIN = 5;
 export const EXPIRY_DAYS = 90;
 /** Máximo de evidencias que se aceptan de una sola llamada a la IA. */
 export const MAX_EVIDENCE_PER_EVENT = 3;
+/** Solo en estas categorías una evidencia en contra puede ser grave (seguridad del atleta). */
+export const CRITICAL_CATEGORIES: CoachLearnedInsight['category'][] = ['biomechanics_injury', 'fatigue_recovery'];
+/** Pendientes del chat: se olvidan a los 30 días y se guardan como mucho 20. */
+export const PENDING_MAX_DAYS = 30;
+export const PENDING_MAX = 20;
 
 export const INSIGHT_CATEGORIES: CoachLearnedInsight['category'][] = [
   'physiology_zonesense',
@@ -56,6 +64,13 @@ export function countEvidence(evidence: InsightEvidence[] | undefined) {
 
 /** Estado según las evidencias (y la fecha de hoy, para la caducidad). */
 export function computeInsightStatus(evidence: InsightEvidence[] | undefined, today: string): InsightStatus {
+  // Una evidencia grave anula todo lo anterior: solo cuenta lo que venga después
+  const lastCritical = (evidence || []).filter((e) => !e.supports && e.critical).map((e) => e.date).sort().pop();
+  if (lastCritical) {
+    const after = (evidence || []).filter((e) => e.date > lastCritical);
+    if (countEvidence(after).support < PROVISIONAL_MIN) return 'refuted';
+    return computeInsightStatus(after, today);
+  }
   const { support, against } = countEvidence(evidence);
   if (support === 0) return against > 0 ? 'refuted' : 'observation';
   const base = support >= CONSOLIDATED_MIN ? 3 : support >= PROVISIONAL_MIN ? 2 : support - 1; // 1→0, 2→1
@@ -93,7 +108,8 @@ function legacyEvidence(i: CoachLearnedInsight): InsightEvidence[] {
 }
 
 export function refreshMemory(m: CoachLearnedMemory, today: string): CoachLearnedMemory {
-  return { ...m, insights: (m.insights || []).map((i) => refreshInsight(i, today)), pendingEvidence: m.pendingEvidence || [] };
+  const pendingEvidence = (m.pendingEvidence || []).filter((p) => daysBetween(p.date, today) <= PENDING_MAX_DAYS).slice(0, PENDING_MAX);
+  return { ...m, insights: (m.insights || []).map((i) => refreshInsight(i, today)), pendingEvidence };
 }
 
 /** Lo que devuelve la IA por cada cosa observada (ya validado con sanitizeEvidenceItems). */
@@ -102,25 +118,34 @@ export interface EvidenceItem {
   insightId: string | null;
   supports: boolean;
   summary: string;
+  /** Evidencia en contra grave (solo en CRITICAL_CATEGORIES). */
+  critical?: boolean;
   /** Solo para hallazgos nuevos. */
   category?: CoachLearnedInsight['category'];
   observation?: string;
   hypothesis?: string;
 }
 
-/** Limpia la salida de la IA: ids que existen, categorías válidas, máximo por evento. */
+/** Prioridad al recortar: grave en contra, en contra, apoyo a lo existente, hallazgo nuevo. */
+const evidencePriority = (e: EvidenceItem) => (e.critical ? 0 : !e.supports ? 1 : e.insightId ? 2 : 3);
+
+/**
+ * Limpia la salida de la IA: ids que existen, categorías válidas, máximo por evento.
+ * Si sobran, se quedan las más importantes (no las primeras que listó la IA).
+ */
 export function sanitizeEvidenceItems(raw: unknown, memory: CoachLearnedMemory | null | undefined): EvidenceItem[] {
-  const ids = new Set((memory?.insights || []).map((i) => i.id));
+  const categoryById = new Map((memory?.insights || []).map((i) => [i.id, i.category]));
   const list = Array.isArray(raw) ? raw : raw ? [raw] : [];
   const out: EvidenceItem[] = [];
   for (const r of list as any[]) {
     if (!r || typeof r !== 'object') continue;
     const summary = typeof r.summary === 'string' ? r.summary.trim() : '';
     if (!summary) continue;
-    const insightId = typeof r.insightId === 'string' && ids.has(r.insightId) ? r.insightId : null;
+    const insightId = typeof r.insightId === 'string' && categoryById.has(r.insightId) ? r.insightId : null;
     const supports = r.supports !== false;
     if (insightId) {
-      out.push({ insightId, supports, summary });
+      const critical = !supports && r.critical === true && CRITICAL_CATEGORIES.includes(categoryById.get(insightId)!);
+      out.push(critical ? { insightId, supports, summary, critical } : { insightId, supports, summary });
     } else {
       // Un hallazgo nuevo solo puede nacer de algo que SÍ ocurrió
       const category = INSIGHT_CATEGORIES.includes(r.category) ? r.category : null;
@@ -128,9 +153,12 @@ export function sanitizeEvidenceItems(raw: unknown, memory: CoachLearnedMemory |
       if (!supports || !category || !observation) continue;
       out.push({ insightId: null, supports: true, summary, category, observation, hypothesis: typeof r.hypothesis === 'string' ? r.hypothesis.trim() : '' });
     }
-    if (out.length >= MAX_EVIDENCE_PER_EVENT) break;
   }
-  return out;
+  if (out.length > MAX_EVIDENCE_PER_EVENT) {
+    console.warn(`[memoria] ${out.length - MAX_EVIDENCE_PER_EVENT} evidencia(s) descartada(s) por superar el máximo de ${MAX_EVIDENCE_PER_EVENT} por evento`);
+  }
+  // sort es estable: dentro de la misma prioridad se respeta el orden de la IA
+  return out.sort((a, b) => evidencePriority(a) - evidencePriority(b)).slice(0, MAX_EVIDENCE_PER_EVENT);
 }
 
 export interface EvidenceContext {
@@ -155,15 +183,22 @@ export function applyEvidence(
   const changes: string[] = [];
   for (const item of items) {
     const ev: InsightEvidence = { date: ctx.date, source: ctx.source, supports: item.supports, summary: item.summary, refId: ctx.refId };
+    if (item.critical) ev.critical = true;
     const idx = item.insightId ? insights.findIndex((i) => i.id === item.insightId) : -1;
     if (idx >= 0) {
       const prev = refreshInsight(insights[idx], today);
+      // Lo que se confirma desde el chat suele ser el mismo hecho que ya contó la sesión de ese día
+      const sameDay = ctx.source === 'chat' && (prev.evidence || []).some((e) => e.source !== 'chat' && e.date === ctx.date && e.supports === item.supports && !!e.critical === !!item.critical);
+      if (sameDay) {
+        changes.push(`"${prev.observation}": ya estaba contada una evidencia de ese día (no se suma dos veces)`);
+        continue;
+      }
       // Misma sesión/nota ya contada para este aprendizaje → se sustituye, no se suma
       const kept = (prev.evidence || []).filter((e) => !(ctx.refId && e.refId === ctx.refId && e.source === ctx.source));
       const next = refreshInsight({ ...prev, evidence: [...kept, ev] }, today);
       insights[idx] = next;
       if (next.status !== prev.status) changes.push(`"${next.observation}": ${STATUS_LABEL[prev.status!]} → ${STATUS_LABEL[next.status!]}`);
-      else changes.push(`"${next.observation}": evidencia ${item.supports ? 'a favor' : 'en contra'} (${STATUS_LABEL[next.status!]})`);
+      else changes.push(`"${next.observation}": evidencia ${item.supports ? 'a favor' : item.critical ? 'en contra GRAVE' : 'en contra'} (${STATUS_LABEL[next.status!]})`);
     } else if (item.insightId == null && item.category && item.observation) {
       const created = refreshInsight(
         {
@@ -195,14 +230,16 @@ export function describeMemoryForPrompt(memory: CoachLearnedMemory | null | unde
   };
   const rules = all.filter((i) => isAppliedRule(i.status));
   const watch = all.filter((i) => i.status === 'observation' || i.status === 'hypothesis');
-  const dropped = all.filter((i) => i.status === 'refuted' || i.status === 'expired');
+  const expired = all.filter((i) => i.status === 'expired');
+  const refuted = all.filter((i) => i.status === 'refuted');
   return [
     '[MEMORIA DE MIGUEL — estado calculado por código a partir de evidencias]',
     `REGLAS QUE SE APLICAN (≥${PROVISIONAL_MIN} evidencias a favor):`,
     rules.length ? rules.map(line).join('\n') : '  (ninguna todavía)',
     '[HIPÓTESIS] A VIGILAR — observaciones e hipótesis: NO las apliques como reglas; úsalas para fijarte en si se repiten:',
     watch.length ? watch.map(line).join('\n') : '  (ninguna)',
-    dropped.length ? `DESCARTADAS O CADUCADAS — no las uses:\n${dropped.map(line).join('\n')}` : '',
+    expired.length ? `CADUCADAS — no las uses; si vuelve a pasar, usa su id (se reactivan con todo su historial) en vez de crear un aprendizaje nuevo:\n${expired.map(line).join('\n')}` : '',
+    refuted.length ? `DESCARTADAS — no las uses:\n${refuted.map(line).join('\n')}` : '',
     memory.coachNotebookNotes?.length ? `Notas de la libreta (texto del atleta o de Miguel, no reglas):\n${memory.coachNotebookNotes.slice(0, 10).map((n) => `  * ${n}`).join('\n')}` : '',
   ]
     .filter(Boolean)
@@ -227,8 +264,20 @@ export function discardPending(memory: CoachLearnedMemory, pendingId: string): C
   return { ...memory, pendingEvidence: (memory.pendingEvidence || []).filter((x) => x.id !== pendingId) };
 }
 
+const normSummary = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+
+/** Pendiente repetido: misma conversación y mismo aprendizaje/sentido, o mismo texto. */
+function isSamePending(p: PendingMemoryEvidence, item: EvidenceItem, refId: string): boolean {
+  if (normSummary(p.item.summary) === normSummary(item.summary)) return true;
+  return p.refId === refId && p.item.insightId != null && p.item.insightId === item.insightId && p.item.supports === item.supports;
+}
+
 export function addPending(memory: CoachLearnedMemory, items: EvidenceItem[], date: string, refId: string): CoachLearnedMemory {
   const existing = memory.pendingEvidence || [];
-  const fresh: PendingMemoryEvidence[] = items.map((item, k) => ({ id: `pending-${Date.now()}-${k}`, date, refId, item }));
-  return { ...memory, pendingEvidence: [...fresh, ...existing] };
+  const fresh: PendingMemoryEvidence[] = [];
+  items.forEach((item, k) => {
+    if ([...existing, ...fresh].some((p) => isSamePending(p, item, refId))) return;
+    fresh.push({ id: `pending-${Date.now()}-${k}`, date, refId, item });
+  });
+  return { ...memory, pendingEvidence: [...fresh, ...existing].slice(0, PENDING_MAX) };
 }

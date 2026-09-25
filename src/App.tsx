@@ -572,8 +572,12 @@ Tus células y tu sistema nervioso autónomo están pidiendo tregua. No fuerces 
     setIsAdaptingSession(true);
     try {
       // El motor de readiness fija los límites; Miguel elige dentro de ellos
-      const readinessState = getBrainContext(todayWorkout).todayReadiness;
-      const adaptation = await ApiService.adaptSession(todayWorkout, todayCheckIn, profile, historyDoc, readinessState);
+      const brain = getBrainContext(todayWorkout);
+      const adaptation = await ApiService.adaptSession(todayWorkout, todayCheckIn, profile, historyDoc, brain.todayReadiness, {
+        tsb: brain.tsb,
+        weeklyTss: brain.weeklyTss,
+        ctl: brain.ctl,
+      });
 
       const adaptedWorkout: Workout = {
         ...todayWorkout,
