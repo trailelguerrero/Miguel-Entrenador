@@ -158,7 +158,9 @@ export const ApiService = {
     checkIn: DailyCheckIn,
     athleteProfile: AthleteProfile,
     athleteHistoryDoc?: AthleteHistoryDocument | null,
-    readinessState?: ReadinessState | null
+    readinessState?: ReadinessState | null,
+    /** Carga con la que el servidor recalcula el estado (no se fía del estado del cliente). */
+    readinessInputs?: { tsb?: number; weeklyTss?: number; ctl?: number } | null
   ): Promise<{
     miguelMessage: string;
     adaptedWorkout: Partial<Workout>;
@@ -170,6 +172,7 @@ export const ApiService = {
         athleteProfile,
         athleteHistoryDoc,
         readinessState,
+        readinessInputs,
       }, 'ai', 'Error al adaptar la sesión');
   },
 

@@ -13,11 +13,14 @@
  *   - TSS de los últimos 7 días por encima del umbral "muy alta" del atleta
  *     (CTL×7 + 20 %, ver weeklyLoadThresholds)
  *   - Estrés vital declarado ≥ 8
+ * Cuando se juntan varios riesgos, los límites se endurecen:
+ *   - ROJO de base + cualquier escalador  → descanso obligatorio
+ *   - ÁMBAR de base + ≥ 2 escaladores     → ROJO con descanso obligatorio
  * El Recovery de Suunto se informa pero NO cambia el nivel: no hay un corte
- * validado para él.
+ * validado para él. Los límites son MÁXIMOS: Miguel puede proponer menos.
  */
 import type { WeeklyLoadThresholds } from '../utils/trainingLoad';
-import type { ZoneSenseColor } from './zonesense';
+import { colorRank, type ZoneSenseColor } from './zonesense';
 
 export type ReadinessLevel = 'green' | 'amber' | 'red' | 'unknown';
 
@@ -94,7 +97,8 @@ export function evaluateReadiness(input: ReadinessInput): ReadinessState {
     }
   }
 
-  // 2. Escalado (un paso como máximo)
+  // 2. Escalado (un paso como máximo; varios riesgos a la vez endurecen los límites)
+  const baseRank = rank;
   const escalators: string[] = [];
   if (num(input.tsb) && input.tsb < TSB_ESCALATION) escalators.push(`TSB ${input.tsb} (< ${TSB_ESCALATION})`);
   if (num(input.weeklyTss) && input.weeklyThresholds && input.weeklyTss > input.weeklyThresholds.veryHigh) {
@@ -118,7 +122,9 @@ export function evaluateReadiness(input: ReadinessInput): ReadinessState {
   const planned = input.plannedWorkout?.plannedDurationMin;
   let limits: ReadinessLimits;
   if (level === 'red') {
-    const mandatoryRest = redHits.length >= 2 || (soreness != null && soreness >= 8);
+    const compounded = (baseRank === 2 && escalators.length >= 1) || (baseRank === 1 && escalators.length >= 2);
+    const mandatoryRest = redHits.length >= 2 || (soreness != null && soreness >= 8) || compounded;
+    if (compounded) reasons.push('fatiga de base y carga/estrés acumulados a la vez → descanso obligatorio');
     limits = {
       maxDurationMin: mandatoryRest ? 0 : Math.min(planned ?? RED_MAX_DURATION_MIN, RED_MAX_DURATION_MIN),
       maxZoneSense: 'green',
@@ -134,6 +140,45 @@ export function evaluateReadiness(input: ReadinessInput): ReadinessState {
   return { level, reasons, limits, missingData, hrvDeltaPct };
 }
 
+const LEVEL_RANK: Record<ReadinessLevel, number> = { unknown: 0, green: 0, amber: 1, red: 2 };
+const COLORS: ZoneSenseColor[] = ['green', 'yellow', 'red'];
+
+function isValidState(s: any): s is ReadinessState {
+  const l = s?.limits;
+  return (
+    !!s &&
+    s.level in LEVEL_RANK &&
+    !!l &&
+    (l.maxDurationMin === null || (typeof l.maxDurationMin === 'number' && Number.isFinite(l.maxDurationMin) && l.maxDurationMin >= 0)) &&
+    COLORS.includes(l.maxZoneSense) &&
+    typeof l.allowIntervals === 'boolean' &&
+    typeof l.mandatoryRest === 'boolean'
+  );
+}
+
+/**
+ * Combina el estado recalculado (fuente de verdad) con otro recibido de fuera
+ * (p. ej. el del cliente, que sí conoce TSB y carga). Solo puede ENDURECER:
+ * de cada límite se queda el más estricto de los dos.
+ */
+export function strictestReadiness(base: ReadinessState, other: unknown): ReadinessState {
+  if (!isValidState(other)) return base;
+  const a = base.limits;
+  const b = other.limits;
+  const minDuration = a.maxDurationMin == null ? b.maxDurationMin : b.maxDurationMin == null ? a.maxDurationMin : Math.min(a.maxDurationMin, b.maxDurationMin);
+  const limits: ReadinessLimits = {
+    maxDurationMin: minDuration,
+    maxZoneSense: colorRank(a.maxZoneSense) <= colorRank(b.maxZoneSense) ? a.maxZoneSense : b.maxZoneSense,
+    allowIntervals: a.allowIntervals && b.allowIntervals,
+    mandatoryRest: a.mandatoryRest || b.mandatoryRest,
+  };
+  if (limits.mandatoryRest) limits.maxDurationMin = 0;
+  const level = LEVEL_RANK[other.level] > LEVEL_RANK[base.level] ? other.level : base.level;
+  const tightened = level !== base.level || JSON.stringify(limits) !== JSON.stringify(a);
+  const extra = Array.isArray(other.reasons) ? other.reasons.filter((r) => typeof r === 'string' && !base.reasons.includes(r)) : [];
+  return tightened ? { ...base, level, limits, reasons: [...base.reasons, ...extra] } : base;
+}
+
 /** Texto de los límites para el prompt de Miguel. */
 export function describeReadiness(state: ReadinessState): string {
   const lvl = { green: 'VERDE', amber: 'ÁMBAR', red: 'ROJO', unknown: 'SIN DATOS' }[state.level];
@@ -142,6 +187,7 @@ export function describeReadiness(state: ReadinessState): string {
     `Estado calculado por el motor de readiness: ${lvl}.`,
     state.reasons.length ? `Motivos: ${state.reasons.join('; ')}.` : 'Sin señales de fatiga.',
     `LÍMITES OBLIGATORIOS: ${l.mandatoryRest ? 'descanso total' : `duración máxima ${l.maxDurationMin ?? 'la planificada'}${l.maxDurationMin != null ? ' min' : ''}, ZoneSense máximo ${l.maxZoneSense === 'green' ? 'verde' : l.maxZoneSense === 'yellow' ? 'amarillo' : 'rojo'}, ${l.allowIntervals ? 'series permitidas' : 'sin series'}`}.`,
+    'Los límites son MÁXIMOS: puedes proponer menos (y explicarlo como recomendación), nunca más. El Recovery de Suunto es informativo: si es bajo con límites holgados, puedes aconsejar prudencia, pero no lo presentes como un límite.',
     state.missingData.length ? `Datos que faltan: ${state.missingData.join(', ')}.` : '',
   ]
     .filter(Boolean)

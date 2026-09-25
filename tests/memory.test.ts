@@ -12,6 +12,8 @@ import {
   computeInsightStatus,
   confirmPending,
   describeMemoryForPrompt,
+  MAX_EVIDENCE_PER_EVENT,
+  PENDING_MAX,
   discardPending,
   refreshMemory,
   sanitizeEvidenceItems,
@@ -115,7 +117,9 @@ test('Prompt: solo provisionales/consolidadas como REGLAS; el resto A VIGILAR o 
   assert.ok(rulesBlock.includes('REGLA_OK'));
   assert.ok(!rulesBlock.includes('HIPO'));
   assert.ok(!rulesBlock.includes('VIEJA'));
-  assert.ok(txt.includes('DESCARTADAS O CADUCADAS'));
+  // Caducadas aparte de las descartadas, indicando que se reactivan con su id
+  assert.ok(txt.includes('CADUCADAS — no las uses; si vuelve a pasar, usa su id'));
+  assert.ok(txt.slice(txt.indexOf('CADUCADAS')).includes('VIEJA'));
 });
 
 test('Chat: las evidencias quedan pendientes y solo cuentan al confirmarlas', () => {
@@ -134,4 +138,73 @@ test('Chat: las evidencias quedan pendientes y solo cuentan al confirmarlas', ()
   assert.equal(m.insights.length, 1);
   assert.equal(m.insights[0].status, 'observation');
   assert.equal(m.insights[0].evidence![0].source, 'chat');
+});
+
+// ── Auditoría: evidencias graves, prioridad, reactivación y pendientes ─────
+const insight = (id: string, category: any, evidence: InsightEvidence[]) => ({
+  id, category, observation: id, ruleForFuturePlans: '', confidenceScore: 0, learnedFromDate: TODAY, sourceEvent: '', evidence,
+});
+
+test('Una evidencia en contra GRAVE descarta incluso una regla consolidada', () => {
+  const crit: InsightEvidence = { date: TODAY, source: 'workout_analysis', supports: false, summary: 'lesión', refId: 'x', critical: true };
+  assert.equal(computeInsightStatus([...ev(5, true, '2026-09-01'), crit], TODAY), 'refuted');
+  // Solo vuelve cuando acumula ≥3 a favor DESPUÉS de la grave
+  const after = ev(2, true, '2026-09-26');
+  assert.equal(computeInsightStatus([...ev(5, true, '2026-09-01'), crit, ...after], '2026-09-26'), 'refuted');
+  const after3 = ev(3, true, '2026-09-26');
+  assert.equal(computeInsightStatus([...ev(5, true, '2026-09-01'), crit, ...after3], '2026-09-26'), 'provisional_rule');
+});
+
+test('"critical" solo vale en contra y en categorías de lesión/fatiga', () => {
+  const mem = { ...emptyMemory(), insights: [insight('lesion', 'biomechanics_injury', ev(5)), insight('nutri', 'nutrition_hydration', ev(5))] };
+  const out = sanitizeEvidenceItems(
+    [
+      { insightId: 'lesion', supports: false, summary: 'dolor agudo', critical: true },
+      { insightId: 'nutri', supports: false, summary: 'flato', critical: true }, // categoría no admite grave
+      { insightId: 'lesion', supports: true, summary: 'bien', critical: true }, // a favor no puede ser grave
+    ],
+    mem,
+  );
+  assert.equal(out[0].critical, true);
+  assert.equal(out.find((e) => e.insightId === 'nutri')!.critical, undefined);
+  assert.equal(out.find((e) => e.supports)!.critical, undefined);
+  const { memory } = applyEvidence(mem, [out[0]], { date: TODAY, source: 'workout_analysis', refId: 'w9', sourceEvent: '' });
+  assert.equal(memory.insights.find((i) => i.id === 'lesion')!.status, 'refuted');
+});
+
+test('Si la IA da más evidencias de la cuenta, se quedan las contradicciones antes que lo nuevo', () => {
+  const mem = { ...emptyMemory(), insights: [insight('a', 'fatigue_recovery', ev(3))] };
+  const nuevo = (k: number) => ({ insightId: null, supports: true, summary: `n${k}`, category: 'terrain_technique', observation: `o${k}` });
+  const out = sanitizeEvidenceItems([nuevo(1), nuevo(2), nuevo(3), { insightId: 'a', supports: false, summary: 'contradice' }], mem);
+  assert.equal(out.length, MAX_EVIDENCE_PER_EVENT);
+  assert.equal(out[0].summary, 'contradice');
+  assert.deepEqual(out.slice(1).map((e) => e.summary), ['n1', 'n2']); // orden estable
+});
+
+test('Una regla caducada se reactiva con todo su historial al recibir evidencia nueva', () => {
+  const mem = refreshMemory({ ...emptyMemory(), insights: [insight('sodio', 'nutrition_hydration', ev(5, true, '2026-01-10'))] }, TODAY);
+  assert.equal(mem.insights[0].status, 'expired');
+  const { memory } = applyEvidence(mem, [{ insightId: 'sodio', supports: true, summary: 'calor otra vez' }], { date: TODAY, source: 'workout_analysis', refId: 'w-new', sourceEvent: '' });
+  assert.equal(memory.insights[0].status, 'consolidated_rule');
+});
+
+test('Pendientes: sin duplicados, caducan a los 30 días y hay un máximo', () => {
+  const item = { insightId: null, supports: true, summary: 'Me duele el tibial', category: 'biomechanics_injury' as const, observation: 'Tibial' };
+  let m = addPending(emptyMemory(), [item], TODAY, 'chat-1');
+  m = addPending(m, [{ ...item, summary: '  me duele el TIBIAL ' }], TODAY, 'chat-2'); // mismo texto
+  assert.equal(m.pendingEvidence!.length, 1);
+  // Caducan
+  const old = { ...m, pendingEvidence: m.pendingEvidence!.map((p) => ({ ...p, date: '2026-08-01' })) };
+  assert.equal(refreshMemory(old, TODAY).pendingEvidence!.length, 0);
+  // Máximo
+  const many = Array.from({ length: PENDING_MAX + 5 }, (_, k) => ({ ...item, summary: `hecho ${k}` }));
+  assert.equal(addPending(emptyMemory(), many, TODAY, 'chat-3').pendingEvidence!.length, PENDING_MAX);
+});
+
+test('Confirmar desde el chat un hecho que ya contó la sesión de ese día no suma dos veces', () => {
+  const mem = { ...emptyMemory(), insights: [insight('a', 'fatigue_recovery', [{ date: TODAY, source: 'workout_analysis', supports: true, summary: 'sesión', refId: 'w1' }])] };
+  const m = addPending(mem, [{ insightId: 'a', supports: true, summary: 'lo mismo contado en el chat' }], TODAY, 'chat-9');
+  const r = confirmPending(m, m.pendingEvidence![0].id, TODAY);
+  assert.equal(r.memory.insights[0].evidence!.length, 1);
+  assert.equal(r.memory.pendingEvidence!.length, 0);
 });

@@ -3,7 +3,10 @@
 //   - Una cifra solo vale si aparece en un fragmento de la búsqueda respaldado
 //     por al menos una página (groundingSupports).
 //   - Un texto (lugar, terreno…) solo vale si la IA cita páginas reales que
-//     respaldan algún fragmento donde aparece alguna de sus palabras clave.
+//     respaldan un fragmento donde aparecen al menos la mitad de sus palabras
+//     clave (sin contar palabras genéricas como "terreno" o "carrera").
+//   - Coherencia entre campos: un desnivel imposible para la distancia no vale,
+//     y se avisa si distancia y desnivel salen de páginas distintas.
 import type { GroundedSegment, SearchResult, WebSource } from '../../ai.js';
 
 export const RACE_NUMERIC_FIELDS = ['distanceKm', 'elevationGainM', 'elevationLossM'] as const;
@@ -33,7 +36,12 @@ export interface VerifiedRaceInfo {
   /** Páginas que respaldan algún dato. */
   sources: WebSource[];
   queries: string[];
+  /** Avisos de coherencia entre campos (datos que no encajan entre sí). */
+  warnings: string[];
 }
+
+/** Más de 250 m de D+ por km no existe ni en un kilómetro vertical: el dato no es de esta carrera. */
+export const MAX_GAIN_PER_KM = 250;
 
 const norm = (s: string) =>
   s
@@ -41,10 +49,13 @@ const norm = (s: string) =>
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '');
 
-/** Formas en que puede aparecer una cifra en una web: 4350, 4.350, 4,350, 4 350; 42.2 / 42,2. */
+/**
+ * Formas en que puede aparecer una cifra en una web: 4350, 4.350, 4,350, 4 350
+ * (también con espacio fino), 4'350; 42.2 / 42,2; dígitos de ancho completo (４３５０).
+ */
 export function numberAppears(n: number, text: string): boolean {
   if (!Number.isFinite(n) || n <= 0) return false;
-  const t = text.replace(/(\d)[.,\s](\d{3})(?!\d)/g, '$1$2'); // quita separadores de miles
+  const t = text.normalize('NFKC').replace(/(\d)[.,\s'’](\d{3})(?!\d)/g, '$1$2'); // quita separadores de miles
   const variants = Number.isInteger(n) ? [String(n)] : [String(n), String(n).replace('.', ',')];
   return variants.some((v) => new RegExp(`(^|[^\\d.,])${v.replace('.', '\\.')}(?![\\d])`).test(t));
 }
@@ -66,7 +77,21 @@ export function dateAppears(iso: string, text: string): boolean {
   return hasYear && hasDay && hasMonth;
 }
 
-const keywords = (s: string) => norm(s).split(/[^a-z0-9ñ]+/).filter((w) => w.length >= 4);
+/** Palabras que aparecen en cualquier página de trail: no prueban nada. */
+const GENERIC_WORDS = new Set([
+  'terreno', 'terrenos', 'carrera', 'carreras', 'trail', 'running', 'montana', 'montanas', 'recorrido', 'tramo', 'tramos',
+  'zona', 'zonas', 'salida', 'meta', 'ruta', 'camino', 'caminos', 'con', 'del', 'los', 'las', 'una', 'por', 'para', 'que',
+  'entre', 'desde', 'hasta', 'muy', 'mas', 'the', 'and', 'race', 'course', 'km', 'metros',
+]);
+export const keywords = (s: string) => [...new Set(norm(s).split(/[^a-z0-9ñ]+/).filter((w) => w.length >= 3 && !GENERIC_WORDS.has(w)))];
+
+/** Un texto está respaldado si el fragmento contiene al menos la mitad de sus palabras clave. */
+export function textAppears(words: string[], text: string): boolean {
+  if (!words.length) return false;
+  const t = norm(text);
+  const hits = words.filter((w) => new RegExp(`(^|[^a-z0-9ñ])${w}`).test(t)).length;
+  return hits >= Math.ceil(words.length / 2);
+}
 
 function validIdx(raw: unknown, max: number): number[] {
   return (Array.isArray(raw) ? raw : []).filter((i): i is number => Number.isInteger(i) && i >= 0 && i < max);
@@ -105,10 +130,7 @@ export function verifyRaceInfo(extracted: any, search: SearchResult): VerifiedRa
     const matches =
       f === 'date'
         ? (seg: GroundedSegment) => dateAppears(value, seg.text)
-        : (seg: GroundedSegment) => {
-            const t = norm(seg.text);
-            return words.some((w) => t.includes(w));
-          };
+        : (seg: GroundedSegment) => textAppears(words, seg.text);
     // Para textos se exige que la IA cite páginas concretas
     const idx = value && claimed.length && (f === 'date' || words.length) ? pick(search.segments, claimed, matches) : null;
     if (idx) {
@@ -117,12 +139,57 @@ export function verifyRaceInfo(extracted: any, search: SearchResult): VerifiedRa
     } else unverified.push(f);
   }
 
-  return { fields, unverified, sources: [...used].sort((a, b) => a - b).map((i) => search.sources[i]), queries: search.queries };
+  const warnings = checkRaceCoherence(fields, unverified);
+  // Las páginas usadas se recalculan por si la coherencia quitó algún campo
+  const kept = new Set(Object.values(fields).flatMap((f) => f!.sources.map((s) => search.sources.indexOf(s))));
+  return { fields, unverified, sources: [...kept].filter((i) => i >= 0).sort((a, b) => a - b).map((i) => search.sources[i]), queries: search.queries, warnings };
+}
+
+/** Comprueba que los datos verificados encajan entre sí. Modifica fields/unverified y devuelve avisos. */
+export function checkRaceCoherence(fields: VerifiedRaceInfo['fields'], unverified: RaceField[]): string[] {
+  const warnings: string[] = [];
+  const dist = fields.distanceKm;
+  if (!dist) return warnings;
+  const km = Number(dist.value);
+  for (const f of ['elevationGainM', 'elevationLossM'] as const) {
+    const el = fields[f];
+    if (!el) continue;
+    if (Number(el.value) / km > MAX_GAIN_PER_KM) {
+      warnings.push(`${RACE_FIELD_LABEL[f]} ${el.value} m imposible para ${km} km (más de ${MAX_GAIN_PER_KM} m/km): descartado`);
+      delete fields[f];
+      unverified.push(f);
+      continue;
+    }
+    const shared = el.sources.some((s) => dist.sources.some((d) => d.uri === s.uri));
+    if (!shared) warnings.push(`${RACE_FIELD_LABEL[f]} y distancia salen de páginas distintas: comprueba que son de la misma prueba`);
+  }
+  return warnings;
+}
+
+/**
+ * El consejo de Miguel no puede traer cifras de la carrera que no estén verificadas:
+ * toda cifra seguida de km / m / metros / D+ debe coincidir (±1) con un dato verificado.
+ */
+/** Cifras del objetivo principal (Transvulcania 2027) que Miguel puede citar al comparar. */
+export const TARGET_RACE_NUMBERS = [73, 4350, 4057, 2426, 2400];
+
+export function adviceUsesOnlyVerifiedNumbers(advice: string, v: VerifiedRaceInfo, extraAllowed: number[] = TARGET_RACE_NUMBERS): boolean {
+  const allowed = [...extraAllowed, ...RACE_NUMERIC_FIELDS.map((f) => v.fields[f]?.value).filter((x): x is number => typeof x === 'number')];
+  // Cifras de altitud verificadas (texto "200 - 2426 m") también valen
+  const alt = v.fields.altitudeRange?.value;
+  if (typeof alt === 'string') for (const m of alt.normalize('NFKC').replace(/(\d)[.,\s'’](\d{3})(?!\d)/g, '$1$2').matchAll(/\d+(?:[.,]\d+)?/g)) allowed.push(Number(m[0].replace(',', '.')));
+  const t = advice.normalize('NFKC').replace(/(\d)[.,\s'’](\d{3})(?!\d)/g, '$1$2');
+  for (const m of t.matchAll(/(\d+(?:[.,]\d+)?)\s*(km|kms|kil[oó]metros|m\b|metros|mts|d\+|d-)/gi)) {
+    const n = Number(m[1].replace(',', '.'));
+    if (!allowed.some((a) => Math.abs(a - n) <= 1)) return false;
+  }
+  return true;
 }
 
 /** Texto con solo los datos verificados, para que Miguel dé su consejo sin inventar. */
 export function describeVerifiedRace(v: VerifiedRaceInfo): string {
   const lines = Object.entries(v.fields).map(([k, f]) => `- ${RACE_FIELD_LABEL[k as RaceField]}: ${f!.value} (fuente: ${f!.sources.map((s) => s.title).join(', ')})`);
   if (v.unverified.length) lines.push(`- SIN VERIFICAR (no uses ni supongas estos datos): ${v.unverified.map((f) => RACE_FIELD_LABEL[f]).join(', ')}`);
+  for (const w of v.warnings || []) lines.push(`- AVISO DE COHERENCIA: ${w}`);
   return lines.join('\n');
 }
