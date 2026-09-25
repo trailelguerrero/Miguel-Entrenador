@@ -44,6 +44,7 @@ export interface SuuntoSleepSession {
 export interface SuuntoRecoveryDay {
   date: string;
   avgBalance: number | null;
+  samples?: number | null;
 }
 
 // Ids de deporte de Suunto (activityId). Los confirmados con datos reales de
@@ -156,7 +157,7 @@ export function mapSuuntoCheckIns(
   // el cliente la sustituye por la del perfil si el atleta la fijó a mano.
   const hrvs = [...nights.values()].map((s) => s.avgHRV as number);
   const hrvBaseline = baselineHrv && baselineHrv > 0 ? baselineHrv : round(hrvs.reduce((a, b) => a + b, 0) / hrvs.length, 1);
-  const balanceByDay = new Map(recovery.map((r) => [r.date, r.avgBalance]));
+  const recoveryByDay = new Map(recovery.map((r) => [r.date, r]));
 
   return [...nights.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
@@ -164,7 +165,8 @@ export function mapSuuntoCheckIns(
       const sleepHours = round((s.durationMin ?? 0) / 60, 1);
       const hrvRmssd = s.avgHRV as number;
       const readiness = computeReadiness({ hrvRmssd, hrvBaseline, sleepHours });
-      const balance = balanceByDay.get(date);
+      const rec = recoveryByDay.get(date);
+      const balance = rec?.avgBalance;
       const balanceNote = balance != null ? ` Recovery Suunto del día: ${Math.round(balance * 100)}%.` : '';
       return {
         date,
@@ -173,7 +175,9 @@ export function mapSuuntoCheckIns(
         hrvBaseline,
         sleepHours,
         sleepQuality: s.sleepQualityScore ?? 0,
-        readinessScore: readiness.readinessScore,
+        // Puntuación = Recovery (Balance) medio del día según Suunto
+        readinessScore: balance != null ? Math.round(balance * 100) : undefined,
+        recoverySamples: rec?.samples ?? undefined,
         status: readiness.status,
         coachAdvice: `${readiness.coachAdvice} (Datos de Suunto: sueño ${sleepHours} h, HRV ${hrvRmssd} ms vs referencia ${hrvBaseline} ms.${balanceNote})`,
         suggestedAction: readiness.suggestedAction,

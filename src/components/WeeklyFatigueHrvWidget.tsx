@@ -96,7 +96,7 @@ export const WeeklyFatigueHrvWidget: React.FC<WeeklyFatigueHrvWidgetProps> = ({
       const avgSleep = avgOf(days.map(d => d.sleepQuality));
       const avgSoreness = avgOf(days.map(d => d.muscleSoreness));
       const avgStress = avgOf(days.map(d => d.stressLevel));
-      const avgReadiness = Math.round((days.reduce((acc, d) => acc + d.readinessScore, 0) / days.length));
+      const avgReadiness = Math.round(avgOf(days.map(d => d.readinessScore)));
       
       const amberRedCount = days.filter(d => d.status === 'moderate' || d.status === 'fatigued').length;
       const hrvDevPct = baselineHrv > 0 && avgHrv > 0 ? Math.round(((avgHrv - baselineHrv) / baselineHrv) * 1000) / 10 : 0;

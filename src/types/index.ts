@@ -529,7 +529,10 @@ export interface DailyCheckIn {
   sleepQuality: number; // 1-100 or 1-10
   muscleSoreness?: number; // 1-10
   stressLevel?: number; // 1-10
-  readinessScore: number; // 0 - 100
+  /** Recovery (Balance) medio del día según Suunto, 0-100. Sin dato de Suunto → undefined. */
+  readinessScore?: number;
+  /** Muestras de Recovery de Suunto de ese día (pocas = día aún incompleto). */
+  recoverySamples?: number;
   status: 'optimal' | 'moderate' | 'fatigued'; // Green, Amber, Red
   coachAdvice: string;
   suggestedAction?: 'maintain' | 'downgrade_easy' | 'full_rest' | 'swap_with_rest';

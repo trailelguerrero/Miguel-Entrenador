@@ -265,6 +265,17 @@ export const DEFAULT_COACH_MEMORY: CoachLearnedMemory = {
   ]
 };
 
+/**
+ * Versiones anteriores guardaban una puntuación fija (45/68/90) según reglas.
+ * Ahora la puntuación es el Recovery de Suunto: se recupera de la nota del
+ * check-in si existe; si no, queda sin dato.
+ */
+function fixLegacyReadinessScore(c: DailyCheckIn): DailyCheckIn {
+  if (c.readinessScore == null || ![45, 68, 90].includes(c.readinessScore)) return c;
+  const m = c.source === 'suunto' ? c.coachAdvice?.match(/Recovery Suunto del día: (\d+)%/) : null;
+  return { ...c, readinessScore: m ? Number(m[1]) : undefined };
+}
+
 export const StorageService = {
   getProfile(): AthleteProfile {
     try {
@@ -359,7 +370,7 @@ export const StorageService = {
       const stored = localStorage.getItem(STORAGE_KEYS.DAILY_CHECKINS);
       if (stored !== null) {
         const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) return parsed;
+        if (Array.isArray(parsed)) return parsed.map(fixLegacyReadinessScore);
       }
       // Solo en la primera carga (sin nada guardado) se muestran los de ejemplo
       return this.isTestDataActive() ? SAMPLE_DAILY_CHECKINS : [];

@@ -34,7 +34,7 @@ export const DailyReadinessModal: React.FC<DailyReadinessModalProps> = ({
   if (!isOpen) return null;
 
   // Calculate readiness status based on HRV deviation and sleep (misma lógica que la sync de Suunto)
-  const { hrvDropPct, status: calculatedStatus, readinessScore, coachAdvice, suggestedAction } = computeReadiness({
+  const { hrvDropPct, status: calculatedStatus, coachAdvice, suggestedAction } = computeReadiness({
     hrvRmssd,
     hrvBaseline,
     sleepHours,
@@ -51,7 +51,9 @@ export const DailyReadinessModal: React.FC<DailyReadinessModalProps> = ({
       sleepQuality,
       muscleSoreness,
       stressLevel,
-      readinessScore,
+      // La puntuación es el Recovery de Suunto: se conserva si ese día ya venía de Suunto
+      readinessScore: currentCheckIn?.date === todayStr ? currentCheckIn.readinessScore : undefined,
+      recoverySamples: currentCheckIn?.date === todayStr ? currentCheckIn.recoverySamples : undefined,
       status: calculatedStatus,
       coachAdvice,
       suggestedAction,

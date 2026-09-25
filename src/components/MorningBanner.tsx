@@ -1,3 +1,4 @@
+import { localDateKey } from '../utils/trainingLoad';
 import React from 'react';
 import { AlertCircle, Heart, ArrowRight, ShieldAlert, Sparkles, CheckCircle2, Compass } from 'lucide-react';
 import { DailyCheckIn, Workout } from '../types';
@@ -21,6 +22,11 @@ export const MorningBanner: React.FC<MorningBannerProps> = ({
   isSetupIncomplete,
   onOpenSetupGuide,
 }) => {
+  // Puntuación = Recovery (Balance) medio del día según Suunto
+  const recoveryText = checkIn?.readinessScore != null
+    ? ` • Recovery Suunto ${checkIn.readinessScore}%${checkIn.date === localDateKey() ? ' (día en curso)' : ''}`
+    : '';
+
   return (
     <div className="space-y-3">
       {/* Guía de Setup Callout si no se ha completado */}
@@ -94,7 +100,7 @@ export const MorningBanner: React.FC<MorningBannerProps> = ({
                     Fatiga Detectada por Suunto
                   </span>
                   <span className="text-[10px] text-zinc-400">
-                    (HRV: {checkIn.hrvRmssd}ms vs {checkIn.hrvBaseline}ms base • {checkIn.sleepHours}h sueño)
+                    (HRV: {checkIn.hrvRmssd}ms vs {checkIn.hrvBaseline}ms base • {checkIn.sleepHours}h sueño{recoveryText})
                   </span>
                 </div>
                 <p className="text-xs text-zinc-200 mt-1 font-medium leading-relaxed">
@@ -137,7 +143,7 @@ export const MorningBanner: React.FC<MorningBannerProps> = ({
                     Recuperación Moderada
                   </span>
                   <span className="text-[10px] text-zinc-400">
-                    (HRV: {checkIn.hrvRmssd}ms • Sueño: {checkIn.sleepHours}h)
+                    (HRV: {checkIn.hrvRmssd}ms • Sueño: {checkIn.sleepHours}h{recoveryText})
                   </span>
                 </div>
                 <p className="text-xs text-zinc-300 mt-1 leading-relaxed">
@@ -165,7 +171,7 @@ export const MorningBanner: React.FC<MorningBannerProps> = ({
               <h4 className="text-xs font-bold text-zinc-200 flex items-center space-x-2">
                 <span>Sistema Parasimpático Listo</span>
                 <span className="text-[10px] text-emerald-400 font-semibold bg-emerald-500/10 px-2 py-0.5 rounded">
-                  HRV {checkIn.hrvRmssd}ms • Sueño {checkIn.sleepHours}h
+                  HRV {checkIn.hrvRmssd}ms • Sueño {checkIn.sleepHours}h{recoveryText}
                 </span>
               </h4>
               <p className="text-[11px] text-zinc-400">
