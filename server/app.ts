@@ -20,7 +20,7 @@ import { RACE_NUMERIC_FIELDS, RACE_TEXT_FIELDS, verifyRaceInfo } from './brain/d
 import { verifyHistoryNumbers } from './brain/decision/history.js';
 import { buildKnowledgeBlock, buildKnowledgeQuery } from './brain/prompts/knowledge.js';
 import { KnowledgeError } from './rag/supabase.js';
-import { ensureSession, saveMessages } from './rag/chatStore.js';
+import { getConversation, listConversations, parseIncomingMessages, saveConversation } from './rag/chatStore.js';
 import {
   KnowledgeMatch,
   checkIngestSecret,
@@ -116,27 +116,6 @@ async function findKnowledge(query: string): Promise<{ matches: KnowledgeMatch[]
   }
 }
 
-/** Guarda en Supabase la última pregunta del atleta y la respuesta de Miguel.
- * Nunca rompe el chat: si Supabase no está configurado o falla, se avisa. */
-async function storeChatTurn(body: any, reply: string): Promise<{ sessionId?: string; historyWarning?: string }> {
-  if (!knowledgeConfigStatus().chatHistoryEnabled) return {};
-  const lastUser = [...(Array.isArray(body?.messages) ? body.messages : [])]
-    .reverse()
-    .find((m: any) => m?.role === 'user' && typeof m.content === 'string');
-  try {
-    const sessionId = await ensureSession(body?.sessionId);
-    await saveMessages(sessionId, [
-      ...(lastUser ? [{ role: 'user' as const, content: lastUser.content }] : []),
-      { role: 'assistant' as const, content: reply },
-    ]);
-    return { sessionId };
-  } catch (err) {
-    const e = err as KnowledgeError;
-    console.error(`[chat-history] No se pudo guardar: ${e.message}`, e.detail ?? '');
-    return { historyWarning: `La conversación no se guardó en Supabase: ${e.message}` };
-  }
-}
-
 function sendKnowledgeError(res: Response, route: string, err: unknown) {
   if (err instanceof KnowledgeError) {
     if (err.httpStatus >= 500) console.error(`Error in ${route}: [${err.code}] ${err.message}`, err.detail ?? '');
@@ -180,6 +159,36 @@ app.delete('/api/knowledge/documents', async (req: Request, res: Response) => {
   }
 });
 
+// Conversaciones en Supabase: solo se guardan cuando el atleta pulsa "Guardar
+// en Supabase" en el chat. No hay ruta para borrarlas. Misma clave que la biblioteca.
+app.post('/api/conversations/save', async (req: Request, res: Response) => {
+  try {
+    checkIngestSecret(req.get('x-ingest-secret'));
+    const messages = parseIncomingMessages(req.body?.messages);
+    res.json({ ok: true, ...(await saveConversation(req.body?.sessionId, messages)) });
+  } catch (err) {
+    sendKnowledgeError(res, '/api/conversations/save', err);
+  }
+});
+
+app.get('/api/conversations', async (req: Request, res: Response) => {
+  try {
+    checkIngestSecret(req.get('x-ingest-secret'));
+    res.json({ conversations: await listConversations() });
+  } catch (err) {
+    sendKnowledgeError(res, '/api/conversations', err);
+  }
+});
+
+app.get('/api/conversations/:id', async (req: Request, res: Response) => {
+  try {
+    checkIngestSecret(req.get('x-ingest-secret'));
+    res.json({ sessionId: req.params.id, messages: await getConversation(req.params.id) });
+  } catch (err) {
+    sendKnowledgeError(res, '/api/conversations/:id', err);
+  }
+});
+
 // 1. Interactive Chat with Miguel
 app.post('/api/chat', async (req: Request, res: Response) => {
   try {
@@ -193,12 +202,10 @@ app.post('/api/chat', async (req: Request, res: Response) => {
     });
 
     const reply = text || 'Oye, ha habido un pequeño corte en la comunicación, pero aquí estoy. Cuéntame cómo vas.';
-    const stored = await storeChatTurn(req.body, reply);
     res.json({
       reply,
       knowledgeSources: knowledge.matches.map(({ title, source, similarity }) => ({ title, source, similarity })),
       ...(knowledge.warning ? { knowledgeWarning: knowledge.warning } : {}),
-      ...stored,
     });
   } catch (err) {
     sendAiError(res, '/api/chat', err);

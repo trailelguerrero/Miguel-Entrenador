@@ -16,7 +16,7 @@ import { chunkText } from '../server/rag/chunker.js';
 import { buildKnowledgeBlock, buildKnowledgeQuery } from '../server/brain/prompts/knowledge.js';
 import { checkIngestSecret, ingestDocument, knowledgeConfigStatus, listDocuments, parseIngestInput, searchKnowledge, deleteDocument } from '../server/rag/knowledge.js';
 import { embeddingModelId, missingEmbeddingVars } from '../server/rag/embeddings.js';
-import { ensureSession, saveMessages } from '../server/rag/chatStore.js';
+import { getConversation, listConversations, parseIncomingMessages, saveConversation } from '../server/rag/chatStore.js';
 import { KnowledgeError } from '../server/rag/supabase.js';
 
 const ENV_KEYS = [
@@ -153,11 +153,15 @@ before(async () => {
     }
     const table = /^\/rest\/v1\/(\w+)$/.exec(url.pathname)?.[1] as keyof typeof db | undefined;
     if (!table || !db[table]) return send(404, { message: `no existe ${url.pathname}` });
+    // Filtros PostgREST que usa la app: eq., in.(…), is.null
     const matches = (r: any) =>
       [...url.searchParams].every(([k, v]) => {
-        if (!v.startsWith('eq.')) return true;
-        const value = k === 'metadata->>title' ? r.metadata?.title : r[k];
-        return String(value) === v.slice(3);
+        const json = /^metadata->>(\w+)$/.exec(k);
+        const value = json ? r.metadata?.[json[1]] : r[k];
+        if (v.startsWith('eq.')) return String(value) === v.slice(3);
+        if (v.startsWith('in.(')) return v.slice(4, -1).split(',').map((x) => x.replace(/^"|"$/g, '')).includes(String(value));
+        if (v === 'is.null') return value == null;
+        return true;
       });
 
     if (req.method === 'POST') {
@@ -173,8 +177,16 @@ before(async () => {
       }
       return send(201, single ? rows[0] : rows);
     }
+    if (req.method === 'PATCH') {
+      for (const r of db[table].filter(matches)) Object.assign(r, body);
+      res.writeHead(204);
+      return res.end();
+    }
     if (req.method === 'GET') {
-      const rows = db[table].filter(matches);
+      let rows = db[table].filter(matches);
+      if (url.searchParams.get('select')?.includes('chat_messages(count)')) {
+        rows = rows.map((r) => ({ ...r, chat_messages: [{ count: db.chat_messages.filter((m) => m.session_id === r.id).length }] }));
+      }
       if (single) return rows.length === 1 ? send(200, rows[0]) : send(406, { code: 'PGRST116', message: '0 rows', details: '', hint: null });
       return send(200, rows);
     }
@@ -242,21 +254,47 @@ test('ingesta → búsqueda → sustitución → borrado', async () => {
   assert.deepEqual(await listDocuments(), []);
 });
 
-test('conversaciones: crea sesión, la reutiliza y guarda los mensajes en orden', async () => {
+test('conversaciones: solo se guarda lo nuevo, se listan y se cargan', async () => {
   useMockServices();
-  const id = await ensureSession(undefined);
-  assert.match(id, /^[0-9a-f-]{36}$/);
-  assert.equal(await ensureSession(id), id);
-  assert.notEqual(await ensureSession('no-es-un-uuid'), id);
-  assert.notEqual(await ensureSession('00000000-0000-4000-8000-000000000000'), id);
+  const turn1 = parseIncomingMessages([
+    { clientId: 'user-1', role: 'user', content: '¿Qué toca hoy?', timestamp: '2026-09-25T08:00:00.000Z' },
+    { clientId: 'assistant-1', role: 'assistant', content: 'Rodaje suave en Z1 [B1].', knowledgeSources: [{ title: 'Manual', source: null, similarity: 0.7 }] },
+  ]);
+  const first = await saveConversation(undefined, turn1);
+  assert.match(first.sessionId, /^[0-9a-f-]{36}$/);
+  assert.equal(first.saved, 2);
 
-  await saveMessages(id, [
-    { role: 'user', content: '¿Qué toca hoy?' },
-    { role: 'assistant', content: 'Rodaje suave en Z1.' },
+  // Guardar otra vez lo mismo + un mensaje nuevo: solo entra el nuevo, en la misma conversación.
+  const turn2 = parseIncomingMessages([...turn1, { clientId: 'user-2', role: 'user', content: '¿Y mañana?' }]);
+  const second = await saveConversation(first.sessionId, turn2);
+  assert.equal(second.sessionId, first.sessionId);
+  assert.equal(second.saved, 1);
+  assert.equal(second.alreadySaved, 2);
+  assert.deepEqual(second.clientIds, ['user-1', 'assistant-1', 'user-2']);
+
+  // Un id inexistente o inválido abre una conversación nueva.
+  assert.notEqual((await saveConversation('00000000-0000-4000-8000-000000000000', [])).sessionId, first.sessionId);
+  assert.notEqual((await saveConversation('no-es-un-uuid', [])).sessionId, first.sessionId);
+
+  const list = await listConversations();
+  const summary = list.find((c) => c.id === first.sessionId)!;
+  assert.equal(summary.title, '¿Qué toca hoy?');
+  assert.equal(summary.messageCount, 3);
+
+  const loaded = await getConversation(first.sessionId);
+  assert.deepEqual(loaded.map((m) => [m.clientId, m.role, m.content]), [
+    ['user-1', 'user', '¿Qué toca hoy?'],
+    ['assistant-1', 'assistant', 'Rodaje suave en Z1 [B1].'],
+    ['user-2', 'user', '¿Y mañana?'],
   ]);
-  const stored = db.chat_messages.filter((m) => m.session_id === id);
-  assert.deepEqual(stored.map((m) => [m.role, m.content]), [
-    ['user', '¿Qué toca hoy?'],
-    ['assistant', 'Rodaje suave en Z1.'],
-  ]);
+  assert.equal(loaded[0].timestamp, '2026-09-25T08:00:00.000Z');
+  assert.deepEqual(loaded[1].knowledgeSources, [{ title: 'Manual', source: null, similarity: 0.7 }]);
+});
+
+test('parseIncomingMessages rechaza mensajes sin id, rol o contenido', () => {
+  const bad = (m: unknown) => assert.throws(() => parseIncomingMessages([m]), (e: KnowledgeError) => e.code === 'KB_INPUT');
+  bad({ role: 'user', content: 'x' });
+  bad({ clientId: 'a', role: 'system', content: 'x' });
+  bad({ clientId: 'a', role: 'user', content: '  ' });
+  assert.throws(() => parseIncomingMessages('nada'), (e: KnowledgeError) => e.httpStatus === 400);
 });

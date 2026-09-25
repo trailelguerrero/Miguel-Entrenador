@@ -1,6 +1,6 @@
 -- Miguel Entrenador: esquema de Supabase (Postgres + pgvector).
 --   documents      → Biblioteca de Miguel (fragmentos + embeddings, RAG)
---   chat_sessions  → conversaciones con Miguel
+--   chat_sessions  → conversaciones con Miguel (se guardan con el botón del chat)
 --   chat_messages  → mensajes de cada conversación
 -- Ejecutar en Supabase → SQL Editor. Es idempotente: se puede ejecutar varias veces.
 
@@ -32,7 +32,25 @@ create table if not exists public.chat_messages (
   created_at timestamptz not null default now()
 );
 
+-- Columnas añadidas para guardar/cargar conversaciones desde la app
+-- (add column if not exists: también actualiza tablas creadas con una versión anterior).
+--   chat_sessions.title       → primera pregunta, para reconocer la conversación en la lista
+--   chat_sessions.updated_at  → último guardado
+--   chat_messages.metadata    → client_id (id del mensaje en el móvil, evita duplicados),
+--                               timestamp original y documentos de la biblioteca citados
+alter table public.chat_sessions add column if not exists title text;
+alter table public.chat_sessions add column if not exists updated_at timestamptz not null default now();
+alter table public.chat_messages add column if not exists metadata jsonb not null default '{}'::jsonb;
+
 -- Índices
+create index if not exists chat_sessions_updated_idx
+  on public.chat_sessions(updated_at desc);
+
+-- Un mismo mensaje del móvil no se guarda dos veces en la misma conversación
+create unique index if not exists chat_messages_client_id_idx
+  on public.chat_messages(session_id, (metadata->>'client_id'))
+  where metadata ? 'client_id';
+
 create index if not exists chat_messages_session_idx
   on public.chat_messages(session_id, created_at);
 
