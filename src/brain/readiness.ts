@@ -39,6 +39,9 @@ export interface ReadinessInput {
   plannedWorkout?: { type?: string; plannedDurationMin?: number } | null;
 }
 
+/** Datos crudos del check-in de hoy (sin la carga): el servidor recalcula con ellos. */
+export type TodayReadinessInputs = Omit<ReadinessInput, 'tsb' | 'weeklyTss' | 'weeklyThresholds'>;
+
 export interface ReadinessLimits {
   /** null = sin tope (se mantiene la duración planificada). */
   maxDurationMin: number | null;
