@@ -41,7 +41,7 @@ export function calculateHeartRateDrift(
 
   drift = Math.round(drift * 10) / 10;
 
-  // Interpretación del manual Uphill Athlete: la deriva dice si la FC del test
+  // HEURÍSTICA DEL PROTOCOLO Uphill Athlete (no una ley fisiológica): la deriva dice si la FC del test
   // estaba por debajo, en o por encima de tu AeT. NO diagnostica ADS (eso sale de
   // la diferencia entre AeT y AnT: checkAerobicDeficiency).
   if (drift < 3.5) {
@@ -57,7 +57,7 @@ export function calculateHeartRateDrift(
       driftPercentage: drift,
       hasAds: false,
       statusText: 'Deriva 3,5–5 %: la FC del test es tu AeT',
-      interpretation: 'La deriva está en el margen que el manual Uphill Athlete considera tu umbral aeróbico: la FC media de la primera mitad es tu AeT.',
+      interpretation: 'Según el protocolo de Uphill Athlete, una deriva del 3,5–5 % indica que la FC media de la primera mitad es tu AeT (es la heurística del método, no una medida de laboratorio).',
       recommendation: 'Usa esa FC como tope de tus rodajes de base cuando no lleves banda de pecho.',
     };
   }
@@ -97,9 +97,9 @@ export function checkAerobicDeficiency(aetHr: number, antHr: number): {
 
   let message = '';
   if (hasAds) {
-    message = `Diferencia de ${spreadBpm} bpm (${spreadPercentage}%). Presentas ADS (Síndrome de Deficiencia Aeróbica). Necesitas dedicar el 90% de tu tiempo a volumen sub-AeT para ensanchar tu base mitocondrial.`;
+    message = `Diferencia de ${spreadBpm} bpm (${spreadPercentage}%). Según el criterio de la metodología Uphill Athlete (AeT más de un 10 % por debajo del AnT), es un indicador de desarrollo aeróbico insuficiente: sugiere priorizar el volumen por debajo del AeT. Es una heurística de la metodología, no un diagnóstico médico.`;
   } else {
-    message = `Diferencia de ${spreadBpm} bpm (${spreadPercentage}%). Tu motor aeróbico está equilibrado respecto a tu umbral anaeróbico.`;
+    message = `Diferencia de ${spreadBpm} bpm (${spreadPercentage}%). Según el criterio de la metodología Uphill Athlete, tu AeT está a menos de un 10 % del AnT: no hay indicador de desarrollo aeróbico insuficiente.`;
   }
 
   return { hasAds, spreadBpm, spreadPercentage, message };

@@ -77,6 +77,8 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
   const [aetHr, setAetHr] = useState(profile.aetHr || 0);
   const [antHr, setAntHr] = useState(profile.antHr || 0);
   const [baselineHrv, setBaselineHrv] = useState(profile.baselineHrv || 0);
+  // Banda de pecho: 'yes' | 'no' | 'unknown' (desconocido no es "sí")
+  const [chestStrap, setChestStrap] = useState<'yes' | 'no' | 'unknown'>(profile.hasChestStrap === true ? 'yes' : profile.hasChestStrap === false ? 'no' : 'unknown');
 
   // Ultra Experience & Miguel's Interview fields
   const ultra = profile.ultraExperience || {};
@@ -289,6 +291,11 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
       fieldSources: sources,
     };
 
+    const strapBefore = profile.hasChestStrap === true ? 'yes' : profile.hasChestStrap === false ? 'no' : 'unknown';
+    if (chestStrap !== strapBefore) {
+      updated.hasChestStrap = chestStrap === 'unknown' ? undefined : chestStrap === 'yes';
+      updated.hasChestStrapSource = chestStrap === 'unknown' ? undefined : 'manual';
+    }
     onSaveProfile(updated);
     onClose();
   };
@@ -1200,6 +1207,20 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
                     </p>
                   )}
                 </div>
+              </div>
+
+              {/* Banda de pecho: sin ella no hay ZoneSense */}
+              <div>
+                <label className="text-xs text-zinc-400">¿Entrenas con banda de pecho? (ZoneSense la necesita)</label>
+                <select
+                  value={chestStrap}
+                  onChange={(e) => setChestStrap(e.target.value as 'yes' | 'no' | 'unknown')}
+                  className="w-full mt-1 bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-100"
+                >
+                  <option value="yes">Sí{profile.hasChestStrapSource === 'suunto' ? ' (deducido de Suunto)' : ''}</option>
+                  <option value="no">No</option>
+                  <option value="unknown">No lo sé / a veces</option>
+                </select>
               </div>
 
               {/* Rutina & Disponibilidad */}

@@ -74,10 +74,11 @@ test('M1. Tres notas iguales el mismo día cuentan como UNA evidencia', () => {
   assert.equal(memory.insights[0].evidence!.length, 3);
 });
 
-test('M1. Una nota en contra el mismo día sí cuenta (sentido distinto)', () => {
+test('C11. Una nota en sentido contrario el mismo día SUSTITUYE a la anterior (no son dos días de evidencia)', () => {
   const mem = { ...emptyMemory(), insights: [{ id: 'a', category: 'fatigue_recovery', observation: 'o', ruleForFuturePlans: '', confidenceScore: 0, learnedFromDate: TODAY, sourceEvent: '', evidence: [{ date: TODAY, source: 'athlete_note', supports: true, summary: 's', refId: 'note-1' }] }] } as any;
   const { memory } = applyEvidence(mem, [{ insightId: 'a', supports: false, summary: 'no' }], { date: TODAY, source: 'athlete_note', refId: 'note-2', sourceEvent: 'n' });
-  assert.equal(memory.insights[0].evidence!.length, 2);
+  assert.equal(memory.insights[0].evidence!.length, 1);
+  assert.equal(memory.insights[0].evidence![0].supports, false);
 });
 
 // ── M2: "false" en texto es una contradicción ─────────────────────────────

@@ -114,3 +114,27 @@ export function describeTargetRace(t: any): string {
   ].filter(Boolean);
   return `${r.name}: ${parts.join(', ')}.${r.terrainDescription ? ` Terreno: ${r.terrainDescription}` : ''}`;
 }
+
+/** Zona horaria por defecto del atleta si la app no la envía. */
+export const DEFAULT_TIMEZONE = 'Europe/Madrid';
+
+/** Fecha YYYY-MM-DD en una zona horaria (nunca la del servidor, que en Vercel es UTC). */
+export function dateKeyInTimezone(tz: string = DEFAULT_TIMEZONE, now: Date = new Date()): string {
+  try {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+  } catch {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: DEFAULT_TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+  }
+}
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * "Hoy" del ATLETA para el servidor: la fecha que envía la app (athleteToday o la del
+ * contexto de carga) o, si no, la fecha en su zona horaria. Nunca la del servidor.
+ */
+export function athleteToday(body: any, now: Date = new Date()): string {
+  const sent = [body?.athleteToday, body?.brainContext?.today, body?.loadContext?.today].find((d) => typeof d === 'string' && DATE_RE.test(d));
+  if (sent) return sent;
+  return dateKeyInTimezone(typeof body?.athleteTimezone === 'string' ? body.athleteTimezone : DEFAULT_TIMEZONE, now);
+}

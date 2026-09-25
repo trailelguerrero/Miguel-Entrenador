@@ -24,6 +24,7 @@ import { Workout, DailyCheckIn, AthleteProfile } from '../types';
 import { buildDailyLoadSeries, buildCtlByDate, weeklyLoadThresholds, WeeklyLoadThresholds } from './trainingLoad';
 
 export type OverreachingType = 
+  | 'insufficient_data' // sin HRV medida en la ventana: no hay tendencia (nunca "estable")
   | 'optimal_adaptation'
   | 'functional_overreaching'
   | 'non_functional_overreaching'
@@ -91,7 +92,7 @@ export interface WeeklyHrvLoadBlock {
   minHrv: number;
   restingHrAvg: number;
   hrvDeltaPct: number;
-  status: 'optimal' | 'functional_overreaching' | 'non_functional_overreaching' | 'deload';
+  status: 'optimal' | 'functional_overreaching' | 'non_functional_overreaching' | 'deload' | 'insufficient_data';
   statusLabel: string;
   badgeBg: string;
   badgeText: string;
@@ -259,7 +260,9 @@ export function calculateHRVLoadCorrelation(
     let status: OverreachingType = 'optimal_adaptation';
 
     // Gravedad coherente: la fatiga acumulada exige MÁS carga que la carga alta asumida
-    if (isVeryHighLoad && isSuppressed) {
+    if (hrvCount === 0) {
+      status = 'insufficient_data';
+    } else if (isVeryHighLoad && isSuppressed) {
       status = 'non_functional_overreaching';
     } else if (isHighLoad && hrv7dAvg > 0 && hrv7dAvg <= baselineHrv) {
       status = 'functional_overreaching';
@@ -372,7 +375,8 @@ export function calculateHRVLoadCorrelation(
   }
 
   const overreachingDaysCount = displaySeries.filter(p => p.isOverreaching).length;
-  const isDeloadRecommended = latest.status === 'non_functional_overreaching' || latest.hrv7dAvg < swcLower;
+  // Sin HRV no se recomienda nada (antes 0 ms < banda → "descarga recomendada")
+  const isDeloadRecommended = latest.status === 'non_functional_overreaching' || (latest.hrv7dAvg > 0 && latest.hrv7dAvg < swcLower);
 
   // Format status UI styling & Coach Miguel's verdict
   let statusLabel = 'Tendencia estable';
@@ -386,7 +390,15 @@ export function calculateHRVLoadCorrelation(
   // qué hacer HOY lo decide el motor de readiness (semáforo del día).
   const TODAY_RULE = 'Qué sesión hacer hoy lo decide el semáforo del día (check-in y motor de readiness).';
 
-  if (latest.status === 'non_functional_overreaching') {
+  if (latest.status === 'insufficient_data') {
+    statusLabel = 'Sin datos de HRV';
+    statusColor = 'text-zinc-300';
+    statusBgColor = 'bg-zinc-700/30';
+    statusBorderColor = 'border-zinc-600';
+    riskAssessment = 'No hay HRV medida en los últimos 7 días: no se puede leer la tendencia';
+    coachVerdict = `Sin HRV de los últimos 7 días no puedo decirte si la carga (${latest.weeklyTss} TSS esta semana) te está pasando factura. Sincroniza Suunto. ${TODAY_RULE}`;
+    actionableRecommendations.push('Sincroniza Suunto (HRV nocturna) para poder leer la tendencia.');
+  } else if (latest.status === 'non_functional_overreaching') {
     statusLabel = 'Tendencia: fatiga acumulada';
     statusColor = 'text-rose-400';
     statusBgColor = 'bg-rose-500/10';
@@ -445,15 +457,18 @@ export function calculateHRVLoadCorrelation(
   const rawCouplingIndex = Math.round(hrvScore - (latest.hrv7dAvg < swcLower ? loadPenalty * 1.5 : loadPenalty * 0.5) - restingHrPenalty);
   const fatigueRecoveryIndex = Math.max(12, Math.min(98, rawCouplingIndex));
 
-  let fatigueRecoveryStatus = 'Equilibrio Autonómico Óptimo';
-  if (fatigueRecoveryIndex >= 75) {
-    fatigueRecoveryStatus = 'Alta Capacidad de Asimilación (Supercompensación)';
+  // Índice ORIENTATIVO de la app (no validado): sin HRV no hay lectura
+  let fatigueRecoveryStatus: string;
+  if (!(latest.hrv7dAvg > 0)) {
+    fatigueRecoveryStatus = 'Sin datos de HRV';
+  } else if (fatigueRecoveryIndex >= 75) {
+    fatigueRecoveryStatus = 'Índice alto: buena respuesta a la carga';
   } else if (fatigueRecoveryIndex >= 55) {
-    fatigueRecoveryStatus = 'Equilibrio Autonómico Sano';
+    fatigueRecoveryStatus = 'Índice medio: carga y recuperación equilibradas';
   } else if (fatigueRecoveryIndex >= 38) {
-    fatigueRecoveryStatus = 'Fatiga Aguda Controlada (Sobrecarga Funcional)';
+    fatigueRecoveryStatus = 'Índice bajo: la carga pesa más que la recuperación';
   } else {
-    fatigueRecoveryStatus = 'Desacople Autonómico Crítico (Sobre-esfuerzo No Funcional)';
+    fatigueRecoveryStatus = 'Índice muy bajo: tendencia de fatiga acumulada';
   }
 
   // Weekly Quadrants (Last 4 Weeks Analysis)
@@ -543,7 +558,7 @@ export function calculateHRVLoadCorrelation(
       const weekWorkouts = workouts.filter(wo => wo.completed && wo.date >= startDateStr && wo.date <= endDateStr);
       const elevationGainM = weekWorkouts.reduce((acc, wo) => acc + (wo.actualElevationGainM || 0), 0);
 
-      let status: 'optimal' | 'functional_overreaching' | 'non_functional_overreaching' | 'deload';
+      let status: 'optimal' | 'functional_overreaching' | 'non_functional_overreaching' | 'deload' | 'insufficient_data';
       let statusLabel: string;
       let badgeBg: string;
       let badgeText: string;
@@ -552,7 +567,14 @@ export function calculateHRVLoadCorrelation(
       let isOverreaching = false;
 
       const bThr = weekSlice[weekSlice.length - 1].loadThresholds;
-      if (bThr && weeklyTss > bThr.veryHigh && avgHrv > 0 && avgHrv < swcLower) {
+      if (!(avgHrv > 0)) {
+        status = 'insufficient_data';
+        statusLabel = 'Sin HRV';
+        badgeBg = 'bg-zinc-700/40';
+        badgeText = 'text-zinc-300';
+        badgeBorder = 'border-zinc-600';
+        coachVerdict = `Carga ${weeklyTss} TSS; sin HRV medida esa semana no hay lectura de la tendencia.`;
+      } else if (bThr && weeklyTss > bThr.veryHigh && avgHrv > 0 && avgHrv < swcLower) {
         status = 'non_functional_overreaching';
         statusLabel = 'Fatiga acumulada';
         badgeBg = 'bg-rose-500/20';

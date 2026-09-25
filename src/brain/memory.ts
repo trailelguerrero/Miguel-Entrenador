@@ -30,8 +30,10 @@ export const CRITICAL_CATEGORIES: CoachLearnedInsight['category'][] = ['biomecha
 export const PENDING_MAX_DAYS = 30;
 export const PENDING_MAX = 20;
 /** Máximo de observaciones/hipótesis y de caducadas/descartadas que se pasan a Miguel. */
-export const PROMPT_MAX_WATCH = 15;
-export const PROMPT_MAX_OLD = 10;
+export const PROMPT_MAX_WATCH = 10;
+export const PROMPT_MAX_OLD = 5;
+/** Máximo de reglas aplicables que se pasan a Miguel. */
+export const PROMPT_MAX_RULES = 20;
 
 export const INSIGHT_CATEGORIES: CoachLearnedInsight['category'][] = [
   'physiology_zonesense',
@@ -182,8 +184,35 @@ const SUBJECTIVE_SOURCES: InsightEvidence['source'][] = ['chat', 'athlete_note']
 const STOP = new Set(['para', 'como', 'cuando', 'pero', 'porque', 'desde', 'hasta', 'entre', 'sobre', 'tras', 'durante', 'despues', 'antes', 'mucho', 'poco', 'mas', 'menos', 'muy', 'esta', 'este', 'esto', 'tiene', 'hace', 'sesion', 'sesiones', 'entreno', 'entrenos', 'atleta', 'siempre', 'veces']);
 const words = (s: string) => new Set(normSummary(s).split(/[^a-z0-9ñ]+/).filter((w) => w.length >= 4 && !STOP.has(w)));
 
-/** Parecido entre dos observaciones: palabras clave compartidas / las de la más corta. */
+/**
+ * Rasgos que distinguen aprendizajes aunque el resto de palabras coincida:
+ * lado del cuerpo, subida frente a bajada, calor frente a frío. Si dos
+ * observaciones dicen cosas distintas en uno de estos rasgos, NO son la misma.
+ */
+const CONTRAST_FEATURES: Record<string, RegExp>[] = [
+  { izquierdo: /\bizq/, derecho: /\bderech/ },
+  { subida: /\b(subid|ascens|cuesta arriba|rampa)/, bajada: /\b(bajad|descens|cuesta abajo)/ },
+  { calor: /\b(calor|caluros)/, frio: /\b(frio|fria)/ },
+];
+
+function featureValues(text: string): string[] {
+  const t = normSummary(text);
+  return CONTRAST_FEATURES.map((group) => {
+    const hits = Object.entries(group).filter(([, re]) => re.test(t)).map(([k]) => k);
+    return hits.length === 1 ? hits[0] : '';
+  });
+}
+
+/** ¿Dos observaciones chocan en un rasgo distintivo (p. ej. sóleo izquierdo vs derecho)? */
+export function contrastingObservations(a: string, b: string): boolean {
+  const fa = featureValues(a);
+  const fb = featureValues(b);
+  return fa.some((v, i) => v !== fb[i] && (v !== '' || fb[i] !== ''));
+}
+
+/** Parecido entre dos observaciones: palabras clave compartidas / las de la más corta (0 si chocan en lado, pendiente o temperatura). */
 export function observationSimilarity(a: string, b: string): number {
+  if (contrastingObservations(a, b)) return 0;
   const wa = words(a);
   const wb = words(b);
   if (!wa.size || !wb.size) return 0;
@@ -238,22 +267,26 @@ export function applyEvidence(
       // Lo que cuenta el atleta (chat o nota) suele ser el mismo hecho que ya contó ese día
       // la sesión u otra nota: como mucho UNA evidencia por aprendizaje y día. Repetir la
       // misma nota tres veces no la convierte en regla.
-      const sameDay =
-        SUBJECTIVE_SOURCES.includes(ctx.source) &&
-        (prev.evidence || []).some(
-          (e) =>
-            e.date === ctx.date &&
-            e.supports === item.supports &&
-            !!e.critical === !!item.critical &&
-            // la misma conversación/nota se sustituye (abajo), no cuenta como repetición
-            !(ctx.refId && e.refId === ctx.refId && e.source === ctx.source),
-        );
+      const subjective = SUBJECTIVE_SOURCES.includes(ctx.source);
+      const sameRef = (e: InsightEvidence) => !!ctx.refId && e.refId === ctx.refId && e.source === ctx.source;
+      const sameDay = subjective
+        ? (prev.evidence || []).some(
+            (e) => e.date === ctx.date && e.supports === item.supports && !!e.critical === !!item.critical && !sameRef(e),
+          )
+        : false;
       if (sameDay) {
         changes.push(`"${prev.observation}": ya estaba contada una evidencia de ese día (no se suma dos veces)`);
         continue;
       }
+      // Como mucho UNA evidencia subjetiva por aprendizaje y día: si el atleta cambia de
+      // sentido ese mismo día (por la mañana "me carga", por la tarde "hoy no"), la
+      // nueva SUSTITUYE a la anterior; no cuentan como dos días de evidencia.
+      const supersededSubjective = subjective
+        ? (prev.evidence || []).filter((e) => e.date === ctx.date && SUBJECTIVE_SOURCES.includes(e.source) && !sameRef(e))
+        : [];
+      if (supersededSubjective.length) changes.push(`"${prev.observation}": lo que contaste hoy sustituye a lo anotado antes ese mismo día`);
       // Misma sesión/nota ya contada para este aprendizaje → se sustituye, no se suma
-      const kept = (prev.evidence || []).filter((e) => !(ctx.refId && e.refId === ctx.refId && e.source === ctx.source));
+      const kept = (prev.evidence || []).filter((e) => !sameRef(e) && !supersededSubjective.includes(e));
       const next = refreshInsight({ ...prev, evidence: [...kept, ev] }, today);
       insights[idx] = next;
       if (next.status !== prev.status) changes.push(`"${next.observation}": ${STATUS_LABEL[prev.status!]} → ${STATUS_LABEL[next.status!]}`);
@@ -289,7 +322,10 @@ export function describeMemoryForPrompt(memory: CoachLearnedMemory | null | unde
   };
   // Topes para que el prompt no crezca sin límite (lo más reciente primero)
   const recent = (xs: CoachLearnedInsight[], n: number) => [...xs].sort((a, b) => String(b.lastEvidenceAt).localeCompare(String(a.lastEvidenceAt))).slice(0, n);
-  const rules = all.filter((i) => isAppliedRule(i.status));
+  // Reglas: las consolidadas primero y luego las más recientes, con tope
+  const rules = [...all.filter((i) => isAppliedRule(i.status))]
+    .sort((a, b) => (a.status === b.status ? String(b.lastEvidenceAt).localeCompare(String(a.lastEvidenceAt)) : a.status === 'consolidated_rule' ? -1 : 1))
+    .slice(0, PROMPT_MAX_RULES);
   const watch = recent(all.filter((i) => i.status === 'observation' || i.status === 'hypothesis'), PROMPT_MAX_WATCH);
   const expired = recent(all.filter((i) => i.status === 'expired'), PROMPT_MAX_OLD);
   const refuted = recent(all.filter((i) => i.status === 'refuted'), PROMPT_MAX_OLD);

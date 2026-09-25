@@ -17,6 +17,7 @@ import {
 import { ApiError, apiStatus } from './apiStatus';
 import { StorageService } from './storage';
 import { AppSecret } from './appSecret';
+import { localDateKey } from '../utils/trainingLoad';
 import type { RaceInfoResult } from '../types';
 import type { EvidenceItem } from '../brain/memory';
 import type { BrainContext, summarizeWeekWorkouts } from '../brain/context';
@@ -30,6 +31,14 @@ export interface NutritionEvidence {
 }
 
 export { ApiError };
+
+function athleteTimezone(): string | undefined {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone;
+  } catch {
+    return undefined;
+  }
+}
 
 /** Llamada común a la API de la app: traduce cualquier fallo (sin red, API
  * inexistente, error de IA/Suunto) en un ApiError con mensaje claro y qué
@@ -48,7 +57,8 @@ async function apiFetch(
     res = await fetch(path, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...(secret ? { 'x-app-secret': secret } : {}) },
-      body: JSON.stringify(body),
+      // Fecha y zona horaria del ATLETA: el servidor (UTC en Vercel) no debe usar la suya
+      body: JSON.stringify(body && typeof body === 'object' && !Array.isArray(body) ? { ...body, athleteToday: localDateKey(), athleteTimezone: athleteTimezone() } : body),
     });
   } catch {
     const err = !navigator.onLine
@@ -153,7 +163,7 @@ export const ApiService = {
     loadContext?: PlanLoadContext,
     existingWorkouts?: ReturnType<typeof summarizeWeekWorkouts>,
     nutritionEvidence?: NutritionEvidence
-  ): Promise<{ weekSummary: string; workouts: Workout[]; validationNotes?: string[]; structureIssues?: string[] }> {
+  ): Promise<{ weekSummary: string; workouts: Workout[]; validationNotes?: string[]; structureIssues?: string[]; status?: 'valid' | 'repaired' | 'rejected'; issues?: string[]; error?: string }> {
     return await apiFetch('/api/generate-plan', {
         athleteProfile,
         targetRace,
@@ -164,7 +174,10 @@ export const ApiService = {
         loadContext,
         existingWorkouts,
         nutritionEvidence,
-      }, 'ai', 'Error al generar el plan personalizado');
+      }, 'ai', 'Error al generar el plan personalizado', {
+        // Plan rechazado por el contrato: no es un fallo de la IA, lo gestiona App (no se guarda)
+        allowStatus: [422],
+      });
   },
 
   async adaptSession(

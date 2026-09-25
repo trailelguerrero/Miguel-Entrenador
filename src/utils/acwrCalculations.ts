@@ -9,7 +9,8 @@
  * - Chronic Load: Historical Workload over the last 28 days (4 weeks, representing chronic fitness & tissue conditioning).
  * - ACWR = Acute Workload (7d avg) / Chronic Workload (28d avg).
  * 
- * Sweet Spot Framework:
+ * Bandas descriptivas (Gabbett). NO se usan como predictor de lesiones: la
+ * evidencia posterior no respalda un uso causal del ACWR.
  * - < 0.80: Undertraining / Detraining (Increased injury risk if load spikes suddenly).
  * - 0.80 - 1.30: "The Sweet Spot" (lowest relative injury risk in Gabbett's data).
  * - 1.30 - 1.50: Alert Zone (higher relative risk).
@@ -79,7 +80,7 @@ export function buildContinuousTssMap(
 /**
  * Categorizes an ACWR score into Gabbett's sports science zones
  */
-export function getACWRZone(acwr: number): {
+export function getACWRZone(acwr: number, chronicTotal?: number): {
   zone: ACWRZone;
   label: string;
   color: string;
@@ -89,51 +90,66 @@ export function getACWRZone(acwr: number): {
   injuryRiskPctFormatted: string;
   diagnosis: string;
 } {
+  // ACWR es un INDICADOR DESCRIPTIVO de la relación entre la carga de 7 días y la
+  // de 28 (la evidencia no respalda usarlo como predictor causal de lesiones). Se
+  // interpreta junto con HRV, sueño, RPE, dolor y rendimiento.
+  const CONTEXT = 'Por sí solo no diagnostica riesgo de lesión: interprétalo junto con HRV, sueño, sensaciones, dolor y rendimiento.';
+  if (chronicTotal !== undefined && !(chronicTotal > 0)) {
+    return {
+      zone: 'undertraining',
+      label: 'Sin carga de las últimas 4 semanas',
+      color: 'text-zinc-400',
+      bgColor: 'bg-zinc-700/20',
+      borderColor: 'border-zinc-600',
+      riskLevel: 'Sin datos suficientes',
+      injuryRiskPctFormatted: 'Sin datos',
+      diagnosis: 'No hay carga registrada en las últimas 4 semanas: no se puede calcular la relación entre carga aguda y crónica.',
+    };
+  }
   if (acwr < 0.80) {
     return {
       zone: 'undertraining',
-      label: 'Infracarga / Recuperación (< 0.80)',
+      label: 'Carga aguda baja respecto a la habitual (< 0,80)',
       color: 'text-sky-400',
       bgColor: 'bg-sky-500/10',
       borderColor: 'border-sky-500/30',
-      riskLevel: 'Riesgo Bajo Inmediato (Infracarga)',
-      injuryRiskPctFormatted: 'Bajo (riesgo de perder adaptación si se prolonga)',
-      diagnosis: 'La fatiga reciente de los últimos 7 días está por debajo de tu nivel crónico. Si estás en semana de asimilación o descarga, es óptimo. Sin embargo, no mantengas este ratio prolongadamente para evitar desentrenamiento cardiovascular.',
+      riskLevel: 'Carga reciente por debajo de tu media de 4 semanas',
+      injuryRiskPctFormatted: 'Carga aguda baja',
+      diagnosis: `Tus últimos 7 días están por debajo de tu media de 4 semanas: normal en una semana de descarga o tras una carrera. Si se prolonga, pierdes parte de lo ganado. ${CONTEXT}`,
     };
   } else if (acwr <= 1.30) {
     return {
       zone: 'sweet_spot',
-      label: 'Sweet Spot Óptimo (0.80 - 1.30)',
+      label: 'Carga aguda similar a la habitual (0,80–1,30)',
       color: 'text-emerald-400',
       bgColor: 'bg-emerald-500/10',
       borderColor: 'border-emerald-500/30',
-      riskLevel: 'Riesgo de lesión más bajo',
-      injuryRiskPctFormatted: 'El más bajo de las cuatro zonas',
-      diagnosis: '¡Zona ideal de sobrecarga progresiva! El incremento semanal de estrés fisiológico está respaldado por tu volumen base de las últimas 4 semanas. Máxima ganancia aeróbica con mínima probabilidad de sobreentrenamiento.',
+      riskLevel: 'Carga reciente en línea con tu media de 4 semanas',
+      injuryRiskPctFormatted: 'Carga aguda similar',
+      diagnosis: `Tus últimos 7 días están en línea con tu media de las últimas 4 semanas. ${CONTEXT}`,
     };
   } else if (acwr <= 1.50) {
     return {
       zone: 'overload_risk',
-      label: 'Zona de Alerta (1.30 - 1.50)',
+      label: 'Carga aguda elevada (1,30–1,50)',
       color: 'text-amber-400',
       bgColor: 'bg-amber-500/10',
       borderColor: 'border-amber-500/30',
-      riskLevel: 'Riesgo Moderado de Lesión / Sobrecarga',
-      injuryRiskPctFormatted: 'Elevado',
-      diagnosis: 'Atención: Tu carga aguda ha crecido con rapidez respecto al mes precedente. Aunque estimula adaptaciones fuertes, tus sóleos, tendones de Aquiles y cartílagos necesitan tiempo para sintetizar colágeno.',
-    };
-  } else {
-    return {
-      zone: 'danger_overtraining',
-      label: 'Zona de Peligro (> 1.50)',
-      color: 'text-rose-400',
-      bgColor: 'bg-rose-500/10',
-      borderColor: 'border-rose-500/30',
-      riskLevel: 'Riesgo relativo de lesión más alto',
-      injuryRiskPctFormatted: 'Muy elevado',
-      diagnosis: 'Tu carga de los últimos 7 días supera en más de un 50 % a tu media de las últimas 4 semanas: es el tramo con más riesgo relativo en los datos de Gabbett. Baja la carga hasta volver a la zona 0,8–1,3.',
+      riskLevel: 'Carga reciente por encima de tu media de 4 semanas',
+      injuryRiskPctFormatted: 'Carga aguda elevada',
+      diagnosis: `Tus últimos 7 días superan claramente tu media de 4 semanas. Los tejidos (sóleos, tendones) se adaptan más despacio que el sistema cardiovascular: vigila las sensaciones. ${CONTEXT}`,
     };
   }
+  return {
+    zone: 'danger_overtraining',
+    label: 'Carga aguda muy elevada (> 1,50)',
+    color: 'text-rose-400',
+    bgColor: 'bg-rose-500/10',
+    borderColor: 'border-rose-500/30',
+    riskLevel: 'Carga reciente muy por encima de tu media de 4 semanas',
+    injuryRiskPctFormatted: 'Carga aguda muy elevada',
+    diagnosis: `Tus últimos 7 días superan en más de un 50 % tu media de las últimas 4 semanas. ${CONTEXT}`,
+  };
 }
 
 /**
@@ -194,7 +210,7 @@ export function calculateACWRSummary(
       // EWMA ratio
       const roundedEwma = ewmaChronic > 0 ? Math.round((ewmaAcute / ewmaChronic) * 100) / 100 : 0;
 
-      const zoneInfo = getACWRZone(roundedAcwr);
+      const zoneInfo = getACWRZone(roundedAcwr, chronicSum);
 
       const [yy, mm, dd] = dateStr.split('-').map(Number);
       const d = new Date(yy, mm - 1, dd);
@@ -233,32 +249,32 @@ export function calculateACWRSummary(
     ? Math.round(((latestPoint.acuteLoad7d - point7DaysAgo.acuteLoad7d) / point7DaysAgo.acuteLoad7d) * 100)
     : 0;
 
-  const currentZone = getACWRZone(latestPoint.acwr);
+  const currentZone = getACWRZone(latestPoint.acwr, latestPoint.chronicLoad28dTotal);
 
   // Generate Coach Miguel's contextual tactical advice
   let coachTacticalAdvice = '';
   const actionableSteps: string[] = [];
 
-  if (latestPoint.acwr < 0.80) {
-    coachTacticalAdvice = `Actualmente tu ratio es de ${latestPoint.acwr.toFixed(2)} (Infracarga). Si vienes saliendo de un microciclo de descarga o competición, es la respuesta biológica deseada. Sin embargo, antes de volver a meter tiradas largas de montaña (+1.200m D+), progresa un máximo de +10% semanal en volumen aeróbico Z1/Z2 para no disparar el ACWR violentamente la próxima semana.`;
-    actionableSteps.push('Mantén rodajes cómodos en Zona 1 y Zona 2 (sub-AeT).');
-    actionableSteps.push('Evita saltar de golpe de 35 a 70 km semanales; reparte la carga en 4 días.');
-    actionableSteps.push('Introduce sesiones de fuerza excéntrica para preparar los sóleos.');
+  // Consejos descriptivos: sin cifras que no salgan de tus datos. Qué hacer hoy lo
+  // decide el motor de readiness; la descarga, si hace falta, la genera el motor.
+  const ratio = latestPoint.acwr.toFixed(2).replace('.', ',');
+  if (latestPoint.chronicLoad28dTotal <= 0) {
+    coachTacticalAdvice = 'Aún no hay carga de las últimas 4 semanas para comparar. Sincroniza Suunto.';
+    actionableSteps.push('Sincroniza Suunto para tener historial de carga.');
+  } else if (latestPoint.acwr < 0.80) {
+    coachTacticalAdvice = `Tu ratio es ${ratio}: estás cargando menos que tu media de 4 semanas. Si es una descarga buscada, bien; al volver a subir, hazlo de forma gradual para no disparar la carga de golpe.`;
+    actionableSteps.push('Vuelve a subir la carga de forma gradual, no de golpe.');
   } else if (latestPoint.acwr <= 1.30) {
-    coachTacticalAdvice = `Excelente dosificación: Ratio ACWR en ${latestPoint.acwr.toFixed(2)} (Sweet Spot de Gabbett). Estás construyendo fitness mitocondrial sólido para Transvulcania 73K sin saturar el sistema nervioso. La regla de oro aquí es la regularidad: no te dejes llevar por la euforia acelerando en las cuestas; continúa vigilando que ZoneSense se mantenga en verde en los rodajes.`;
-    actionableSteps.push('Continúa con el plan previsto sin modificaciones bruscas.');
-    actionableSteps.push('Prioriza la hidratación con 500-650 mg/h de sodio en tiradas de fin de semana.');
-    actionableSteps.push('Monitorea que tu HRV nocturna se mantenga dentro del rango basal.');
+    coachTacticalAdvice = `Tu ratio es ${ratio}: tu carga reciente está en línea con la habitual. Sigue el plan y vigila que los rodajes sigan en ZoneSense verde.`;
+    actionableSteps.push('Sigue el plan previsto.');
   } else if (latestPoint.acwr <= 1.50) {
-    coachTacticalAdvice = `Precaución: Tu ACWR ha subido a ${latestPoint.acwr.toFixed(2)} (+${weeklyChangePct}% vs semana previa). Estás rozando el techo de asimilación. Si las piernas se sienten pesadas o tu HRV rMSSD cae por debajo del rango habitual, sustituye la sesión de intensidad o cuestas por rodaje regenerativo suave o descanso activo.`;
-    actionableSteps.push('No agregues kilómetros ni desnivel extra este fin de semana.');
-    actionableSteps.push('Prioriza masaje fascial en sóleos y cuádriceps al terminar.');
-    actionableSteps.push('Si tu HRV matutina indica fatiga moderada, pulsa el botón de adaptar sesión.');
+    coachTacticalAdvice = `Tu ratio es ${ratio} (${weeklyChangePct >= 0 ? '+' : ''}${weeklyChangePct}% frente a la semana anterior): has cargado bastante más de lo habitual. Si notas piernas pesadas, dolor o el semáforo del día sale ámbar o rojo, sustituye la intensidad por algo suave.`;
+    actionableSteps.push('No añadas kilómetros ni desnivel extra esta semana.');
+    actionableSteps.push('Haz el check-in cada mañana y adapta la sesión si el semáforo lo indica.');
   } else {
-    coachTacticalAdvice = `¡ALERTA ROJA DE SOBREENTRENAMIENTO! Tu ACWR actual es de ${latestPoint.acwr.toFixed(2)}. Un incremento agudo tan pronunciado multiplica entre 2x y 4x el riesgo de rotura fibrilar, periostitis o fatiga simpática profunda. Como tu entrenador, te ordeno no sumar más estrés esta semana: programa de inmediato 2 a 4 días de descarga regenerativa Z1 (< 130 bpm).`;
-    actionableSteps.push('Activar Microciclo de Descarga (-45% volumen, 100% regenerativo).');
-    actionableSteps.push('Prohibido el trabajo de bajadas pronunciadas (impacto excéntrico).');
-    actionableSteps.push('Maximizar horas de sueño (&ge; 8h) y aporte proteico (1.6 g/kg) para reparación tisular.');
+    coachTacticalAdvice = `Tu ratio es ${ratio}: tu carga de 7 días supera en más de un 50 % tu media de 4 semanas. No es un diagnóstico por sí solo, pero es mucha carga nueva de golpe: considera una descarga y mira cómo responden tu HRV, tu sueño y tus sensaciones.`;
+    actionableSteps.push('Considera una descarga (la genera el motor según el semáforo del día).');
+    actionableSteps.push('Evita bajadas largas y rápidas hasta que la carga se normalice.');
   }
 
   return {

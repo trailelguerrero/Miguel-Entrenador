@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { hasAerobicDeficiency } from '../utils/uphillAthlete';
 import { 
   FileText, 
   Upload, 
@@ -100,9 +101,8 @@ export const AthleteHistoryView: React.FC<AthleteHistoryViewProps> = ({
         restingHr: result.extractedProfileUpdates.restingHr || profile.restingHr,
         maxHr: result.extractedProfileUpdates.maxHr || profile.maxHr,
         injuryHistory: result.extractedProfileUpdates.injuryHistory || profile.injuryHistory,
-        hasAds: result.extractedProfileUpdates.antHr && result.extractedProfileUpdates.aetHr
-          ? (result.extractedProfileUpdates.antHr - result.extractedProfileUpdates.aetHr) > 20
-          : profile.hasAds,
+        // Misma regla de ADS que el resto de la app (hasAerobicDeficiency)
+        hasAds: hasAerobicDeficiency(result.extractedProfileUpdates.aetHr, result.extractedProfileUpdates.antHr) ?? profile.hasAds,
         dataSource: 'markdown_file',
       };
 
