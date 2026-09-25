@@ -25,6 +25,7 @@ import {
   DailyCheckIn 
 } from '../types';
 import { StorageService } from '../services/storage';
+import { estimateFromRecentRuns, formatPace } from '../utils/runEstimates';
 import { describeZoneSenseTarget } from '../utils/zoneSense';
 import { calculateWorkoutTss } from '../utils/pmcCalculations';
 
@@ -68,6 +69,11 @@ export const FartlekGeneratorModal: React.FC<FartlekGeneratorModalProps> = ({
   const ant = profile.antHr || 0;
   const restingHr = profile.restingHr || 0;
 
+  // Distancia y desnivel estimados con TUS carreras reales (no cifras fijas)
+  const allWorkouts = useMemo(() => StorageService.getWorkouts(), []);
+  const estimateAll = useMemo(() => estimateFromRecentRuns(allWorkouts, durationMinutes, 'all'), [allWorkouts, durationMinutes]);
+  const estimateHilly = useMemo(() => estimateFromRecentRuns(allWorkouts, durationMinutes, 'hilly'), [allWorkouts, durationMinutes]);
+
   // Generate the strictly tailored Fartlek
   const fartlekPlan = useMemo<GeneratedFartlekPlan>(() => {
     // If in deload phase or fatigued, force recovery dynamic mode
@@ -96,8 +102,8 @@ export const FartlekGeneratorModal: React.FC<FartlekGeneratorModalProps> = ({
         title: `Fartlek Regenerativo Dinámico (Modo Descarga)`,
         workoutType: 'easy_run',
         totalDurationMin: durationMinutes,
-        estimatedDistanceKm: durationMinutes === 45 ? 6.5 : durationMinutes === 60 ? 8.5 : 10.5,
-        estimatedElevationGainM: 120,
+        estimatedDistanceKm: estimateAll?.distanceKm ?? 0,
+        estimatedElevationGainM: estimateAll?.elevationGainM ?? 0,
         targetHrMin: 0,
         targetHrMax: 0,
         zoneSenseTarget: 'Regenerativo (verde, muy suave)',
@@ -137,8 +143,8 @@ export const FartlekGeneratorModal: React.FC<FartlekGeneratorModalProps> = ({
         title: `Fartlek Aeróbico en verde (${repsCount}x3' / 2')`,
         workoutType: 'easy_run',
         totalDurationMin: durationMinutes,
-        estimatedDistanceKm: durationMinutes === 45 ? 7.8 : durationMinutes === 60 ? 10.5 : 13.2,
-        estimatedElevationGainM: 280,
+        estimatedDistanceKm: estimateAll?.distanceKm ?? 0,
+        estimatedElevationGainM: estimateAll?.elevationGainM ?? 0,
         targetHrMin: 0,
         targetHrMax: aet,
         zoneSenseTarget: 'ZoneSense verde (aeróbico)',
@@ -177,8 +183,8 @@ export const FartlekGeneratorModal: React.FC<FartlekGeneratorModalProps> = ({
         title: `Fartlek Uphill en Cuesta: Transición & Bastones (${repsCount}x2.5' / 2.5')`,
         workoutType: 'muscular_endurance',
         totalDurationMin: durationMinutes,
-        estimatedDistanceKm: durationMinutes === 45 ? 6.8 : durationMinutes === 60 ? 9.2 : 11.5,
-        estimatedElevationGainM: 450,
+        estimatedDistanceKm: estimateHilly?.distanceKm ?? 0,
+        estimatedElevationGainM: estimateHilly?.elevationGainM ?? 0,
         targetHrMin: 0,
         targetHrMax: aet,
         zoneSenseTarget: 'ZoneSense verde (aeróbico)',
@@ -217,8 +223,8 @@ export const FartlekGeneratorModal: React.FC<FartlekGeneratorModalProps> = ({
       title: `Fartlek Rompepiernas: Simulación de Cresta (${repsCount}x4' / 2')`,
       workoutType: 'muscular_endurance',
       totalDurationMin: durationMinutes,
-      estimatedDistanceKm: durationMinutes === 45 ? 7.5 : durationMinutes === 60 ? 10.0 : 12.8,
-      estimatedElevationGainM: 380,
+      estimatedDistanceKm: estimateHilly?.distanceKm ?? 0,
+      estimatedElevationGainM: estimateHilly?.elevationGainM ?? 0,
       targetHrMin: 0,
       targetHrMax: aet,
       zoneSenseTarget: 'ZoneSense verde (aeróbico)',
@@ -232,7 +238,7 @@ export const FartlekGeneratorModal: React.FC<FartlekGeneratorModalProps> = ({
       postWorkoutEccentricRoutine: '3 series de sóleo excéntrico en escalón 3-1-1 + estiramientos de psoas.',
       nutritionAdvice: '500 ml de agua con sales y 1 gel isotónico a mitad de sesión.',
     };
-  }, [seasonPhase, currentHrvStatus, durationMinutes, focus, aet, ant, restingHr]);
+  }, [seasonPhase, currentHrvStatus, durationMinutes, focus, aet, ant, restingHr, estimateAll, estimateHilly]);
 
   // Handler to add the generated fartlek to Calendar
   const handleAddToCalendar = () => {
@@ -244,8 +250,8 @@ export const FartlekGeneratorModal: React.FC<FartlekGeneratorModalProps> = ({
       title: fartlekPlan.title,
       type: fartlekPlan.workoutType,
       plannedDurationMin: fartlekPlan.totalDurationMin,
-      plannedDistanceKm: fartlekPlan.estimatedDistanceKm,
-      plannedElevationGainM: fartlekPlan.estimatedElevationGainM,
+      plannedDistanceKm: fartlekPlan.estimatedDistanceKm || undefined,
+      plannedElevationGainM: fartlekPlan.estimatedElevationGainM || undefined,
       plannedTss: tssResult.tss,
       intensityFactor: tssResult.intensityFactor,
       targetHrMin: fartlekPlan.targetHrMin || undefined,
@@ -458,16 +464,32 @@ export const FartlekGeneratorModal: React.FC<FartlekGeneratorModalProps> = ({
                 <span className="px-2.5 py-1 rounded-lg bg-stone-900 border border-stone-750 font-mono text-xs text-stone-300 font-bold">
                   ⏱️ {fartlekPlan.totalDurationMin} min
                 </span>
-                <span className="px-2.5 py-1 rounded-lg bg-stone-900 border border-stone-750 font-mono text-xs text-emerald-400 font-bold">
-                  🏃 ~{fartlekPlan.estimatedDistanceKm} km
-                </span>
-                <span className="px-2.5 py-1 rounded-lg bg-stone-900 border border-stone-750 font-mono text-xs text-amber-400 font-bold">
-                  ⛰️ +{fartlekPlan.estimatedElevationGainM} m
-                </span>
+                {fartlekPlan.estimatedDistanceKm > 0 ? (
+                  <>
+                    <span className="px-2.5 py-1 rounded-lg bg-stone-900 border border-stone-750 font-mono text-xs text-emerald-400 font-bold">
+                      🏃 ~{fartlekPlan.estimatedDistanceKm} km
+                    </span>
+                    <span className="px-2.5 py-1 rounded-lg bg-stone-900 border border-stone-750 font-mono text-xs text-amber-400 font-bold">
+                      ⛰️ ~+{fartlekPlan.estimatedElevationGainM} m
+                    </span>
+                  </>
+                ) : (
+                  <span className="px-2.5 py-1 rounded-lg bg-stone-900 border border-stone-750 font-mono text-xs text-stone-400">
+                    Sin carreras registradas para estimar distancia y desnivel
+                  </span>
+                )}
                 <span className="px-2.5 py-1 rounded-lg bg-stone-900 border border-stone-750 font-mono text-xs text-cyan-400 font-bold">
                   {fartlekPlan.targetHrMax > 0 ? `❤️ Sin banda: máx ${fartlekPlan.targetHrMax} ppm` : '🟢 ZoneSense verde'}
                 </span>
               </div>
+              {(() => {
+                const est = (currentHrvStatus === 'fatigued' || seasonPhase === 'deload_week' || focus === 'ads_reversal_aet_control') ? estimateAll : estimateHilly;
+                return est ? (
+                  <p className="text-[10px] text-stone-500 mt-1.5">
+                    Estimación con tus {est.runsUsed} carreras de Suunto ({est.windowLabel}): ritmo medio {formatPace(est.paceMinPerKm)} y {est.ascentMPerHour} m D+/h.
+                  </p>
+                ) : null;
+              })()}
             </div>
 
             {/* Target Biomarkers */}
