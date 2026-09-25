@@ -112,6 +112,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         return 'bg-amber-950/60 border-amber-600/70 text-amber-300';
       case 'muscular_endurance':
         return 'bg-orange-950/60 border-orange-600/70 text-orange-300';
+      case 'intensity_run':
+        return 'bg-orange-950/60 border-orange-700/60 text-orange-300';
       case 'hill_intervals':
         return 'bg-red-950/60 border-red-600/70 text-red-300';
       case 'strength_core':

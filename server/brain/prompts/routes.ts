@@ -2,9 +2,9 @@
 // validación están en server/brain/decision/ y en src/brain/.
 import type { ChatTurn } from '../../ai.js';
 import { MIGUEL_SYSTEM_INSTRUCTION, EVIDENCE_JSON_SPEC } from './system.js';
-import { availabilityLine, formatLoadContext, formatWatchZones } from '../context.js';
+import { availabilityLine, describeTargetRace, formatLoadContext, formatWatchZones } from '../context.js';
 import { describeMemoryForPrompt } from '../../../src/brain/memory.js';
-import { describeIntensityPrescription, resolveIntensityPrescription } from '../../../src/brain/intensity.js';
+import { describeIntensityPrescription, isFormulaMaxHr, resolveIntensityPrescription } from '../../../src/brain/intensity.js';
 import { describeReadiness, type ReadinessState } from '../../../src/brain/readiness.js';
 import { describeBreakdown } from '../../../src/brain/zonesense.js';
 import { localDateKey } from '../../../src/utils/trainingLoad.js';
@@ -83,14 +83,14 @@ ${describeMemoryForPrompt(coachMemory, localDateKey())}
 - Peso Actual: ${athleteProfile?.weightKg ? athleteProfile.weightKg + ' kg' : 'Sin dato'}
 - Peso Objetivo de Carrera: ${athleteProfile?.targetRaceWeightKg ? athleteProfile.targetRaceWeightKg + ' kg' : 'Sin dato'}${athleteProfile?.weightKg && athleteProfile?.targetRaceWeightKg ? ` (${tag('derived')} Diferencia hacia meta: ${(Number(athleteProfile.weightKg) - Number(athleteProfile.targetRaceWeightKg)).toFixed(1)} kg)` : ''}
 - FC Reposo: ${athleteProfile?.restingHr ? athleteProfile.restingHr + ' bpm' : 'Pendiente de registrar en Suunto'}
-- FC Máx: ${athleteProfile?.maxHr ? athleteProfile.maxHr + ' bpm' : 'Pendiente de registrar en Suunto'}
+- FC Máx: ${athleteProfile?.maxHr ? athleteProfile.maxHr + ' bpm' + (isFormulaMaxHr(athleteProfile) ? ` (${tag('estimated')} coincide con 220 − edad: probablemente es la fórmula del reloj, no una medida; sugiérele confirmarla)` : '') : 'Pendiente de registrar en Suunto'}
 - Umbral Aeróbico por FC (zonas del reloj, respaldo sin banda; NO es ZoneSense): ${athleteProfile?.aetHr ? athleteProfile.aetHr + ' bpm' : 'Pendiente de registrar'}
 - Umbral Anaeróbico por FC (zonas del reloj, respaldo sin banda; NO es ZoneSense): ${athleteProfile?.antHr ? athleteProfile.antHr + ' bpm' : 'Pendiente de registrar'}
 - Estado ADS (Síndrome Deficiencia Aeróbica): ${athleteProfile?.hasAds ? 'SÍ (necesita volumen estricto Z1/Z2)' : 'NO'}
-- Objetivo Principal: ${targetRace?.name || 'Transvulcania 2027'} (${targetRace?.distanceKm || 73}km, +${targetRace?.elevationGainM || 4350}m D+)
+- [OBJETIVO PRINCIPAL] ${describeTargetRace(targetRace)}
 - Estructura semanal: 3 sesiones entre semana (o 2 si lo decides por fatiga/disponibilidad) + tirada larga en sábado o domingo.
 - ${availabilityLine(athleteProfile)}
-- Estado Biométrico Hoy (Suunto HRV/Sueño): ${currentReadiness ? JSON.stringify(currentReadiness) : 'Pendiente de sincronizar o check-in'}
+- Check-in de hoy: ${currentReadiness ? 'registrado (sus datos y el ÚNICO estado válido de hoy, el del motor de readiness, van en CARGA Y RECUPERACIÓN)' : 'pendiente (sin HRV ni sueño de hoy)'}
 - Origen de Datos: ${athleteProfile?.dataSource || 'Registro / Suunto'}
 - VO2máx (Suunto): ${athleteProfile?.vo2Max ?? 'No disponible'}
 - HRV nocturna de referencia: ${athleteProfile?.baselineHrv ? athleteProfile.baselineHrv + ' ms' : 'Pendiente'}
@@ -144,7 +144,8 @@ ${describeMemoryForPrompt(coachMemory, localDateKey())}
 ` : '';
 
   const prompt = `
-Genera un microciclo semanal de entrenamiento de 7 días (comenzando el lunes ${weekStartDate || 'próximo'}) para preparar ${targetRace?.name || 'Transvulcania 2027'}.
+Genera un microciclo semanal de entrenamiento de 7 días (comenzando el lunes ${weekStartDate || 'próximo'}) para preparar su carrera objetivo.
+[OBJETIVO PRINCIPAL] ${describeTargetRace(targetRace)}
 
 [DIRECTIVA CRÍTICA: CERO PLANES GENÉRICOS O DE PLANTILLA]:
 - Queda TERMINANTEMENTE PROHIBIDO prescribir sesiones genéricas estándar (como "45 min de carrera suave", "hacer series", "estirar").
@@ -207,7 +208,7 @@ Responde ÚNICAMENTE con un JSON válido estructurado así:
       "mainSet": "Parte principal detallada paso a paso",
       "cooldown": "Vuelta a la calma",
       "terrainRecommendation": "Pista forestal, sendero con piedras, rampa empinada, etc.",
-      "nutritionAdvice": "Hidratación/electrolitos recomendados acordes a su perfil y calor de La Palma",
+      "nutritionAdvice": "Hidratación/electrolitos recomendados acordes a su perfil y a las condiciones de su carrera objetivo",
       "plannedCarbsPerHourG": number o null (solo con tolerancia registrada, sin superarla),
       "plannedFluidsPerHourMl": number o null (solo con tasa de sudoración medida),
       "plannedSodiumPerHourMg": number o null (solo con tasa de sudoración y perfil de sodio),
@@ -318,7 +319,7 @@ ${athleteHistoryDoc.content}
 
 Como Coach Miguel, realiza una evaluación honesta y sin rodeos. Después anota como EVIDENCIAS lo que esta sesión muestra (hechos con su dato, no reglas). Responde en JSON:
 {
-  "feedback": "Texto de Miguel hablando como entrenador amigo y directo: evalúa cumplimiento de ZoneSense/AeT, avisa si corrió de más en subidas, analiza sensaciones musculares y da pautas de recuperación para Transvulcania 2027.",
+  "feedback": "Texto de Miguel hablando como entrenador amigo y directo: evalúa cumplimiento de ZoneSense/AeT, avisa si corrió de más en subidas, analiza sensaciones musculares y da pautas de recuperación pensando en su carrera objetivo.",
   ${EVIDENCE_JSON_SPEC}
 }
 `;
@@ -385,7 +386,7 @@ Responde con un objeto JSON estructurado:
     "injuries": ["Lesión o sobrecarga detectada"],
     "weeklyVolumeKm": number o null
   },
-  "miguelAnalysis": "Mensaje enérgico, cercano y honesto de Miguel en español de España: dale la bienvenida a su historial, agradece la precisión de los datos, destaca qué puntos fisiológicos vas a cuidar especialmente (ej: debilidades en bajadas, umbrales medidos, historial de sobrecargas) de cara al objetivo de Transvulcania 2027.",
+  "miguelAnalysis": "Mensaje enérgico, cercano y honesto de Miguel en español de España: dale la bienvenida a su historial, agradece la precisión de los datos, destaca qué puntos fisiológicos vas a cuidar especialmente (ej: debilidades en bajadas, umbrales medidos, historial de sobrecargas) de cara a su carrera objetivo.",
   "extractedProfileUpdates": {
     "aetHr": number o null,
     "antHr": number o null,

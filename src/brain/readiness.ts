@@ -13,6 +13,8 @@
  *   - TSS de los últimos 7 días por encima del umbral "muy alta" del atleta
  *     (CTL×7 + 20 %, ver weeklyLoadThresholds)
  *   - Estrés vital declarado ≥ 8
+ * Límites por nivel: VERDE sin tope; ÁMBAR ≤ 75 % de lo planificado, verde y sin
+ * series; ROJO ≤ 35 min regenerativos (o descanso); SIN DATOS: suave y sin series.
  * Cuando se juntan varios riesgos, los límites se endurecen:
  *   - ROJO de base + cualquier escalador  → descanso obligatorio
  *   - ÁMBAR de base + ≥ 2 escaladores     → ROJO con descanso obligatorio
@@ -64,6 +66,8 @@ export const TSB_ESCALATION = -30;
 export const STRESS_ESCALATION = 8;
 /** Sesión regenerativa máxima en rojo (misma cifra que el consejo histórico del semáforo). */
 export const RED_MAX_DURATION_MIN = 35;
+/** En ámbar, fracción máxima de la duración planificada (elección de diseño de la app). */
+export const AMBER_DURATION_FACTOR = 0.75;
 
 const num = (v: number | null | undefined): v is number => typeof v === 'number' && Number.isFinite(v);
 
@@ -135,6 +139,15 @@ export function evaluateReadiness(input: ReadinessInput): ReadinessState {
       mandatoryRest,
     };
   } else if (level === 'amber') {
+    // Ámbar: como mucho el 75 % de lo planificado (una tirada larga completa no es prudente)
+    limits = {
+      maxDurationMin: planned != null ? Math.round(planned * AMBER_DURATION_FACTOR) : null,
+      maxZoneSense: 'green',
+      allowIntervals: false,
+      mandatoryRest: false,
+    };
+  } else if (level === 'unknown') {
+    // Sin datos de recuperación no se autoriza intensidad: se puede entrenar suave
     limits = { maxDurationMin: planned ?? null, maxZoneSense: 'green', allowIntervals: false, mandatoryRest: false };
   } else {
     limits = { maxDurationMin: null, maxZoneSense: 'red', allowIntervals: true, mandatoryRest: false };

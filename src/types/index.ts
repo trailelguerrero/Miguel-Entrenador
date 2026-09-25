@@ -3,6 +3,7 @@ export type WorkoutType =
   | 'long_mountain_run' 
   | 'muscular_endurance' 
   | 'hill_intervals' 
+  | 'intensity_run' // carrera importada de Suunto con > 20 % del tiempo en amarillo/rojo de ZoneSense
   | 'strength_core' 
   | 'drift_test' 
   | 'cross_training' 
@@ -76,6 +77,8 @@ export interface Workout {
     aerobicPct: number; // ZoneSense verde (aeróbico)
     transitionPct: number; // ZoneSense amarillo (entre umbrales)
     anaerobicPct: number; // ZoneSense rojo (sobre umbral anaeróbico)
+    /** % de la duración del entreno que ZoneSense llegó a medir (los % de color son sobre ese tiempo). */
+    measuredPct?: number;
   };
   athleteRpe?: number; // 1 to 10
   athleteNotes?: string;
@@ -272,6 +275,8 @@ export interface TargetRace {
   terrainDescription: string;
   targetPaceOrTime?: string;
   notes?: string;
+  /** false = fecha estimada (la organización aún no la ha publicado). */
+  dateConfirmed?: boolean;
   /** De dónde sale cada dato: 'web' = verificado con fuentes; 'athlete' = lo introdujo el atleta. Sin entrada = sin dato. */
   dataSources?: Partial<Record<RaceDataField, 'web' | 'athlete'>>;
   /** Páginas que respaldan los datos verificados. */
@@ -646,6 +651,11 @@ export interface DailyCheckIn {
   coachAdvice: string;
   suggestedAction?: 'maintain' | 'downgrade_easy' | 'full_rest' | 'swap_with_rest';
   source?: 'suunto'; // presente si el check-in viene de la sincronización con Suunto
+  /**
+   * Minutos que Suunto marcó como "siesta" y terminaron ese día. No se suman a
+   * sleepHours: Suunto no da la hora y a veces son tramos de la propia noche.
+   */
+  napMinutes?: number;
   /** Check-in de ejemplo (modo prueba): se borra al salir del modo prueba. */
   isSample?: boolean;
 }

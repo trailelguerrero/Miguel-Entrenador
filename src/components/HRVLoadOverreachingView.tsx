@@ -267,10 +267,10 @@ export const HRVLoadOverreachingView: React.FC<HRVLoadOverreachingViewProps> = (
                   <strong>Adaptación Óptima:</strong> Carga semanal alta con HRV 7d estable dentro o por encima de la banda SWC.
                 </div>
                 <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300">
-                  <strong>Sobre-esfuerzo Funcional (FOR):</strong> Ligera bajada transitoria de HRV (&lt; 3 días) coincidiendo con picos de volumen. Recupera rápidamente con descanso.
+                  <strong>Carga alta asumida:</strong> carga semanal por encima de lo habitual con la HRV media de 7 días algo por debajo de tu referencia.
                 </div>
                 <div className="p-2 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-300">
-                  <strong>Sobre-esfuerzo No Funcional (NFOR - Alerta):</strong> Carga semanal alta/creciente mientras la HRV 7d se desploma de forma continuada por debajo del umbral ({summary.swcLower} ms). Bloqueo parasimpático y riesgo inminente de agotamiento.
+                  <strong>Fatiga acumulada:</strong> carga semanal muy alta con la HRV media de 7 días por debajo de tu banda normal ({summary.swcLower} ms). Es una tendencia a vigilar, no un diagnóstico; lo que toca hacer hoy lo decide el semáforo del día.
                 </div>
               </div>
             </div>
@@ -394,7 +394,7 @@ export const HRVLoadOverreachingView: React.FC<HRVLoadOverreachingViewProps> = (
           </div>
 
           <div className="pt-2.5 border-t border-zinc-800/80 text-[11px] text-zinc-400 flex items-center justify-between">
-            <span>Episodios NFOR:</span>
+            <span>Episodios de fatiga acumulada:</span>
             <span className={`font-bold font-mono ${summary.overreachingEpisodes.length > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
               {summary.overreachingEpisodes.length} detectados
             </span>
@@ -725,7 +725,7 @@ export const HRVLoadOverreachingView: React.FC<HRVLoadOverreachingViewProps> = (
                   hoveredPoint.status === 'recovery_deload' ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30' :
                   'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                 }`}>
-                  {hoveredPoint.status === 'non_functional_overreaching' ? 'Sobre-esfuerzo NFOR' :
+                  {hoveredPoint.status === 'non_functional_overreaching' ? 'Fatiga acumulada' :
                    hoveredPoint.status === 'functional_overreaching' ? 'Sobre-esfuerzo FOR' :
                    hoveredPoint.status === 'recovery_deload' ? 'Descarga / Asimilación' : 'Adaptación Óptima'}
                 </span>
@@ -910,7 +910,7 @@ export const HRVLoadOverreachingView: React.FC<HRVLoadOverreachingViewProps> = (
                 <AlertTriangle className="w-4 h-4" />
                 Cuadrante II: Alta Carga + Baja Recuperación
               </span>
-              <span className="text-[10px] font-mono text-rose-500 font-bold">SOBRE-ESFUERZO (NFOR)</span>
+              <span className="text-[10px] font-mono text-rose-500 font-bold">FATIGA ACUMULADA</span>
             </div>
             <p className="text-[11px] text-zinc-400 leading-relaxed">
               Carga semanal elevada con HRV 7d suprimida (&lt; {summary.swcLower} ms). Desacople autonómico: el atleta absorbe daño sin capacidad biológica para asimilarlo.

@@ -170,8 +170,17 @@ export function checkRaceCoherence(fields: VerifiedRaceInfo['fields'], unverifie
  * El consejo de Miguel no puede traer cifras de la carrera que no estén verificadas:
  * toda cifra seguida de km / m / metros / D+ debe coincidir (±1) con un dato verificado.
  */
-/** Cifras del objetivo principal (Transvulcania 2027) que Miguel puede citar al comparar. */
+/** Cifras del objetivo principal que Miguel puede citar al comparar (por defecto, la Transvulcania). */
 export const TARGET_RACE = { distanceKm: 73, metres: [4350, 4057, 2426, 2400] };
+
+/** Cifras de la carrera objetivo que envía la app; sin datos válidos, las de la Transvulcania. */
+export function targetFigures(t: any): { distanceKm: number; metres: number[] } {
+  const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null);
+  const dist = n(t?.distanceKm);
+  const metres = [n(t?.elevationGainM), n(t?.elevationLossM)].filter((x): x is number => x != null);
+  if (!dist || !metres.length) return TARGET_RACE;
+  return { distanceKm: dist, metres };
+}
 
 const thousands = (s: string) => s.normalize('NFKC').replace(/(\d)[.,\s'’](\d{3})(?!\d)/g, '$1$2');
 const FIGURE_RE = /(\d+(?:[.,]\d+)?)\s*(km|kms|kil[oó]metros|m\b|metros|mts|d\+|d-)/gi;

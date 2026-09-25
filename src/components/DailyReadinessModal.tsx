@@ -185,8 +185,8 @@ export const DailyReadinessModal: React.FC<DailyReadinessModalProps> = ({
                 className="w-full accent-amber-500 cursor-pointer"
               />
               <div className="flex justify-between text-[11px] text-zinc-500">
-                <span>&lt; 65: Recuperación deficiente</span>
-                <span>&gt; 80: Óptimo</span>
+                <span>Orientativo: &lt; 65 bajo</span>
+                <span>&gt; 80 bueno</span>
               </div>
             </div>
 

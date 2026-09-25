@@ -97,7 +97,8 @@ export function buildDailyLoadMap(workouts: Workout[], antHr?: number): Map<stri
     day.km += w.actualDistanceKm ?? 0;
     day.elevationGainM += w.actualElevationGainM ?? 0;
     day.elevationLossM += w.actualElevationLossM ?? 0;
-    if (w.zoneSenseBreakdown) day.zoneSenseAerobicMin += Math.round((dur * w.zoneSenseBreakdown.aerobicPct) / 100);
+    // Minutos en verde = % verde × tiempo MEDIDO (no × duración total)
+    if (w.zoneSenseBreakdown) day.zoneSenseAerobicMin += Math.round((dur * w.zoneSenseBreakdown.aerobicPct * (w.zoneSenseBreakdown.measuredPct ?? 100)) / 10000);
     if (load.source === 'estimated') day.estimatedTss = true;
     if (w.athleteRpe) day.rpes.push(w.athleteRpe);
     if (w.title && !day.titles.includes(w.title)) day.titles.push(w.title);

@@ -67,14 +67,16 @@ const STORAGE_KEYS = {
 /** Deporte de una sesión, para saber si un entreno de Suunto completa lo planificado. */
 export function sportGroup(type: Workout['type'] | undefined): 'run' | 'strength' | 'other' {
   if (type === 'strength_core') return 'strength';
-  if (type === 'easy_run' || type === 'long_mountain_run' || type === 'muscular_endurance' || type === 'hill_intervals' || type === 'drift_test') return 'run';
+  if (type === 'easy_run' || type === 'intensity_run' || type === 'long_mountain_run' || type === 'muscular_endurance' || type === 'hill_intervals' || type === 'drift_test') return 'run';
   return 'other';
 }
 
 export const DEFAULT_TARGET_RACE: TargetRace = {
   id: 'transvulcania-2027',
   name: 'Transvulcania Ultramarathon 2027',
+  // La organización aún no ha publicado la fecha de 2027 (la de 2026 fue el 9 de mayo)
   date: '2027-05-08',
+  dateConfirmed: false,
   distanceKm: 73.0,
   elevationGainM: 4350,
   elevationLossM: 4057,
@@ -373,7 +375,11 @@ export const StorageService = {
   getTargetRace(): TargetRace {
     try {
       const stored = localStorage.getItem(STORAGE_KEYS.TARGET_RACE);
-      return stored ? JSON.parse(stored) : DEFAULT_TARGET_RACE;
+      if (!stored) return DEFAULT_TARGET_RACE;
+      const race: TargetRace = JSON.parse(stored);
+      // Guardada con una versión anterior: la fecha por defecto de 2027 no es oficial
+      if (race.dateConfirmed === undefined && race.id === DEFAULT_TARGET_RACE.id && race.date === DEFAULT_TARGET_RACE.date) race.dateConfirmed = false;
+      return race;
     } catch {
       return DEFAULT_TARGET_RACE;
     }
@@ -499,7 +505,11 @@ export const StorageService = {
         });
         // Entreno creado por la importación: versiones anteriores le ponían un
         // objetivo ZoneSense ficticio ("DFA a1 > 0.75") a cualquier actividad.
-        if (existing.id === `suunto-${sw.suuntoWorkoutKey}`) existing.zoneSenseTarget = undefined;
+        if (existing.id === `suunto-${sw.suuntoWorkoutKey}`) {
+          existing.zoneSenseTarget = undefined;
+          // Actividad importada: su tipo lo decide lo que pasó (p. ej. carrera con intensidad)
+          existing.type = sw.type;
+        }
         continue;
       }
       // Solo completa la sesión planificada de ese día si es del mismo deporte:

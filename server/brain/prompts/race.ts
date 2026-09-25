@@ -34,9 +34,13 @@ Devuelve JSON con este formato; value null si el dato no aparece en el texto; "s
 }`;
 }
 
-export function buildRaceAdvicePrompt(raceName: string, verified: VerifiedRaceInfo): string {
+export function buildRaceAdvicePrompt(raceName: string, verified: VerifiedRaceInfo, target?: { name?: string; distanceKm?: number; elevationGainM?: number; elevationLossM?: number }): string {
+  const tName = target?.name || 'la Transvulcania 2027';
+  const tFigures = target?.distanceKm
+    ? `${target.distanceKm} km${target.elevationGainM ? `, +${target.elevationGainM} m` : ''}${target.elevationLossM ? `, -${target.elevationLossM} m` : ''}`
+    : '73 km, +4.350 m, -4.057 m';
   return `Datos VERIFICADOS de la carrera "${raceName}":
 ${describeVerifiedRace(verified)}
 
-En 2-3 frases, como Miguel, di cómo encaja como carrera preparatoria (prioridad B o C) para la Transvulcania 2027. Usa solo los datos verificados; si falta alguno importante, dilo. Solo puedes escribir cifras de km o metros que aparezcan arriba, las de la Transvulcania (73 km, +4.350 m, -4.057 m) o diferencias entre ellas; las frases con otras cifras se eliminan. Si hay avisos de coherencia, menciónalos. Responde en JSON: { "strategicAdvice": "texto" }`;
+En 2-3 frases, como Miguel, di cómo encaja como carrera preparatoria (prioridad B o C) para ${tName} (su carrera objetivo). Usa solo los datos verificados; si falta alguno importante, dilo. Solo puedes escribir cifras de km o metros que aparezcan arriba, las de su carrera objetivo (${tFigures}) o diferencias entre ellas; las frases con otras cifras se eliminan. Si hay avisos de coherencia, menciónalos. Responde en JSON: { "strategicAdvice": "texto" }`;
 }

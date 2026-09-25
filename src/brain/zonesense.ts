@@ -111,13 +111,28 @@ export function normalizeSuuntoZoneSense(raw: SuuntoRawZoneSense): CanonicalZone
  * Forma guardada en Workout.zoneSenseBreakdown (se mantiene por compatibilidad):
  * aerobicPct = verde, transitionPct = amarillo, anaerobicPct = rojo.
  */
-export function toStoredBreakdown(z: CanonicalZoneSense): { aerobicPct: number; transitionPct: number; anaerobicPct: number } {
-  return { aerobicPct: z.greenPct, transitionPct: z.yellowPct, anaerobicPct: z.redPct };
+export function toStoredBreakdown(
+  z: CanonicalZoneSense,
+  totalDurationSec?: number | null,
+): { aerobicPct: number; transitionPct: number; anaerobicPct: number; measuredPct?: number } {
+  const out = { aerobicPct: z.greenPct, transitionPct: z.yellowPct, anaerobicPct: z.redPct };
+  if (!totalDurationSec || totalDurationSec <= 0) return out;
+  const measured = (z.greenMs + z.yellowMs + z.redMs) / 1000;
+  return { ...out, measuredPct: Math.min(100, Math.round((measured / totalDurationSec) * 100)) };
 }
 
+/** Por debajo de este % medido, el reparto de colores no representa la sesión. */
+export const ZONESENSE_MIN_MEASURED_PCT = 50;
+
+/** ¿El reparto cubre lo bastante de la sesión para sacar conclusiones? (sin dato de cobertura: sí, por compatibilidad) */
+export const breakdownIsReliable = (b: { measuredPct?: number } | null | undefined) =>
+  !!b && (b.measuredPct == null || b.measuredPct >= ZONESENSE_MIN_MEASURED_PCT);
+
 /** Texto de un reparto guardado, siempre en colores y sin pulsaciones. */
-export function describeBreakdown(b: { aerobicPct: number; transitionPct: number; anaerobicPct: number }): string {
-  return `verde ${b.aerobicPct}% · amarillo ${b.transitionPct}% · rojo ${b.anaerobicPct}%`;
+export function describeBreakdown(b: { aerobicPct: number; transitionPct: number; anaerobicPct: number; measuredPct?: number }): string {
+  const base = `verde ${b.aerobicPct}% · amarillo ${b.transitionPct}% · rojo ${b.anaerobicPct}%`;
+  if (b.measuredPct == null) return base;
+  return `${base} (sobre el ${b.measuredPct}% de la sesión que ZoneSense midió${b.measuredPct < ZONESENSE_MIN_MEASURED_PCT ? ': poco representativo, no saques conclusiones' : ''})`;
 }
 
 /** Reglas de ZoneSense para los prompts de Miguel (mismo contenido que arriba). */

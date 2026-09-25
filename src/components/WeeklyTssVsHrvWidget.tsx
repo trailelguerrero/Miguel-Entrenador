@@ -143,7 +143,7 @@ export const WeeklyTssVsHrvWidget: React.FC<WeeklyTssVsHrvWidgetProps> = ({
     if (currentStatus === 'non_functional_overreaching' || (!!thr && currentWeeklyTss > thr.high && currentHrv7d > 0 && currentHrv7d < swcLower)) {
       return {
         state: 'desacople_critico',
-        title: 'Desacople Autonómico Crítico (NFOR)',
+        title: 'Fatiga acumulada (carga alta + HRV baja)',
         badge: 'Intensidad Supera Recuperación',
         badgeColor: 'bg-rose-500/20 text-rose-400 border-rose-500/40',
         summary: 'La carga semanal sostenida está provocando supresión continuada del tono vagal parasimpático.',
@@ -309,7 +309,7 @@ export const WeeklyTssVsHrvWidget: React.FC<WeeklyTssVsHrvWidgetProps> = ({
               </p>
             </div>
             <div className="bg-zinc-900/60 p-3 rounded-xl border border-rose-500/20 space-y-1">
-              <span className="font-bold text-rose-400 block">3. Desacople / Alarma (NFOR)</span>
+              <span className="font-bold text-rose-400 block">3. Fatiga acumulada</span>
               <p className="text-[11px] text-zinc-400">
                 La carga semanal se mantiene alta ({thr ? <>&gt; {thr.high} TSS, +10 % sobre tu CTL×7</> : 'sin CTL aún'}) pero la HRV 7d se desploma por debajo de {swcLower} ms por 3+ días. Señal de agotamiento simpático: exige microciclo de descarga.
               </p>
@@ -712,7 +712,7 @@ export const WeeklyTssVsHrvWidget: React.FC<WeeklyTssVsHrvWidgetProps> = ({
                     hoveredPoint.status === 'functional_overreaching' ? 'bg-amber-500/20 text-amber-400' :
                     hoveredPoint.status === 'recovery_deload' ? 'bg-cyan-500/20 text-cyan-400' : 'bg-emerald-500/20 text-emerald-400'
                   }`}>
-                    {hoveredPoint.status === 'non_functional_overreaching' ? 'Desacople NFOR' :
+                    {hoveredPoint.status === 'non_functional_overreaching' ? 'Fatiga acumulada' :
                      hoveredPoint.status === 'functional_overreaching' ? 'Sobre-esfuerzo FOR' :
                      hoveredPoint.status === 'recovery_deload' ? 'Descarga / Frescura' : 'Asimilación Óptima'}
                   </span>

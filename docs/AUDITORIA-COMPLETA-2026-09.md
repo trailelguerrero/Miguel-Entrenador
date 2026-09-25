@@ -7,7 +7,7 @@ Esta vez se han comparado **los datos reales de tu cuenta Suunto** con lo que la
 - 28 días de sueño y de Recovery;
 - los datos oficiales de la Transvulcania en su web.
 
-Estado: `npm test` → 85/85 · `tsc` OK · `build` OK.
+Estado: `npm test` → 95/95 · `tsc` OK · `build` OK. **Todos los pendientes se han resuelto aplicando las recomendaciones (§4); las recomendaciones finales están en §5.**
 
 ---
 
@@ -28,7 +28,7 @@ Estado: `npm test` → 85/85 · `tsc` OK · `build` OK.
 | A11 | La fórmula de CTL/ATL que muestra la pantalla PMC no era la que usa el código. | 🟡 | ✅ Arreglado |
 | A12 | El desnivel negativo del PMC era siempre 0. | 🟡 | ✅ Arreglado |
 | A13 | No había botón de sincronizar Suunto en la pantalla principal. | — | ✅ Añadido |
-| P1–P9 | Pendientes de decisión (ver §4). | 🟠/🟡 | ⏳ |
+| P1–P9 | Pendientes de la auditoría (ver §4). | 🟠/🟡 | ✅ Resueltos con la recomendación |
 
 ---
 
@@ -79,16 +79,57 @@ Estado: `npm test` → 85/85 · `tsc` OK · `build` OK.
 
 ---
 
-## 4. Pendiente (necesita tu decisión)
+## 4. Pendientes resueltos con la recomendación
 
-| # | Qué pasa | Propuesta |
+| # | Qué pasaba | Qué se ha hecho |
 |---|---|---|
-| P1 | 33 de tus 112 carreras se clasifican como **"rodaje suave"** aunque pasaron > 20 % del tiempo en amarillo o rojo de ZoneSense. Miguel y la estructura semanal las cuentan como suaves. | Clasificar por el tiempo real en zonas cuando haya ZoneSense (nuevo tipo "carrera con intensidad"). |
-| P2 | El % de ZoneSense se calcula sobre el tiempo **medido**, no sobre la duración total. Una carrera de 12 min con 2 min medidos sale "verde 100 %". | Mostrar también "medido X de Y min" y no usar repartos con menos del 50 % medido. |
-| P3 | Posibles tramos de la noche marcados como "siesta" por Suunto (§2). | Sumar a la noche las "siestas" que terminan el mismo día que la noche principal, tras comprobarlo en la App de Suunto. |
-| P4 | Tu FC máx configurada (184) podría ser la fórmula 220 − edad (si tienes 36 años). Has registrado 186. | Confirmar en el reloj. La app ya avisa si se supera 3 veces en 2 semanas distintas. |
-| P5 | Hay **cuatro "semáforos" de fatiga** con reglas distintas: readiness (±10/20 % de HRV), panel HRV-carga (media de 7 días vs. SWC ±0,5 DE, "NFOR" < 82 %), puntuación HRV (50 + 120×Δ) y widget semanal. Pueden contradecirse en la misma pantalla. | Que todas las pantallas usen el motor de readiness como fuente única y dejen el resto como gráficas. |
-| P6 | La carrera objetivo está **escrita a mano** en el prompt de Miguel, en el filtro de carreras y en varias pantallas. Si cambias el objetivo en la app, Miguel sigue pensando en la Transvulcania. | Pasarlo todo a los datos de `targetRace`. |
-| P7 | La fecha de la Transvulcania 2027 se muestra como segura. | Marcarla "por confirmar" hasta que salga la oficial. |
-| P8 | Pendientes de la 1.ª auditoría: sin check-in de hoy no hay límites (M3), el plan no aplica el readiness de hoy (M4), aprendizajes fragmentados (M5), la tirada larga completa en ámbar (M6), instrucciones colándose desde la biblioteca (M7). | Ver `AUDITORIA-CEREBRO-2026-09.md`. |
-| P9 | Umbrales genéricos en pantalla (calidad de sueño < 65 / > 80, "rango general" de nutrición). | Etiquetarlos como orientativos o personalizarlos con tu historial. |
+| P1 | 33 de 112 carreras salían como "rodaje suave" aunque pasaron más del 20 % del tiempo en amarillo o rojo. | Nuevo tipo **"Carrera con intensidad"** (`intensity_run`) para las carreras importadas con más del 20 % en amarillo o rojo y ZoneSense fiable. Con tus datos: 32 carreras. Salen en naranja en el calendario, cuentan como series para el motor (en ámbar o rojo pasan a rodaje) y ya no alteran el ritmo "suave" estimado. Las ya importadas se reclasifican en la próxima sincronización. |
+| P2 | El % de ZoneSense no decía qué parte de la sesión se había medido. | Se guarda `measuredPct`. Miguel ve "sobre el X % que ZoneSense midió" y, con menos del 50 %, "poco representativo". Los minutos en verde del PMC se calculan sobre el tiempo medido. |
+| P3 | "Siestas" de Suunto que pueden ser parte de la noche. | Se guardan aparte (`napMinutes`) y Miguel las ve, pero **no se suman** al sueño: Suunto no da la hora y no se puede saber si son de la noche. |
+| P4 | FC máx del reloj = 220 − edad. | Si la FC máx de Suunto coincide con 220 − edad, no cuenta como medida. Miguel te sugiere confirmarla. Si la fijas a mano, vale. |
+| P5 | Cuatro "semáforos" de fatiga que se contradecían. El más grave ("NFOR") saltaba con **menos** carga que el intermedio. | El orden de gravedad es ahora coherente: la fatiga acumulada exige carga **muy alta**. Los paneles de HRV-carga pasan a ser **tendencia de 7 días** ("fatiga acumulada", "carga alta asumida"…), sin diagnósticos clínicos ni % de riesgo inventados. Todos remiten al semáforo del día para decidir qué hacer hoy. |
+| P6 | La carrera objetivo estaba escrita a mano en el cerebro. | El prompt, el plan, los análisis, el consejo y el filtro de cifras usan la carrera objetivo de la app (`describeTargetRace`, `targetFigures`). La Transvulcania queda solo como valor por defecto. |
+| P7 | La fecha de 2027 se mostraba como oficial. | `dateConfirmed: false`: la ficha, el informe PDF y Miguel dicen "por confirmar". |
+| M3 | Sin check-in no había límites. | El motor evalúa siempre: la carga sola (TSB, TSS de 7 días) puede subir el nivel. Sin datos de recuperación, **sin series ni intensidad**. |
+| M4 | El plan semanal ignoraba el estado de hoy. | La sesión de hoy del plan se recorta a los límites del motor (`applyTodayReadinessToPlan`). |
+| M5 | Un mismo hallazgo redactado distinto quedaba repartido y nunca llegaba a regla. | Un hallazgo "nuevo" que comparte al menos el 60 % de las palabras clave con uno de la misma categoría suma como evidencia a ese. |
+| M6 | En ámbar se permitía la tirada larga completa. | En ámbar, como mucho el **75 %** de lo planificado. |
+| M7 | Texto de la biblioteca con rango de instrucción del sistema. | La biblioteca y las conversaciones van en el mensaje del atleta, entre `<biblioteca>` / `<conversaciones>`, con una regla que prohíbe seguir órdenes de ahí. Se neutralizan las etiquetas que intenten "escaparse". |
+| m1 | Las sesiones sin fecha válida se amontonaban en domingo. | Se colocan en su día solo si está libre; si no, se descartan con aviso. |
+| m3 | La memoria del prompt crecía sin tope. | Como mucho 15 observaciones o hipótesis y 10 caducadas o descartadas (las más recientes). |
+| m6 | Un pendiente se perdía en silencio si su aprendizaje se había borrado. | Ahora se avisa. |
+| m7 | Dos semáforos distintos en el prompt del chat. | Solo cuenta el del motor. |
+| P9 | Umbrales genéricos presentados como tuyos. | Etiquetados como orientativos. Los carbohidratos por hora sin tolerancia registrada dicen "valor general, no tuyo". |
+
+**Sigue abierto (menor):**
+- **m2:** el chat manda todo el historial y el `.md` en cada mensaje.
+- **m4:** la evidencia del chat lleva la fecha del día en que se extrae, no la del hecho.
+- **m5:** la verificación de cifras del `.md` es laxa.
+- **m8:** la memoria solo vive en el navegador.
+
+Ver §5.
+
+## 5. Recomendaciones
+
+### Para ti (atleta), por orden
+1. **Fusiona la PR y sincroniza Suunto.** Tu AeT y tu AnT de fábrica se vaciarán, desaparecerá el aviso de ADS y tus 32 carreras con intensidad se reclasificarán.
+2. **Haz el test de deriva de 60 minutos** en terreno llano o en cinta, sin intensidad el día anterior.
+   - Empieza a una FC cómoda, **no a la Z3 de fábrica (142)**.
+   - Si la deriva sale entre 3,5 y 5 %, la app fijará tu AeT de verdad.
+   - Hasta entonces, Miguel no te dará pulsaciones.
+3. **Ponte la banda de pecho en los rodajes.** Sin ella no hay ZoneSense y Miguel solo puede guiarte por sensaciones. De tus 197 entrenos, solo 77 tienen ZoneSense.
+4. **Confirma tu FC máxima.** El reloj tiene 184, que podría ser 220 − edad; has registrado 186. Si tras un esfuerzo máximo real ves más, cámbiala en el reloj y en la ficha (a mano).
+5. **Haz el check-in cada mañana, aunque sea solo el dolor y el estrés.** HRV y sueño llegan de Suunto al sincronizar, pero el dolor y el estrés solo los sabes tú, y con estrés de 8 o más el nivel sube.
+6. **Actividades añadidas a mano en Suunto:** si puedes, regístralas con el reloj. A mano, Suunto les pone 35 TSS/h sin pulso y la app ahora las cuenta como estimadas.
+7. **Pon la fecha oficial de la Transvulcania 2027** en la ficha en cuanto salga.
+
+### Para la app (siguientes pasos técnicos)
+| Prioridad | Qué | Por qué |
+|---|---|---|
+| Alta | **"Añadir al cerebro" desde el chat** (diseño en curso: opción A, con tarjeta de confirmación). | Pediste que Miguel pueda guardar lo que le digas o le enlaces. |
+| Alta | **Restricciones médicas con fecha de caducidad** (p. ej. "2 semanas sin series"). | Deben bloquear planes y adaptaciones de inmediato, sin esperar 3 evidencias. |
+| Media | **Memoria de Miguel en Supabase** (m8). | Hoy vive solo en el navegador: móvil y ordenador tienen "cerebros" distintos y se pierde si borras los datos. |
+| Media | **Recortar el historial del chat** (m2): últimos N mensajes + resumen. | Coste y tiempo de respuesta crecen con cada mensaje (límite de 60 s en Vercel). |
+| Media | **Pasar las pantallas de fatiga al motor del día** (resto de P5). | Hoy ya no se contradicen en diagnóstico, pero siguen calculando su propia banda. |
+| Baja | Fecha real del hecho en la evidencia del chat (m4); verificación de cifras del `.md` por etiqueta (m5). | Precisión de la memoria y del historial. |
+| Baja | Aviso "sincroniza" si la última sincronización tiene más de 24 h. | Que Miguel no decida con datos de ayer. |

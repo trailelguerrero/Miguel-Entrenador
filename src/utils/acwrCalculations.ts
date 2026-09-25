@@ -125,13 +125,13 @@ export function getACWRZone(acwr: number): {
   } else {
     return {
       zone: 'danger_overtraining',
-      label: 'Zona de Peligro (> 1.50 - Sobreentrenamiento)',
+      label: 'Zona de Peligro (> 1.50)',
       color: 'text-rose-400',
       bgColor: 'bg-rose-500/10',
       borderColor: 'border-rose-500/30',
-      riskLevel: 'Riesgo Crítico de Sobreentrenamiento y Rotura',
+      riskLevel: 'Riesgo relativo de lesión más alto',
       injuryRiskPctFormatted: 'Muy elevado',
-      diagnosis: '¡Alerta Fisiológica Crítica! Has superado el umbral seguro de Tim Gabbett (ACWR > 1.50). Tu carga de los últimos 7 días supera en más de un 50 % a tu media de las últimas 4 semanas. Continuar con este ritmo conduce a Síndrome de Sobreentrenamiento (OTS) o lesión músculo-tendinosa.',
+      diagnosis: 'Tu carga de los últimos 7 días supera en más de un 50 % a tu media de las últimas 4 semanas: es el tramo con más riesgo relativo en los datos de Gabbett. Baja la carga hasta volver a la zona 0,8–1,3.',
     };
   }
 }

@@ -651,15 +651,22 @@ Tus células y tu sistema nervioso autónomo están pidiendo tregua. No fuerces 
 
       // Fechas de la semana (lunes..domingo) en hora local
       const sunday = addDaysKey(monday, 6);
-      const newWorkouts: Workout[] = plan.workouts.map((w, index) => {
-        const fallbackDate = addDaysKey(monday, Math.min(index, 6));
-        const date = w.date && w.date >= monday && w.date <= sunday ? w.date : fallbackDate;
-        return {
-          ...w,
-          id: `gen-${date}-${Date.now()}-${index}`,
-          date,
-          completed: false,
-        };
+      // Fechas fuera de la semana: se usa el día de su posición solo si está libre;
+      // si no, se descarta (antes se amontonaban varias sesiones en el domingo).
+      const usedDates = new Set(plan.workouts.map((w) => w.date).filter((d) => d && d >= monday && d <= sunday));
+      const droppedDates: string[] = [];
+      const newWorkouts: Workout[] = plan.workouts.flatMap((w, index) => {
+        let date = w.date;
+        if (!(date && date >= monday && date <= sunday)) {
+          const byPosition = index <= 6 ? addDaysKey(monday, index) : null;
+          if (!byPosition || usedDates.has(byPosition)) {
+            droppedDates.push(w.title || w.date || `sesión ${index + 1}`);
+            return [];
+          }
+          date = byPosition;
+          usedDates.add(date);
+        }
+        return [{ ...w, id: `gen-${date}-${Date.now()}-${index}`, date, completed: false }];
       });
 
       // Solo se sustituyen sesiones PLANIFICADAS sin completar de esos días.
@@ -675,9 +682,11 @@ Tus células y tu sistema nervioso autónomo están pidiendo tregua. No fuerces 
       // Resumen con la estructura REAL que ha devuelto Miguel
       const structure = analyzeWeekStructure(newWorkouts, monday);
       const structureLine = `Estructura: ${structure.midweekPlanned} sesiones entre semana + tirada larga ${structure.longRunDay ? `el ${structure.longRunDay}` : '(no planificada)'}.`;
-      const notesLine = plan.validationNotes?.length
-        ? `\n\nCorrecciones automáticas del sistema: ${plan.validationNotes.join(' ')}`
-        : '';
+      const allNotes = [
+        ...(plan.validationNotes || []),
+        ...(droppedDates.length ? [`Sesiones sin fecha válida descartadas: ${droppedDates.join(', ')}.`] : []),
+      ];
+      const notesLine = allNotes.length ? `\n\nCorrecciones automáticas del sistema: ${allNotes.join(' ')}` : '';
       const warningLine = structure.issues.length
         ? `\n\n⚠️ El plan generado no cumple la regla 3 (o 2) + tirada larga: ${structure.issues.join('; ')}. Revísalo o vuelve a generarlo.`
         : '';

@@ -98,7 +98,7 @@ export const PeriodizationView: React.FC<PeriodizationViewProps> = ({
     const declaredElevation = Number(newRaceElevation) > 0 ? Number(newRaceElevation) : undefined;
     let info: RaceInfoResult | null = null;
     try {
-      info = await ApiService.getRaceInfo(newRaceName, newRaceDate, declaredDistance);
+      info = await ApiService.getRaceInfo(newRaceName, newRaceDate, declaredDistance, targetRace);
     } catch (err: any) {
       // El banner "Error de API de IA" ya muestra el detalle; la carrera se guarda solo con tus datos
       console.error('Error al buscar información de la carrera:', err);
@@ -164,7 +164,7 @@ export const PeriodizationView: React.FC<PeriodizationViewProps> = ({
             <span className="px-3 py-1 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 text-xs font-black uppercase tracking-wider">
               Objetivo Principal (Prioridad A)
             </span>
-            <span className="text-xs text-zinc-400 font-semibold">{targetRace.date}</span>
+            <span className="text-xs text-zinc-400 font-semibold">{targetRace.date}{targetRace.dateConfirmed === false ? ' (por confirmar)' : ''}</span>
           </div>
 
           <h2 className="text-2xl sm:text-3xl font-black text-zinc-100 tracking-tight">

@@ -422,7 +422,9 @@ export const NutritionCalculator: React.FC<NutritionCalculatorProps> = ({
             />
             <div className="flex justify-between text-[10px] text-stone-500 font-mono mt-1">
               <span>30g (Base)</span>
-              <span className="text-amber-400 font-bold">Actual: {gutProfile.currentMaxCarbsPerHour}g</span>
+              <span className="text-amber-400 font-bold">
+                {gutProfile.currentMaxCarbsPerHour ? `Tu tolerancia: ${gutProfile.currentMaxCarbsPerHour}g` : 'Sin tolerancia registrada: valor general, no tuyo'}
+              </span>
               <span>90g (Élite)</span>
             </div>
           </div>
