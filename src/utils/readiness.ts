@@ -58,7 +58,10 @@ export function computeReadiness(input: {
  * Recalcula un check-in de Suunto contra la HRV de referencia del perfil, para
  * que el semáforo, las gráficas y la ficha usen siempre la MISMA referencia.
  */
-export function rebaseSuuntoCheckIn(ci: DailyCheckIn, hrvBaseline: number): DailyCheckIn {
+export function rebaseSuuntoCheckIn(ci: DailyCheckIn, profileBaseline: number): DailyCheckIn {
+  // Sin referencia en el perfil se usa la que trae el check-in (se recalcula igual el
+  // semáforo, por si se le han añadido tu dolor o tu estrés)
+  const hrvBaseline = profileBaseline > 0 ? profileBaseline : ci.hrvBaseline;
   if (!(hrvBaseline > 0) || ci.source !== 'suunto') return ci;
   const r = computeReadiness({ hrvRmssd: ci.hrvRmssd, hrvBaseline, sleepHours: ci.sleepHours, muscleSoreness: ci.muscleSoreness, stressLevel: ci.stressLevel });
   const balance = ci.coachAdvice.match(/ Recovery Suunto del día: \d+%\./)?.[0] ?? '';

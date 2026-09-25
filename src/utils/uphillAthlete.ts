@@ -1,4 +1,4 @@
-import { StrengthExercise } from '../types';
+import type { StrengthExercise } from '../types/index.js';
 
 /**
  * Uphill Athlete Methodology Utilities
@@ -41,31 +41,43 @@ export function calculateHeartRateDrift(
 
   drift = Math.round(drift * 10) / 10;
 
+  // Interpretación del manual Uphill Athlete: la deriva dice si la FC del test
+  // estaba por debajo, en o por encima de tu AeT. NO diagnostica ADS (eso sale de
+  // la diferencia entre AeT y AnT: checkAerobicDeficiency).
   if (drift < 3.5) {
     return {
       driftPercentage: drift,
       hasAds: false,
-      statusText: 'Base aeróbica excelente (< 3.5%)',
-      interpretation: 'Tu ritmo cardíaco se mantuvo perfectamente estable. Tu umbral aeróbico (AeT) medido es tu verdadero AeT.',
-      recommendation: 'Puedes entrenar a estas pulsaciones con total confianza y comenzar a introducir trabajo específico de Muscular Endurance (ME) sin riesgo de sobreentrenamiento aeróbico.'
+      statusText: 'Deriva < 3,5 %: hiciste el test por debajo de tu AeT',
+      interpretation: 'Tu FC apenas subió: la FC de la primera mitad está por debajo de tu umbral aeróbico. Tu AeT es esa FC o algo más alta.',
+      recommendation: 'Puedes entrenar tu base a esa FC con seguridad. Para afinar, repite el test unas 5 ppm más alto.',
     };
   } else if (drift <= 5.0) {
     return {
       driftPercentage: drift,
       hasAds: false,
-      statusText: 'Base aeróbica bien calibrada (3.5% - 5.0%)',
-      interpretation: 'La deriva cardíaca está dentro del margen fisiológico normal aceptado por el manual Uphill Athlete.',
-      recommendation: 'Este rango de pulsaciones representa con precisión tu AeT. Mantén el 85-90% de tus salidas por debajo de este valor.'
-    };
-  } else {
-    return {
-      driftPercentage: drift,
-      hasAds: true,
-      statusText: 'Deriva elevada (> 5%) - Síndrome de Deficiencia Aeróbica (ADS)',
-      interpretation: `Deriva del ${drift}%. Tus fibras de contracción lenta no son capaces de soportar 60 minutos de trabajo continuo sin reclutar fibras anaeróbicas y fatigarse prematuramente.`,
-      recommendation: 'Debes bajar tu frecuencia cardíaca de entrenamiento 5 a 10 ppm por debajo de este test. Es crucial realizar varias semanas de volumen estricto en Zona 1 y Zona 2 baja antes de añadir intensidad.'
+      statusText: 'Deriva 3,5–5 %: la FC del test es tu AeT',
+      interpretation: 'La deriva está en el margen que el manual Uphill Athlete considera tu umbral aeróbico: la FC media de la primera mitad es tu AeT.',
+      recommendation: 'Usa esa FC como tope de tus rodajes de base cuando no lleves banda de pecho.',
     };
   }
+  return {
+    driftPercentage: drift,
+    hasAds: false,
+    statusText: 'Deriva > 5 %: hiciste el test por encima de tu AeT',
+    interpretation: `Deriva del ${drift} %: la FC de la primera mitad estaba por encima de tu umbral aeróbico, así que tu AeT es más bajo. Esto no significa por sí solo que tengas ADS.`,
+    recommendation: 'Repite el test otro día unas 5–10 ppm más bajo. Mientras tanto, entrena la base por debajo de esa FC.',
+  };
+}
+
+/**
+ * Regla ÚNICA de ADS de la app (ficha, guía, test y Suunto la usan): con AeT y
+ * AnT medidos, ADS si el AeT está más de un 10 % por debajo del AnT (criterio
+ * de Uphill Athlete). Sin los dos umbrales → null (no se puede saber).
+ */
+export function hasAerobicDeficiency(aetHr: number | null | undefined, antHr: number | null | undefined): boolean | null {
+  if (!(typeof aetHr === 'number' && aetHr > 0 && typeof antHr === 'number' && antHr > aetHr)) return null;
+  return (antHr - aetHr) / antHr > 0.1;
 }
 
 /**
@@ -80,8 +92,8 @@ export function checkAerobicDeficiency(aetHr: number, antHr: number): {
   message: string;
 } {
   const spreadBpm = antHr - aetHr;
-  const spreadPercentage = Math.round((spreadBpm / antHr) * 1000) / 10;
-  const hasAds = spreadPercentage > 10 || spreadBpm > 20;
+  const spreadPercentage = antHr > 0 ? Math.round((spreadBpm / antHr) * 1000) / 10 : 0;
+  const hasAds = hasAerobicDeficiency(aetHr, antHr) === true;
 
   let message = '';
   if (hasAds) {

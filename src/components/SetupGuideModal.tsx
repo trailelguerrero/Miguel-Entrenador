@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { hasAerobicDeficiency } from '../utils/uphillAthlete';
 import { 
   X, 
   CheckCircle, 
@@ -167,7 +168,7 @@ export const SetupGuideModal: React.FC<SetupGuideModalProps> = ({
   const heightM = heightCm / 100;
   const currentBmi = weightKg > 0 && heightM > 0 ? (weightKg / (heightM * heightM)).toFixed(1) : '—';
   const weightDiff = Number((weightKg - targetRaceWeightKg).toFixed(1));
-  const hasAdsCalculated = (antHr - aetHr) > 20 || ((antHr - aetHr) / antHr) > 0.1;
+  const hasAdsCalculated = hasAerobicDeficiency(aetHr, antHr) === true;
 
   const toggleJoint = (joint: string) => {
     setSelectedJoints(prev => 
@@ -776,7 +777,7 @@ export const SetupGuideModal: React.FC<SetupGuideModalProps> = ({
 
                 {weightDiff > 0 && (
                   <p className="text-[11px] text-zinc-400 leading-relaxed">
-                    Perder esos <strong className="text-amber-400">{weightDiff} kg</strong> de forma progresiva reducirá en <strong>~{Math.round(weightDiff * 9.81 * 4.35 / 0.23)} kcal</strong> el coste energético en los +4.350m de Transvulcania y ahorrará cientos de toneladas de impacto excéntrico sobre tus rodillas.
+                    Perder esos <strong className="text-amber-400">{weightDiff} kg</strong> de forma progresiva (300–400 g/semana, sin déficits severos) reduce el trabajo en los +4.350 m de la Transvulcania. La app no da cifras de kcal ahorradas: no hay un dato validado para ti.
                   </p>
                 )}
               </div>

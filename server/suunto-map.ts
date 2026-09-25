@@ -28,6 +28,8 @@ export interface SuuntoWorkoutRow {
   zoneSenseAerobicThreshold?: number | null;
   zoneSenseAnaerobicThreshold?: number | null;
   vo2Max?: number | null;
+  /** Actividad añadida a mano en la app de Suunto (sin reloj ni FC). */
+  isManuallyAdded?: boolean | null;
 }
 
 /** Fila de la tool `suunto_get_sleep`. */
@@ -52,7 +54,8 @@ export interface SuuntoRecoveryDay {
 // esta cuenta: 1 = carrera, 10 = bici de montaña, 51 = pilates. El resto son
 // los ids estándar de Suunto; cualquier id no listado cae en 'cross_training'.
 const RUNNING_IDS = new Set([1, 22]); // carrera, trail running
-const STRENGTH_IDS = new Set([20, 23, 51]); // gimnasio exterior, gimnasio, pilates
+// 51 y 120: pilates; 73: entrenamiento funcional (confirmados con las descripciones de esta cuenta)
+const STRENGTH_IDS = new Set([20, 23, 51, 73, 120]); // gimnasio exterior, gimnasio, pilates, funcional
 
 const SPORT_NAMES: Record<number, string> = {
   0: 'Caminata',
@@ -65,6 +68,8 @@ const SPORT_NAMES: Record<number, string> = {
   23: 'Gimnasio',
   24: 'Marcha nórdica',
   51: 'Pilates',
+  73: 'Entrenamiento funcional',
+  120: 'Pilates',
 };
 
 function round(n: number, decimals = 0): number {
@@ -107,7 +112,10 @@ export function mapSuuntoWorkouts(rows: SuuntoWorkoutRow[]): Workout[] {
       type,
       plannedDurationMin: durationMin,
       // Sin objetivo de intensidad: es una actividad ya hecha, no una sesión planificada
-      description: `Actividad importada de Suunto (${sport}).`,
+      description: row.isManuallyAdded
+        ? `Actividad añadida a mano en Suunto (${sport}): sin FC; su TSS es el valor fijo que asigna Suunto, no una medida.`
+        : `Actividad importada de Suunto (${sport}).`,
+      ...(row.isManuallyAdded ? { suuntoManualEntry: true } : {}),
       mainSet: '',
       completed: true,
       actualDurationMin: durationMin,

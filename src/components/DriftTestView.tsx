@@ -17,8 +17,7 @@ import {
   calculateHeartRateDrift, 
   checkAerobicDeficiency, 
   UPHILL_ATHLETE_OUTDOOR_EXERCISES,
-  DriftTestResult 
-} from '../utils/uphillAthlete';
+  DriftTestResult, hasAerobicDeficiency } from '../utils/uphillAthlete';
 
 interface DriftTestViewProps {
   profile: AthleteProfile;
@@ -30,8 +29,9 @@ export const DriftTestView: React.FC<DriftTestViewProps> = ({
   onUpdateProfile,
 }) => {
   // Drift test inputs
-  const [hrFirstHalf, setHrFirstHalf] = useState<number>(profile.aetHr ? profile.aetHr - 3 : 139);
-  const [hrSecondHalf, setHrSecondHalf] = useState<number>(profile.aetHr ? profile.aetHr + 4 : 146);
+  // Vacíos hasta que escribas las FC de TU test (antes venían rellenos con cifras de ejemplo)
+  const [hrFirstHalf, setHrFirstHalf] = useState<number>(0);
+  const [hrSecondHalf, setHrSecondHalf] = useState<number>(0);
   const [driftResult, setDriftResult] = useState<DriftTestResult | null>(null);
 
   // Umbrales manuales
@@ -39,8 +39,13 @@ export const DriftTestView: React.FC<DriftTestViewProps> = ({
   const [antInput, setAntInput] = useState<number>(profile.antHr);
 
   const adsDiagnostic = checkAerobicDeficiency(aetInput, antInput);
+  const adsKnown = hasAerobicDeficiency(aetInput, antInput) != null;
 
   const handleCalculateDrift = () => {
+    if (!(hrFirstHalf > 0 && hrSecondHalf > 0)) {
+      alert('Escribe la FC media de cada mitad de tu test (la ves en la App de Suunto dividiendo el entreno en dos).');
+      return;
+    }
     const res = calculateHeartRateDrift(hrFirstHalf, hrSecondHalf);
     setDriftResult(res);
   };
@@ -48,21 +53,27 @@ export const DriftTestView: React.FC<DriftTestViewProps> = ({
   const handleApplyDriftToProfile = () => {
     if (!driftResult) return;
 
-    let newAet = profile.aetHr;
-    if (driftResult.driftPercentage > 5.0) {
-      // Recommend dropping AeT by 5 bpm
-      newAet = Math.max(120, profile.aetHr - 5);
-    }
+    // Manual Uphill Athlete: con deriva ≤ 5 % la FC de la primera mitad es tu AeT
+    // (o un mínimo si < 3,5 %). Con > 5 % el test estuvo por encima: el AeT es más
+    // bajo pero no se sabe cuánto, así que no se inventa ninguna cifra.
+    const testHr = Math.round(hrFirstHalf);
+    const aetKnown = driftResult.driftPercentage <= 5.0 && testHr > 0;
+    const newAet = aetKnown ? testHr : profile.aetHr;
+    const ads = aetKnown ? hasAerobicDeficiency(newAet, profile.antHr) : null;
 
     const updated: AthleteProfile = {
       ...profile,
       aetHr: newAet,
-      hasAds: driftResult.hasAds,
+      ...(ads != null ? { hasAds: ads } : {}),
       driftTestResultPct: driftResult.driftPercentage,
     };
 
     onUpdateProfile(updated);
-    alert(`Test guardado en tu perfil. Umbral AeT calibrado a ${newAet} bpm.`);
+    alert(
+      aetKnown
+        ? `Test guardado. Umbral aeróbico (AeT) = ${newAet} ppm${driftResult.driftPercentage < 3.5 ? ' (como mínimo: repite el test algo más alto para afinarlo)' : ''}.`
+        : `Test guardado (deriva ${driftResult.driftPercentage} %). Tu AeT está por debajo de ${testHr} ppm: repite el test 5–10 ppm más bajo. No se cambia tu AeT.`,
+    );
   };
 
   const handleSaveThresholds = () => {
@@ -123,7 +134,8 @@ export const DriftTestView: React.FC<DriftTestViewProps> = ({
               <label className="text-xs text-zinc-400 font-medium">FC Media 1ª Mitad (bpm)</label>
               <input
                 type="number"
-                value={hrFirstHalf}
+                value={hrFirstHalf || ''}
+                placeholder="ppm"
                 onChange={(e) => setHrFirstHalf(Number(e.target.value))}
                 className="w-full mt-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100 font-bold"
               />
@@ -133,7 +145,8 @@ export const DriftTestView: React.FC<DriftTestViewProps> = ({
               <label className="text-xs text-zinc-400 font-medium">FC Media 2ª Mitad (bpm)</label>
               <input
                 type="number"
-                value={hrSecondHalf}
+                value={hrSecondHalf || ''}
+                placeholder="ppm"
                 onChange={(e) => setHrSecondHalf(Number(e.target.value))}
                 className="w-full mt-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100 font-bold"
               />
@@ -216,7 +229,9 @@ export const DriftTestView: React.FC<DriftTestViewProps> = ({
 
           {/* Diagnostic Result */}
           <div className={`p-5 rounded-2xl border space-y-2 ${
-            adsDiagnostic.hasAds
+            !adsKnown
+              ? 'bg-zinc-900/40 border-zinc-700 text-zinc-300'
+              : adsDiagnostic.hasAds
               ? 'bg-amber-950/20 border-amber-800/40 text-amber-200'
               : 'bg-emerald-950/20 border-emerald-800/40 text-emerald-200'
           }`}>
@@ -227,10 +242,12 @@ export const DriftTestView: React.FC<DriftTestViewProps> = ({
                 <CheckCircle2 className="w-5 h-5 text-emerald-400" />
               )}
               <span className="text-sm font-bold">
-                {adsDiagnostic.hasAds ? 'ADS Detectado' : 'Motor Aeróbico Equilibrado'}
+                {!adsKnown ? 'Sin diagnóstico' : adsDiagnostic.hasAds ? 'ADS Detectado' : 'Motor Aeróbico Equilibrado'}
               </span>
             </div>
-            <p className="text-xs opacity-90 leading-relaxed">{adsDiagnostic.message}</p>
+            <p className="text-xs opacity-90 leading-relaxed">
+              {adsKnown ? adsDiagnostic.message : 'Hacen falta tu AeT y tu AnT medidos (test de deriva, test de umbral o ZoneSense) para saber si tienes ADS.'}
+            </p>
           </div>
         </div>
 

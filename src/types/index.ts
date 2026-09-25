@@ -102,6 +102,8 @@ export interface Workout {
 
   // Sincronización con Suunto: workoutKey de Suunto, para no importar dos veces la misma actividad
   suuntoWorkoutKey?: string;
+  /** Añadido a mano en la app de Suunto (sin pulsómetro): su TSS es un valor fijo de Suunto, no medido. */
+  suuntoManualEntry?: boolean;
 }
 
 export interface WorkoutFuelingGuideline {
@@ -571,6 +573,12 @@ export type SuuntoProfileValues = Partial<Pick<AthleteProfile, SuuntoProfileFiel
 export interface SuuntoProfileSuggestion {
   values: SuuntoProfileValues;
   evidence: Partial<Record<SuuntoProfileField, string>>;
+  /**
+   * Campos que Suunto rellenó antes y que ya no se pueden deducir de forma fiable
+   * (p. ej. umbrales sacados de las zonas de fábrica del reloj): se vacían si
+   * siguen siendo de Suunto. Los que el atleta puso a mano no se tocan.
+   */
+  cleared?: SuuntoProfileField[];
 }
 
 // 5. Performance Summary & Mesocycle Progression Types
@@ -638,6 +646,8 @@ export interface DailyCheckIn {
   coachAdvice: string;
   suggestedAction?: 'maintain' | 'downgrade_easy' | 'full_rest' | 'swap_with_rest';
   source?: 'suunto'; // presente si el check-in viene de la sincronización con Suunto
+  /** Check-in de ejemplo (modo prueba): se borra al salir del modo prueba. */
+  isSample?: boolean;
 }
 
 export interface Mesocycle {

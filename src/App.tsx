@@ -5,6 +5,7 @@ import { localDateKey } from './utils/trainingLoad';
 import { buildBrainContext, summarizeWeekWorkouts } from './brain/context';
 import { addPending, isAppliedRule } from './brain/memory';
 import { Navbar } from './components/Navbar';
+import { SuuntoSyncBar } from './components/SuuntoSyncBar';
 import { MorningBanner } from './components/MorningBanner';
 import { CalendarView } from './components/CalendarView';
 import { CoachChat } from './components/CoachChat';
@@ -536,6 +537,7 @@ Tus células y tu sistema nervioso autónomo están pidiendo tregua. No fuerces 
     if (isTestDataActive) {
       setIsClearDataModalOpen(true);
     } else {
+      if (!confirm('¿Cargar datos de ejemplo?\n\nSe AÑADEN entrenos, check-ins y registros ficticios para probar la app; tus datos se conservan. Mientras estén cargados, CTL/ATL/TSB y las gráficas mezclan datos de ejemplo. Al sincronizar Suunto o quitar la prueba se eliminan.')) return;
       StorageService.loadFullTestData();
       setWorkouts(StorageService.getWorkouts());
       setTodayCheckIn(StorageService.getTodayCheckIn());
@@ -858,6 +860,9 @@ ${structureLine} Ya puedes ver los entrenamientos en tu calendario.${warningLine
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-24 md:pb-6 space-y-6">
         
+        {/* Sincronizar con Suunto desde la pantalla principal (o conectarlo) */}
+        <SuuntoSyncBar config={suuntoConfig} isSyncing={isSyncingSuunto} onSync={() => void handleSyncSuunto()} />
+
         {/* Morning Readiness & Fatigue Warning Banner */}
         <MorningBanner
           checkIn={todayCheckIn}

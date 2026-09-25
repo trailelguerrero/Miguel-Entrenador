@@ -3,6 +3,7 @@
 // Suunto no expone peso, altura ni edad, así que esos siguen siendo manuales.
 import type { SuuntoProfileField, SuuntoProfileSuggestion } from '../src/types/index.js';
 import type { SuuntoSleepSession, SuuntoWorkoutRow } from './suunto-map.js';
+import { hasAerobicDeficiency } from '../src/utils/uphillAthlete.js';
 
 const DAY_MS = 24 * 3600 * 1000;
 const RUNNING_IDS = new Set([1, 22]); // carrera, trail running
@@ -29,6 +30,24 @@ function weekKey(w: SuuntoWorkoutRow): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** Porcentajes de FC máx de las zonas de FÁBRICA de Suunto (inicio de Z2, Z3, Z4 y Z5). */
+export const SUUNTO_DEFAULT_ZONE_PCT = { z2: 0.72, z3: 0.77, z4: 0.82, z5: 0.87 } as const;
+
+/**
+ * ¿Son las zonas de fábrica del reloj (un % fijo de la FC máx)? Entonces Z3 y Z5 no
+ * son umbrales medidos: son una fórmula genérica y no se pueden usar como AeT/AnT.
+ */
+export function isDefaultSuuntoZones(
+  zones: { z2: number | null; z3: number | null; z4: number | null; z5: number | null } | null | undefined,
+  maxHr: number | null | undefined,
+): boolean {
+  if (!zones || !validHr(maxHr)) return false;
+  return (Object.keys(SUUNTO_DEFAULT_ZONE_PCT) as (keyof typeof SUUNTO_DEFAULT_ZONE_PCT)[]).every((k) => {
+    const v = zones[k];
+    return validHr(v) && Math.abs(v - maxHr * SUUNTO_DEFAULT_ZONE_PCT[k]) <= 1;
+  });
+}
+
 export function deriveProfileFromSuunto(
   workouts: SuuntoWorkoutRow[],
   sleep: SuuntoSleepSession[],
@@ -36,6 +55,7 @@ export function deriveProfileFromSuunto(
 ): SuuntoProfileSuggestion {
   const values: SuuntoProfileSuggestion['values'] = {};
   const evidence: Partial<Record<SuuntoProfileField, string>> = {};
+  const cleared: SuuntoProfileField[] = [];
   const recentFirst = [...workouts].sort((a, b) => b.startTime - a.startTime);
 
   // FC máxima: la configurada en el reloj; si no, la mayor registrada.
@@ -59,9 +79,15 @@ export function deriveProfileFromSuunto(
   const zones = recentFirst.find(
     (w) => RUNNING_IDS.has(w.activityId ?? -1) && w.hrZoneLowerLimits && validHr(w.hrZoneLowerLimits.z3),
   )?.hrZoneLowerLimits;
+  const runMax = recentFirst.find((w) => RUNNING_IDS.has(w.activityId ?? -1) && validHr(w.userMaxHR))?.userMaxHR ?? values.maxHr;
+  // Zonas de fábrica = % fijo de la FC máx: NO son umbrales medidos. No se usan como
+  // AeT/AnT ni para diagnosticar ADS (con esos % la diferencia siempre sale > 10 %).
+  const factoryZones = isDefaultSuuntoZones(zones, runMax);
   if (validHr(zsAet)) {
     values.aetHr = Math.round(zsAet);
     evidence.aetHr = 'FC del umbral aeróbico según Suunto ZoneSense.';
+  } else if (factoryZones) {
+    cleared.push('aetHr');
   } else if (zones && validHr(zones.z3)) {
     values.aetHr = zones.z3;
     evidence.aetHr = `Inicio de tu Zona 3 de FC para carrera en Suunto (${zones.z3} bpm).`;
@@ -69,15 +95,23 @@ export function deriveProfileFromSuunto(
   if (validHr(zsAnt)) {
     values.antHr = Math.round(zsAnt);
     evidence.antHr = 'FC del umbral anaeróbico según Suunto ZoneSense.';
+  } else if (factoryZones) {
+    cleared.push('antHr');
   } else if (zones && validHr(zones.z5)) {
     values.antHr = zones.z5;
     evidence.antHr = `Inicio de tu Zona 5 de FC para carrera en Suunto (${zones.z5} bpm).`;
   }
+  if (factoryZones) {
+    const why = `Tus zonas de FC de carrera en Suunto son las de fábrica (${Object.values(SUUNTO_DEFAULT_ZONE_PCT).map((x) => `${Math.round(x * 100)} %`).join(', ')} de tu FC máx ${runMax}): no son un umbral medido. Haz el test de deriva de 60 min o usa ZoneSense con banda de pecho.`;
+    if (!values.aetHr) evidence.aetHr = why;
+    if (!values.antHr) evidence.antHr = why;
+  }
+  if (factoryZones && !values.aetHr) cleared.push('hasAds');
   if (values.aetHr && values.antHr && values.antHr > values.aetHr) {
     const spread = values.antHr - values.aetHr;
-    // Misma regla que la ficha del atleta (AthleteProfileModal)
-    values.hasAds = spread > 20 || spread / values.antHr > 0.1;
-    evidence.hasAds = `Diferencia AeT–AnT de ${spread} bpm (${Math.round((spread / values.antHr) * 100)}%). ADS si > 20 bpm o > 10%.`;
+    // Misma regla que la ficha, la guía y el test (hasAerobicDeficiency)
+    values.hasAds = hasAerobicDeficiency(values.aetHr, values.antHr) === true;
+    evidence.hasAds = `Diferencia AeT–AnT de ${spread} bpm (${Math.round((spread / values.antHr) * 100)}%). ADS si el AeT está más de un 10 % por debajo del AnT.`;
   }
 
   // Sueño: FC en reposo (mediana de la FC mínima nocturna) y HRV de referencia.
@@ -133,5 +167,5 @@ export function deriveProfileFromSuunto(
     evidence.preferredLongRunDay = `Tu carrera más larga de la semana cayó en sábado ${times(sat)} y en domingo ${times(sun)} (últimos 90 días).`;
   }
 
-  return { values, evidence };
+  return cleared.length ? { values, evidence, cleared } : { values, evidence };
 }

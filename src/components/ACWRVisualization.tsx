@@ -339,7 +339,7 @@ export const ACWRVisualization: React.FC<ACWRVisualizationProps> = ({
               {summary.zoneLabel}
             </span>
             <div className="text-[11px] text-zinc-400 font-medium">
-              Probabilidad de lesión/fatiga: <strong className={summary.zoneColor}>{summary.injuryRiskPctFormatted}</strong>
+              Riesgo relativo (orientativo, sin % validado para ti): <strong className={summary.zoneColor}>{summary.injuryRiskPctFormatted}</strong>
             </div>
           </div>
         </div>

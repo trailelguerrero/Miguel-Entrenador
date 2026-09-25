@@ -18,6 +18,7 @@
 //   4 semanas y ≥ 4 en las 4 anteriores; la mediana de AMBOS periodos debe
 //   separarse del valor del reloj en el mismo sentido y ≥ 3 ppm.
 import type { SuuntoWorkoutRow } from './suunto-map.js';
+import { isDefaultSuuntoZones } from './suunto-profile.js';
 import type { WatchZoneAdvice, WatchZoneRecommendation } from '../src/types/index.js';
 
 const DAY_MS = 24 * 3600 * 1000;
@@ -100,6 +101,10 @@ export function computeWatchZoneAdvice(rows: SuuntoWorkoutRow[], now = Date.now(
           .join(', ')}). No es una tendencia todavía (hacen falta ≥ 3 en ≥ 2 semanas).`,
       );
     }
+  }
+
+  if (isDefaultSuuntoZones(zones, watchMax)) {
+    notes.push('Las zonas de FC de carrera del reloj son las de fábrica (un % fijo de la FC máx): no son umbrales medidos, así que no des pulsaciones como si lo fueran.');
   }
 
   // 2. Umbrales ZoneSense frente a las zonas del reloj (Z3 = umbral aeróbico, Z5 = anaeróbico)

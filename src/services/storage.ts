@@ -64,6 +64,13 @@ const STORAGE_KEYS = {
 };
 
 // Initial target race as specified by user: Transvulcania 2027
+/** Deporte de una sesión, para saber si un entreno de Suunto completa lo planificado. */
+export function sportGroup(type: Workout['type'] | undefined): 'run' | 'strength' | 'other' {
+  if (type === 'strength_core') return 'strength';
+  if (type === 'easy_run' || type === 'long_mountain_run' || type === 'muscular_endurance' || type === 'hill_intervals' || type === 'drift_test') return 'run';
+  return 'other';
+}
+
 export const DEFAULT_TARGET_RACE: TargetRace = {
   id: 'transvulcania-2027',
   name: 'Transvulcania Ultramarathon 2027',
@@ -480,6 +487,7 @@ export const StorageService = {
       actualMaxHr: sw.actualMaxHr,
       actualTss: sw.actualTss,
       tss: sw.tss,
+      suuntoManualEntry: sw.suuntoManualEntry,
     });
 
     for (const sw of suuntoWorkouts) {
@@ -494,8 +502,10 @@ export const StorageService = {
         if (existing.id === `suunto-${sw.suuntoWorkoutKey}`) existing.zoneSenseTarget = undefined;
         continue;
       }
+      // Solo completa la sesión planificada de ese día si es del mismo deporte:
+      // un pilates o una salida en bici no cuentan como las series que tocaban.
       const planned = workouts.find(
-        (w) => w.date === sw.date && !w.completed && !w.suuntoWorkoutKey && w.type !== 'rest',
+        (w) => w.date === sw.date && !w.completed && !w.suuntoWorkoutKey && w.type !== 'rest' && sportGroup(w.type) === sportGroup(sw.type),
       );
       if (planned) {
         Object.assign(planned, measured(sw), {
@@ -525,12 +535,13 @@ export const StorageService = {
     // Todos los check-ins de Suunto contra la HRV de referencia del perfil
     const profileBaseline = this.getProfile().baselineHrv || 0;
     for (const rawCi of suuntoCheckIns) {
-      const ci = rebaseSuuntoCheckIn(rawCi, profileBaseline);
-      const existing = byDate.get(ci.date);
-      if (!existing || existing.source === 'suunto' || testDataActive) {
-        if (!existing) checkInsAdded++;
-        byDate.set(ci.date, ci);
-      }
+      const existing = byDate.get(rawCi.date);
+      // Lo MEDIDO (HRV, sueño, FC mínima, Recovery) lo pone Suunto, también si ese día ya
+      // había un check-in manual; lo que solo sabes tú (dolor y estrés) se conserva.
+      const subjective = existing && !testDataActive ? { muscleSoreness: existing.muscleSoreness, stressLevel: existing.stressLevel } : {};
+      const ci = rebaseSuuntoCheckIn({ ...rawCi, ...subjective }, profileBaseline);
+      if (!existing) checkInsAdded++;
+      byDate.set(ci.date, ci);
     }
     const merged = [...byDate.values()].sort((a, b) => b.date.localeCompare(a.date));
     localStorage.setItem(STORAGE_KEYS.DAILY_CHECKINS, JSON.stringify(merged));
@@ -986,15 +997,27 @@ Puedes revisar tus umbrales (AeT y AnT) en tu perfil, registrar tu test de deriv
     return { userWorkouts, sampleWorkouts, userWeights };
   },
 
+  /**
+   * Añade los datos de ejemplo SIN borrar los tuyos (antes los sustituía: se perdían
+   * entrenos, check-ins, peso, gut training e hidratación reales).
+   */
   loadFullTestData(): void {
-    this.saveWorkouts(SAMPLE_TEST_WORKOUTS);
-    this.saveGutProfile(SAMPLE_GUT_PROFILE);
-    this.saveWeightHistory(SAMPLE_WEIGHT_HISTORY);
-    this.saveWeeklySummaries(SAMPLE_WEEKLY_SUMMARIES);
-    this.saveMesocycleProgression(SAMPLE_MESOCYCLE_PROGRESSION);
-    this.saveHydrationTests(SAMPLE_HYDRATION_TESTS);
-    this.saveWUTCheck(SAMPLE_WUT_CHECK);
-    localStorage.setItem(STORAGE_KEYS.DAILY_CHECKINS, JSON.stringify(SAMPLE_DAILY_CHECKINS));
+    const has = (key: string) => localStorage.getItem(key) !== null;
+    const sampleIds = new Set(SAMPLE_TEST_WORKOUTS.map((w) => w.id));
+    this.saveWorkouts([...this.getWorkouts().filter((w) => !sampleIds.has(w.id)), ...SAMPLE_TEST_WORKOUTS]);
+    if (!has(STORAGE_KEYS.GUT_PROFILE)) this.saveGutProfile(SAMPLE_GUT_PROFILE);
+    const sampleWeightIds = new Set(SAMPLE_WEIGHT_HISTORY.map((e) => e.id));
+    this.saveWeightHistory([...this.getWeightHistory().filter((e) => !sampleWeightIds.has(e.id)), ...SAMPLE_WEIGHT_HISTORY]);
+    if (!has(STORAGE_KEYS.WEEKLY_SUMMARIES)) this.saveWeeklySummaries(SAMPLE_WEEKLY_SUMMARIES);
+    if (!has(STORAGE_KEYS.MESOCYCLE_PROGRESSION)) this.saveMesocycleProgression(SAMPLE_MESOCYCLE_PROGRESSION);
+    const sampleHydrationIds = new Set(SAMPLE_HYDRATION_TESTS.map((t) => t.id));
+    this.saveHydrationTests([...this.getHydrationTests().filter((t) => !sampleHydrationIds.has(t.id)), ...SAMPLE_HYDRATION_TESTS]);
+    if (!has(STORAGE_KEYS.WUT_CHECKS)) this.saveWUTCheck(SAMPLE_WUT_CHECK);
+    // Check-ins de ejemplo solo en los días sin check-in tuyo, y marcados para poder quitarlos
+    const real = this.getCheckIns().filter((c) => !c.isSample);
+    const realDates = new Set(real.map((c) => c.date));
+    const samples = SAMPLE_DAILY_CHECKINS.filter((c) => !realDates.has(c.date)).map((c) => ({ ...c, isSample: true }));
+    localStorage.setItem(STORAGE_KEYS.DAILY_CHECKINS, JSON.stringify([...real, ...samples].sort((a, b) => b.date.localeCompare(a.date))));
     this.setTestDataActive(true);
   },
 
@@ -1018,10 +1041,30 @@ Puedes revisar tus umbrales (AeT y AnT) en tu perfil, registrar tu test de deriv
     const userHydrationTests = this.getHydrationTests().filter(t => !sampleHydrationIds.has(t.id));
     this.saveHydrationTests(userHydrationTests);
 
-    // Keep today's checkin if recorded by athlete
+    // Se quitan solo los check-ins de ejemplo. Los tuyos (manuales y de Suunto) se
+    // conservan todos (antes se borraba todo salvo el de hoy).
+    const all = this.getCheckIns();
+    const marked = all.some((c) => c.isSample);
     const today = localDateKey();
-    const userCheckIns = this.getCheckIns().filter(c => c.date === today);
+    const userCheckIns = marked
+      ? all.filter((c) => !c.isSample)
+      : // Datos de prueba cargados con una versión anterior (sin marca): se conservan los
+        // de Suunto y el de hoy; el resto no se puede distinguir de los de ejemplo.
+        all.filter((c) => c.source === 'suunto' || c.date === today);
     localStorage.setItem(STORAGE_KEYS.DAILY_CHECKINS, JSON.stringify(userCheckIns));
+    // Gut training de ejemplo: fuera si no lo has cambiado
+    if (localStorage.getItem(STORAGE_KEYS.GUT_PROFILE) === JSON.stringify(SAMPLE_GUT_PROFILE)) localStorage.removeItem(STORAGE_KEYS.GUT_PROFILE);
+    // Resto de registros de ejemplo que no has cambiado
+    const sameAsSample: [string, unknown][] = [
+      [STORAGE_KEYS.WEEKLY_SUMMARIES, SAMPLE_WEEKLY_SUMMARIES],
+      [STORAGE_KEYS.MESOCYCLE_PROGRESSION, SAMPLE_MESOCYCLE_PROGRESSION],
+      [STORAGE_KEYS.WUT_CHECKS, SAMPLE_WUT_CHECK],
+    ];
+    for (const [key, sample] of sameAsSample) {
+      if (localStorage.getItem(key) === JSON.stringify(sample)) localStorage.removeItem(key);
+    }
+    // Simulación de carrera generada con los tramos de ejemplo
+    localStorage.removeItem(STORAGE_KEYS.RACE_SIMULATION);
 
     this.setTestDataActive(false);
     return { preservedUserWorkouts: userWorkouts.length, removedSampleWorkouts };

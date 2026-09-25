@@ -11,9 +11,12 @@
  * 
  * Sweet Spot Framework:
  * - < 0.80: Undertraining / Detraining (Increased injury risk if load spikes suddenly).
- * - 0.80 - 1.30: "The Sweet Spot" (Optimal training adaptation with lowest injury & overtraining risk < 10%).
- * - 1.30 - 1.50: Alert Zone (Elevated injury likelihood ~15-25%).
- * - > 1.50: The Danger Zone (Substantially elevated overtraining & tissue breakdown risk > 35-50%).
+ * - 0.80 - 1.30: "The Sweet Spot" (lowest relative injury risk in Gabbett's data).
+ * - 1.30 - 1.50: Alert Zone (higher relative risk).
+ * - > 1.50: The Danger Zone (highest relative risk).
+ * Gabbett's zones compare RELATIVE risk in team-sport cohorts; there is no
+ * validated injury probability (%) for an individual trail runner, so the app
+ * shows qualitative levels only.
  */
 
 import { Workout } from '../types';
@@ -94,7 +97,7 @@ export function getACWRZone(acwr: number): {
       bgColor: 'bg-sky-500/10',
       borderColor: 'border-sky-500/30',
       riskLevel: 'Riesgo Bajo Inmediato (Infracarga)',
-      injuryRiskPctFormatted: '< 8% (Pérdida de adaptación)',
+      injuryRiskPctFormatted: 'Bajo (riesgo de perder adaptación si se prolonga)',
       diagnosis: 'La fatiga reciente de los últimos 7 días está por debajo de tu nivel crónico. Si estás en semana de asimilación o descarga, es óptimo. Sin embargo, no mantengas este ratio prolongadamente para evitar desentrenamiento cardiovascular.',
     };
   } else if (acwr <= 1.30) {
@@ -104,8 +107,8 @@ export function getACWRZone(acwr: number): {
       color: 'text-emerald-400',
       bgColor: 'bg-emerald-500/10',
       borderColor: 'border-emerald-500/30',
-      riskLevel: 'Mínimo Riesgo de Lesión (< 10%)',
-      injuryRiskPctFormatted: '< 10% (Zona Segura)',
+      riskLevel: 'Riesgo de lesión más bajo',
+      injuryRiskPctFormatted: 'El más bajo de las cuatro zonas',
       diagnosis: '¡Zona ideal de sobrecarga progresiva! El incremento semanal de estrés fisiológico está respaldado por tu volumen base de las últimas 4 semanas. Máxima ganancia aeróbica con mínima probabilidad de sobreentrenamiento.',
     };
   } else if (acwr <= 1.50) {
@@ -116,7 +119,7 @@ export function getACWRZone(acwr: number): {
       bgColor: 'bg-amber-500/10',
       borderColor: 'border-amber-500/30',
       riskLevel: 'Riesgo Moderado de Lesión / Sobrecarga',
-      injuryRiskPctFormatted: '15% - 25% de probabilidad',
+      injuryRiskPctFormatted: 'Elevado',
       diagnosis: 'Atención: Tu carga aguda ha crecido con rapidez respecto al mes precedente. Aunque estimula adaptaciones fuertes, tus sóleos, tendones de Aquiles y cartílagos necesitan tiempo para sintetizar colágeno.',
     };
   } else {
@@ -127,8 +130,8 @@ export function getACWRZone(acwr: number): {
       bgColor: 'bg-rose-500/10',
       borderColor: 'border-rose-500/30',
       riskLevel: 'Riesgo Crítico de Sobreentrenamiento y Rotura',
-      injuryRiskPctFormatted: '> 35% - 50% de probabilidad',
-      diagnosis: '¡Alerta Fisiológica Crítica! Has superado el umbral seguro de Tim Gabbett (ACWR > 1.50). La fatiga aguda duplica con creces la capacidad crónica de absorción muscular. Continuar con este ritmo conduce a Síndrome de Sobreentrenamiento (OTS) o lesión músculo-tendinosa.',
+      injuryRiskPctFormatted: 'Muy elevado',
+      diagnosis: '¡Alerta Fisiológica Crítica! Has superado el umbral seguro de Tim Gabbett (ACWR > 1.50). Tu carga de los últimos 7 días supera en más de un 50 % a tu media de las últimas 4 semanas. Continuar con este ritmo conduce a Síndrome de Sobreentrenamiento (OTS) o lesión músculo-tendinosa.',
     };
   }
 }

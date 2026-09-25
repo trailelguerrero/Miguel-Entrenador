@@ -56,6 +56,8 @@ export function getWorkoutLoad(w: Workout, antHr?: number): WorkoutLoad | null {
   if (!w.completed) return null;
   // Entreno de Suunto: se usa su TSS; si Suunto no le asignó TSS, no suma
   // carga (igual que en la app de Suunto). Nunca se estima.
+  // Añadido a mano en Suunto: el TSS es un valor fijo por hora que pone Suunto, no una medida
+  if (w.suuntoWorkoutKey && w.suuntoManualEntry) return { tss: w.actualTss ?? 0, source: 'estimated' };
   if (w.suuntoWorkoutKey) return { tss: w.actualTss ?? 0, source: 'suunto' };
   if (w.actualTss != null) return { tss: w.actualTss, source: 'estimated' };
   if (w.tss != null) return { tss: w.tss, source: 'estimated' };
@@ -72,6 +74,7 @@ export interface DailyLoad {
   minutes: number;
   km: number;
   elevationGainM: number;
+  elevationLossM: number;
   zoneSenseAerobicMin: number;
   estimatedTss: boolean;
   rpes: number[];
@@ -85,7 +88,7 @@ export function buildDailyLoadMap(workouts: Workout[], antHr?: number): Map<stri
     if (!load) continue;
     let day = map.get(w.date);
     if (!day) {
-      day = { date: w.date, tss: 0, titles: [], minutes: 0, km: 0, elevationGainM: 0, zoneSenseAerobicMin: 0, estimatedTss: false, rpes: [] };
+      day = { date: w.date, tss: 0, titles: [], minutes: 0, km: 0, elevationGainM: 0, elevationLossM: 0, zoneSenseAerobicMin: 0, estimatedTss: false, rpes: [] };
       map.set(w.date, day);
     }
     const dur = w.actualDurationMin ?? w.plannedDurationMin ?? 0;
@@ -93,6 +96,7 @@ export function buildDailyLoadMap(workouts: Workout[], antHr?: number): Map<stri
     day.minutes += dur;
     day.km += w.actualDistanceKm ?? 0;
     day.elevationGainM += w.actualElevationGainM ?? 0;
+    day.elevationLossM += w.actualElevationLossM ?? 0;
     if (w.zoneSenseBreakdown) day.zoneSenseAerobicMin += Math.round((dur * w.zoneSenseBreakdown.aerobicPct) / 100);
     if (load.source === 'estimated') day.estimatedTss = true;
     if (w.athleteRpe) day.rpes.push(w.athleteRpe);
@@ -108,7 +112,7 @@ export function buildDailyLoadSeries(workouts: Workout[], daysCount: number, ant
   for (let i = daysCount - 1; i >= 0; i--) {
     const date = addDaysKey(endDate, -i);
     out.push(
-      map.get(date) ?? { date, tss: 0, titles: [], minutes: 0, km: 0, elevationGainM: 0, zoneSenseAerobicMin: 0, estimatedTss: false, rpes: [] },
+      map.get(date) ?? { date, tss: 0, titles: [], minutes: 0, km: 0, elevationGainM: 0, elevationLossM: 0, zoneSenseAerobicMin: 0, estimatedTss: false, rpes: [] },
     );
   }
   return out;
@@ -153,7 +157,7 @@ export function computePmcSeries(workouts: Workout[], antHr?: number, daysToShow
       rampRate: prevWeek ? round1(ctlR - prevWeek.ctl) : undefined,
       zoneSenseAerobicMin: day?.zoneSenseAerobicMin ?? 0,
       elevationGainM: day?.elevationGainM ?? 0,
-      elevationLossM: 0,
+      elevationLossM: day?.elevationLossM ?? 0,
       workoutTitle: day && day.titles.length > 0 ? day.titles.join(' + ') : undefined,
       rpe: day && day.rpes.length > 0 ? round1(day.rpes.reduce((a, b) => a + b, 0) / day.rpes.length) : undefined,
     });

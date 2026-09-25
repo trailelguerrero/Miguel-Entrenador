@@ -22,12 +22,14 @@ export const DailyReadinessModal: React.FC<DailyReadinessModalProps> = ({
 }) => {
   const todayStr = localDateKey();
 
-  const [restingHr, setRestingHr] = useState<number>(currentCheckIn?.restingHr || 48);
-  const [hrvRmssd, setHrvRmssd] = useState<number>(currentCheckIn?.hrvRmssd || 55);
+  // null = sin dato: no se guarda un valor de relleno como si lo hubieras medido
+  const [restingHr, setRestingHr] = useState<number | null>(currentCheckIn?.restingHr || null);
+  const [hrvRmssd, setHrvRmssd] = useState<number | null>(currentCheckIn?.hrvRmssd || null);
   // Misma HRV de referencia que el resto de la app: la del perfil
+  const profileRestingHr = StorageService.getProfile().restingHr || 0;
   const [hrvBaseline, setHrvBaseline] = useState<number>(StorageService.getProfile().baselineHrv || currentCheckIn?.hrvBaseline || 0);
-  const [sleepHours, setSleepHours] = useState<number>(currentCheckIn?.sleepHours || 7.5);
-  const [sleepQuality, setSleepQuality] = useState<number>(currentCheckIn?.sleepQuality || 80);
+  const [sleepHours, setSleepHours] = useState<number | null>(currentCheckIn?.sleepHours || null);
+  const [sleepQuality, setSleepQuality] = useState<number | null>(currentCheckIn?.sleepQuality || null);
   const [muscleSoreness, setMuscleSoreness] = useState<number>(currentCheckIn?.muscleSoreness || 3);
   const [stressLevel, setStressLevel] = useState<number>(currentCheckIn?.stressLevel || 3);
 
@@ -35,9 +37,9 @@ export const DailyReadinessModal: React.FC<DailyReadinessModalProps> = ({
 
   // Calculate readiness status based on HRV deviation and sleep (misma lógica que la sync de Suunto)
   const { hrvDropPct, status: calculatedStatus, coachAdvice, suggestedAction } = computeReadiness({
-    hrvRmssd,
+    hrvRmssd: hrvRmssd ?? 0,
     hrvBaseline,
-    sleepHours,
+    sleepHours: sleepHours ?? 0,
     muscleSoreness,
     stressLevel,
   });
@@ -45,11 +47,12 @@ export const DailyReadinessModal: React.FC<DailyReadinessModalProps> = ({
   const handleSave = () => {
     const checkIn: DailyCheckIn = {
       date: todayStr,
-      restingHr,
-      hrvRmssd,
+      // 0 = sin dato (lo que no has marcado no se inventa)
+      restingHr: restingHr ?? 0,
+      hrvRmssd: hrvRmssd ?? 0,
       hrvBaseline,
-      sleepHours,
-      sleepQuality,
+      sleepHours: sleepHours ?? 0,
+      sleepQuality: sleepQuality ?? 0,
       muscleSoreness,
       stressLevel,
       // La puntuación es el Recovery de Suunto: se conserva si ese día ya venía de Suunto
@@ -99,20 +102,20 @@ export const DailyReadinessModal: React.FC<DailyReadinessModalProps> = ({
                   <Activity className="w-3.5 h-3.5 text-emerald-400" />
                   <span>HRV Nocturna (rMSSD)</span>
                 </span>
-                <span className="text-emerald-400 font-bold">{hrvRmssd} ms</span>
+                <span className="text-emerald-400 font-bold">{hrvRmssd != null ? `${hrvRmssd} ms` : 'sin dato'}</span>
               </div>
               <input
                 type="range"
                 min="20"
                 max="120"
-                value={hrvRmssd}
+                value={hrvRmssd ?? 60}
                 onChange={(e) => setHrvRmssd(Number(e.target.value))}
                 className="w-full accent-emerald-500 cursor-pointer"
               />
               <div className="flex justify-between text-[11px] text-zinc-500">
                 <span>Base: {hrvBaseline} ms</span>
                 <span className={hrvDropPct < -15 ? 'text-red-400 font-bold' : 'text-zinc-400'}>
-                  {hrvDropPct > 0 ? `+${hrvDropPct}%` : `${hrvDropPct}%`}
+                  {hrvRmssd == null ? 'mueve el control para registrarla' : hrvDropPct > 0 ? `+${hrvDropPct}%` : `${hrvDropPct}%`}
                 </span>
               </div>
             </div>
@@ -124,19 +127,19 @@ export const DailyReadinessModal: React.FC<DailyReadinessModalProps> = ({
                   <Heart className="w-3.5 h-3.5 text-red-400" />
                   <span>FC Reposo Despertar</span>
                 </span>
-                <span className="text-zinc-200 font-bold">{restingHr} bpm</span>
+                <span className="text-zinc-200 font-bold">{restingHr != null ? `${restingHr} bpm` : 'sin dato'}</span>
               </div>
               <input
                 type="range"
                 min="38"
                 max="75"
-                value={restingHr}
+                value={restingHr ?? 55}
                 onChange={(e) => setRestingHr(Number(e.target.value))}
                 className="w-full accent-red-500 cursor-pointer"
               />
               <div className="flex justify-between text-[11px] text-zinc-500">
-                <span>Baja: &lt; 46 bpm</span>
-                <span>Elevada: &gt; 54 bpm</span>
+                <span>{profileRestingHr ? `Tu referencia: ${profileRestingHr} bpm` : 'Sin FC de reposo de referencia'}</span>
+                <span>{restingHr != null && profileRestingHr ? `${restingHr - profileRestingHr >= 0 ? '+' : ''}${restingHr - profileRestingHr} bpm` : ''}</span>
               </div>
             </div>
 
@@ -147,20 +150,20 @@ export const DailyReadinessModal: React.FC<DailyReadinessModalProps> = ({
                   <Moon className="w-3.5 h-3.5 text-indigo-400" />
                   <span>Horas de Sueño</span>
                 </span>
-                <span className="text-indigo-400 font-bold">{sleepHours} h</span>
+                <span className="text-indigo-400 font-bold">{sleepHours != null ? `${sleepHours} h` : 'sin dato'}</span>
               </div>
               <input
                 type="range"
                 min="4"
                 max="10"
                 step="0.5"
-                value={sleepHours}
+                value={sleepHours ?? 7}
                 onChange={(e) => setSleepHours(Number(e.target.value))}
                 className="w-full accent-indigo-500 cursor-pointer"
               />
               <div className="flex justify-between text-[11px] text-zinc-500">
-                <span>Mínimo Uphill: 7.5h</span>
-                <span>Calidad Suunto: {sleepQuality}/100</span>
+                <span>Ámbar &lt; 6,5 h · rojo &lt; 5,5 h</span>
+                <span>Calidad Suunto: {sleepQuality != null ? `${sleepQuality}/100` : 'sin dato'}</span>
               </div>
             </div>
 
@@ -171,13 +174,13 @@ export const DailyReadinessModal: React.FC<DailyReadinessModalProps> = ({
                   <Zap className="w-3.5 h-3.5 text-amber-400" />
                   <span>Puntuación de Sueño Suunto</span>
                 </span>
-                <span className="text-amber-400 font-bold">{sleepQuality}%</span>
+                <span className="text-amber-400 font-bold">{sleepQuality != null ? `${sleepQuality}%` : 'sin dato'}</span>
               </div>
               <input
                 type="range"
                 min="30"
                 max="100"
-                value={sleepQuality}
+                value={sleepQuality ?? 75}
                 onChange={(e) => setSleepQuality(Number(e.target.value))}
                 className="w-full accent-amber-500 cursor-pointer"
               />
