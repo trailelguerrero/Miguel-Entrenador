@@ -681,7 +681,7 @@ export interface FartlekIntervalBlock {
   fastPaceLabel: string;
   fastTargetHrMax: number;
   fastZoneSense: string;
-  fastCadenceTarget: string;
+  fastCadenceTarget?: string; // sin valor: no hay dato de cadencia del atleta
   fastTacticalCue: string;
   recoveryDurationMinutes: number;
   recoveryPaceLabel: string;
