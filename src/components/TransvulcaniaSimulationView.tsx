@@ -47,6 +47,18 @@ export const TransvulcaniaSimulationView: React.FC<Props> = ({
   const totalFluidsLiters = Math.round(plan.segments.reduce((acc, s) => acc + s.targetFluidsMl, 0) / 100) / 10;
   const totalSodiumGrams = Math.round(plan.segments.reduce((acc, s) => acc + s.targetSodiumMg, 0) / 100) / 10;
 
+  if (plan.segments.length === 0 || !selectedSegment) {
+    return (
+      <div className="rounded-2xl bg-stone-900 border border-stone-800 p-6 text-sm text-stone-300 space-y-2">
+        <h2 className="text-lg font-black text-stone-100">Simulador Transvulcania</h2>
+        <p>
+          Los tramos, tiempos y pautas del simulador eran datos de ejemplo (no verificados del recorrido ni tuyos) y solo se muestran en modo prueba.
+          Con tus datos reales, pide a Miguel un plan de carrera: lo hará con tu carga, tus ritmos de Suunto y tu tolerancia registrada.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Race Header Banner */}

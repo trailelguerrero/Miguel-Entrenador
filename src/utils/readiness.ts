@@ -1,8 +1,10 @@
 import { DailyCheckIn } from '../types';
+import { evaluateReadiness } from '../brain/readiness.js';
 
-// Semáforo diario (verde/ámbar/rojo) a partir de HRV, sueño y dolor muscular.
-// La puntuación numérica NO se calcula aquí: es el Recovery de Suunto del día
-// (DailyCheckIn.readinessScore), que solo existe si viene de Suunto.
+// Semáforo diario (verde/ámbar/rojo). La decisión la toma el motor único de
+// readiness (src/brain/readiness.ts); esto solo lo traduce al formato del
+// check-in. La puntuación numérica NO se calcula aquí: es el Recovery de
+// Suunto del día (DailyCheckIn.readinessScore).
 // Lo usan el check-in manual (DailyReadinessModal) y la sincronización con
 // Suunto (server/suunto-map.ts), para que ambos den el mismo semáforo.
 export function computeReadiness(input: {
@@ -11,31 +13,36 @@ export function computeReadiness(input: {
   sleepHours: number;
   muscleSoreness?: number;
 }): Pick<DailyCheckIn, 'status' | 'coachAdvice' | 'suggestedAction'> & { hrvDropPct: number } {
-  const { hrvRmssd, hrvBaseline, sleepHours } = input;
-  const muscleSoreness = input.muscleSoreness ?? 0;
-  const hrvDropPct = hrvBaseline > 0 ? Math.round(((hrvRmssd - hrvBaseline) / hrvBaseline) * 100) : 0;
+  const state = evaluateReadiness(input);
+  const hrvDropPct = state.hrvDeltaPct ?? 0;
+  const why = state.reasons.join(', ');
 
-  if (hrvDropPct < -20 || sleepHours < 5.5 || muscleSoreness >= 8) {
+  if (state.level === 'red') {
     return {
       hrvDropPct,
       status: 'fatigued',
-      suggestedAction: 'downgrade_easy',
-      coachAdvice: `Alerta de fatiga acumulada: Tu HRV ha caído un ${Math.abs(hrvDropPct)}% y descansaste solo ${sleepHours}h. Meter hoy series o tirada dura sería un sabotaje a tu adaptación aeróbica. Te recomiendo descanso total o 35' regenerativo a menos de tu AeT.`,
+      suggestedAction: state.limits.mandatoryRest ? 'full_rest' : 'downgrade_easy',
+      coachAdvice: state.limits.mandatoryRest
+        ? `Alerta de fatiga (${why}). Hoy toca descanso total.`
+        : `Alerta de fatiga (${why}). Hoy nada de series ni tirada dura: descanso o como mucho ${state.limits.maxDurationMin}' regenerativos en ZoneSense verde.`,
     };
   }
-  if (hrvDropPct < -10 || sleepHours < 6.5 || muscleSoreness >= 6) {
+  if (state.level === 'amber') {
     return {
       hrvDropPct,
       status: 'moderate',
       suggestedAction: 'maintain',
-      coachAdvice: `Recuperación intermedia (HRV con variación del ${hrvDropPct}%). Puedes entrenar, pero no te pases de pulsaciones en las cuestas. Con banda de pecho, mantén ZoneSense en verde.`,
+      coachAdvice: `Recuperación intermedia (${why}). Puedes entrenar sin series: con banda de pecho, mantén ZoneSense en verde.`,
     };
   }
   return {
     hrvDropPct,
     status: 'optimal',
     suggestedAction: 'maintain',
-    coachAdvice: `Recuperación excelente. Sistema nervioso parasimpático activo y listo para asimilar la sesión programada de hoy.`,
+    coachAdvice:
+      state.level === 'unknown'
+        ? 'Sin datos de HRV ni de sueño: no se puede valorar la recuperación de hoy.'
+        : 'Recuperación buena: listo para la sesión programada de hoy.',
   };
 }
 

@@ -93,7 +93,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     { id: 'gut', label: 'Calculadora & Nutrición', icon: Flame, badge: 'Adaptación', hub: 'strategy' },
     { id: 'hydration', label: 'Plan & Análisis Hidratación', icon: Droplets, badge: 'Sudor & Sales', hub: 'strategy' },
     { id: 'eccentric', label: 'Fuerza Excéntrica', icon: Dumbbell, badge: '3-1-1', hub: 'strategy' },
-    { id: 'memory', label: 'Memoria de Miguel', icon: Brain, badge: `${learnedRulesCount || 3} Reglas`, hub: 'coach' },
+    { id: 'memory', label: 'Memoria de Miguel', icon: Brain, badge: `${learnedRulesCount ?? 0} Reglas`, hub: 'coach' },
     { id: 'chat', label: 'Coach Miguel', icon: MessageSquare, badge: 'IA', hub: 'coach' },
     { id: 'zonesense', label: 'Suunto & ZoneSense', icon: Watch, hub: 'metrics' },
     { id: 'physiology', label: 'Fisiología & Drift', icon: Activity, hub: 'training' },

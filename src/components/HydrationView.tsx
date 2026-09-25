@@ -51,10 +51,10 @@ export const HydrationView: React.FC<HydrationViewProps> = ({ profile }) => {
   const [testNotes, setTestNotes] = useState<string>('');
 
   // Daily WUT Check State
-  const [wutCheck, setWutCheck] = useState<WUTDailyCheck>(StorageService.getWUTCheck());
-  const [selectedUrineScore, setSelectedUrineScore] = useState<number>(wutCheck.urineColorScore || 2);
-  const [weightDown, setWeightDown] = useState<boolean>(wutCheck.weightDown || false);
-  const [morningThirst, setMorningThirst] = useState<boolean>(wutCheck.morningThirst || false);
+  const [wutCheck, setWutCheck] = useState<WUTDailyCheck | null>(StorageService.getWUTCheck());
+  const [selectedUrineScore, setSelectedUrineScore] = useState<number>(wutCheck?.urineColorScore || 2);
+  const [weightDown, setWeightDown] = useState<boolean>(wutCheck?.weightDown || false);
+  const [morningThirst, setMorningThirst] = useState<boolean>(wutCheck?.morningThirst || false);
   const [isWutSaved, setIsWutSaved] = useState<boolean>(false);
 
   // Dynamic Planner Calculations
@@ -399,6 +399,11 @@ export const HydrationView: React.FC<HydrationViewProps> = ({ profile }) => {
             </div>
 
             <div className="space-y-3.5">
+              {sections.length === 0 && (
+                <p className="text-xs text-zinc-400">
+                  Sin plan de hidratación por tramos: la app no inventa cifras. Registra tests de sudoración para que Miguel pueda calcularlo con tus datos.
+                </p>
+              )}
               {sections.map((sec, index) => (
                 <div
                   key={sec.segmentId}
@@ -716,6 +721,9 @@ export const HydrationView: React.FC<HydrationViewProps> = ({ profile }) => {
             <div className="p-4 bg-zinc-950 rounded-2xl border border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="space-y-1">
                 <span className="text-[10px] text-zinc-500 uppercase font-bold">Diagnóstico Clínico Actual</span>
+                {!wutCheck ? (
+                  <p className="text-xs text-zinc-400">Aún no has registrado ningún chequeo WUT.</p>
+                ) : (<>
                 <div className="flex items-center space-x-2">
                   <span className={`text-base font-black ${
                     wutCheck.status === 'optimal' ? 'text-emerald-400' : wutCheck.status === 'mild_risk' ? 'text-amber-400' : 'text-red-400'
@@ -725,6 +733,7 @@ export const HydrationView: React.FC<HydrationViewProps> = ({ profile }) => {
                   <span className="text-xs text-zinc-400">({wutCheck.score}/3 criterios presentes)</span>
                 </div>
                 <p className="text-xs text-zinc-300 leading-relaxed max-w-xl">{wutCheck.advice}</p>
+                </>)}
               </div>
 
               <button

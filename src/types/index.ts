@@ -31,6 +31,9 @@ export type LegacyZoneSenseTarget =
   | 'DFA a1 < 0.50 (Anaeróbico)'
   | 'Regenerativo';
 
+/** Fuente de la prescripción de intensidad (jerarquía en src/brain/intensity.ts). */
+export type IntensitySource = 'zonesense' | 'heart_rate_measured' | 'rpe' | 'terrain' | 'unknown';
+
 export interface Workout {
   id: string;
   date: string; // YYYY-MM-DD
@@ -41,8 +44,11 @@ export interface Workout {
   plannedElevationGainM?: number;
   
   // Uphill Athlete & ZoneSense targets
-  targetHrMin?: number;
-  targetHrMax?: number;
+  // Topes de FC: SOLO con umbral medido (si no, null). Ver src/brain/intensity.ts
+  targetHrMin?: number | null;
+  targetHrMax?: number | null;
+  /** De dónde sale la prescripción de intensidad de esta sesión. */
+  intensitySource?: IntensitySource;
   // Objetivo de intensidad en colores de ZoneSense (NO equivalen a pulsaciones).
   // Se aceptan los textos antiguos "DFA a1 ..." de sesiones ya guardadas.
   zoneSenseTarget?: ZoneSenseTarget | LegacyZoneSenseTarget;
@@ -78,11 +84,11 @@ export interface Workout {
   adaptationReason?: string;
 
   // Gut training & Fueling tracking (Mejora 2)
-  plannedCarbsPerHourG?: number;
+  plannedCarbsPerHourG?: number | null;
   actualCarbsPerHourG?: number;
-  plannedFluidsPerHourMl?: number;
+  plannedFluidsPerHourMl?: number | null;
   actualFluidsPerHourMl?: number;
-  plannedSodiumPerHourMg?: number;
+  plannedSodiumPerHourMg?: number | null;
   actualSodiumPerHourMg?: number;
   fuelingGuideline?: WorkoutFuelingGuideline;
   giToleranceRating?: 1 | 2 | 3 | 4 | 5; // 1 = Severe distress / vomits, 5 = Perfect digestion

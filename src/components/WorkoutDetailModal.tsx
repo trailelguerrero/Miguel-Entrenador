@@ -191,7 +191,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
         tss: hasSuuntoTss ? workout.tss : tssResult.tss,
         actualTss: hasSuuntoTss ? workout.actualTss : undefined,
         intensityFactor: hasSuuntoTss ? workout.intensityFactor : tssResult.intensityFactor,
-        // ZoneSense solo si viene de Suunto; el .FIT no trae DFA a1 y la
+        // ZoneSense solo si viene de Suunto; el .FIT no trae ZoneSense y la
         // distribución por FC del .FIT no es ZoneSense.
         zoneSenseBreakdown: workout.zoneSenseBreakdown,
       };

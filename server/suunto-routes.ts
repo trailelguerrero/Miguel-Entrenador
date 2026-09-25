@@ -15,15 +15,15 @@ import { createHash, randomBytes } from 'node:crypto';
 import type { SuuntoAuth } from '../src/types/index.js';
 import { deriveProfileFromSuunto } from './suunto-profile.js';
 import { computeWatchZoneAdvice } from './zone-advice.js';
+import { DATA_WINDOWS } from '../src/brain/dataWindows.js';
 import { mapSuuntoCheckIns, mapSuuntoWorkouts, SuuntoRecoveryDay, SuuntoSleepSession, SuuntoWorkoutRow } from './suunto-map.js';
 
 const MCP_URL = (process.env.SUUNTO_MCP_URL || 'https://mcp-ten-kappa.vercel.app').replace(/\/+$/, '');
 const OAUTH_COOKIE = 'suunto_oauth';
-const MAX_SYNC_DAYS = 28; // límite de la 247 Data API de Suunto
-// Historial de workouts: el CTL (media exponencial de 42 días) necesita
-// meses de historial para coincidir con el de Suunto. El MCP admite hasta 365.
-const WORKOUT_HISTORY_DAYS = 365;
-const PROFILE_WORKOUT_DAYS = 90; // ventana de workouts para calcular el perfil
+// Ventanas de datos: fuente única en src/brain/dataWindows.ts (también las recibe Miguel).
+const MAX_SYNC_DAYS = DATA_WINDOWS.sleepRecovery; // límite de la 247 Data API de Suunto
+const WORKOUT_HISTORY_DAYS = DATA_WINDOWS.workouts; // CTL necesita meses de historial
+const PROFILE_WORKOUT_DAYS = DATA_WINDOWS.profileEvidence; // ventana de workouts para el perfil
 
 class ReconnectNeededError extends Error {}
 

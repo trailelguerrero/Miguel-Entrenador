@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { computePmcSeries, getWorkoutLoad } from './utils/trainingLoad';
 import { analyzeWeekStructure, mondayOfKey, addDaysKey } from './utils/weekStructure';
 import { localDateKey } from './utils/trainingLoad';
+import { buildBrainContext, summarizeWeekWorkouts } from './brain/context';
 import { Navbar } from './components/Navbar';
 import { MorningBanner } from './components/MorningBanner';
 import { CalendarView } from './components/CalendarView';
@@ -216,6 +217,7 @@ export default function App() {
         'Perfil actualizado automáticamente desde Suunto',
         historyDoc,
         coachMemory,
+        getBrainContext(),
       );
       const msg: ChatMessage = {
         id: `assistant-suunto-${Date.now()}`,
@@ -557,8 +559,12 @@ Tus células y tu sistema nervioso autónomo están pidiendo tregua. No fuerces 
   };
 
   // Find today's workout
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = localDateKey();
   const todayWorkout = workouts.find((w) => w.date === todayStr);
+
+  // Hechos calculados para Miguel (carga, historial, readiness de hoy, check-ins)
+  const getBrainContext = (plannedToday?: Workout | null) =>
+    buildBrainContext(StorageService.getWorkouts(), StorageService.getProfile(), StorageService.getCheckIns(), plannedToday);
 
   // Adapt today's session based on HRV fatigue
   const handleAdaptTodaySession = async () => {
@@ -566,7 +572,9 @@ Tus células y tu sistema nervioso autónomo están pidiendo tregua. No fuerces 
 
     setIsAdaptingSession(true);
     try {
-      const adaptation = await ApiService.adaptSession(todayWorkout, todayCheckIn, profile, historyDoc);
+      // El motor de readiness fija los límites; Miguel elige dentro de ellos
+      const readinessState = getBrainContext(todayWorkout).todayReadiness;
+      const adaptation = await ApiService.adaptSession(todayWorkout, todayCheckIn, profile, historyDoc, readinessState);
 
       const adaptedWorkout: Workout = {
         ...todayWorkout,
@@ -590,7 +598,9 @@ Tus células y tu sistema nervioso autónomo están pidiendo tregua. No fuerces 
       const coachMsg: ChatMessage = {
         id: `adapt-msg-${Date.now()}`,
         role: 'assistant',
-        content: adaptation.miguelMessage,
+        content: adaptation.corrections?.length
+          ? `${adaptation.miguelMessage}\n\nAjustes del motor de readiness: ${adaptation.corrections.join(' ')}`
+          : adaptation.miguelMessage,
         timestamp: new Date().toISOString(),
         contextType: 'plan_adaptation',
         relatedWorkoutId: adaptedWorkout.id,
@@ -615,18 +625,9 @@ Tus células y tu sistema nervioso autónomo están pidiendo tregua. No fuerces 
     setIsGeneratingPlan(true);
     try {
       const monday = mondayOfKey(weekStartDateStr);
-      const latestPmc = pmcData[pmcData.length - 1];
-      const recentCheckIns = [...StorageService.getCheckIns()]
-        .sort((x, y) => x.date.localeCompare(y.date))
-        .slice(-7)
-        .map((c) => ({
-          date: c.date,
-          hrvRmssd: c.hrvRmssd,
-          hrvBaseline: c.hrvBaseline,
-          sleepHours: c.sleepHours,
-          recoveryPct: c.readinessScore,
-          status: c.status,
-        }));
+      // Evidencia nutricional REAL (si no existe, la IA no puede dar cifras)
+      const gut = StorageService.getGutProfile();
+      const heat = profile.advancedPhysiologicalProfile?.heatTolerance;
       const plan = await ApiService.generatePlan(
         profile,
         targetRace,
@@ -634,7 +635,13 @@ Tus células y tu sistema nervioso autónomo están pidiendo tregua. No fuerces 
         'Base Aeróbica Estricta & Preparación para Transvulcania 2027',
         historyDoc,
         coachMemory,
-        { ctl: latestPmc?.ctl, atl: latestPmc?.atl, tsb: latestPmc?.tsb, recentCheckIns }
+        getBrainContext(),
+        summarizeWeekWorkouts(workouts, monday, profile.antHr),
+        {
+          maxCarbsPerHourG: gut?.currentMaxCarbsPerHour ?? null,
+          sweatRateLph: heat?.sweatRateDocumentedLitersPerHour ?? null,
+          sodiumProfile: heat?.sodiumLossProfile ?? null,
+        }
       );
 
       // Fechas de la semana (lunes..domingo) en hora local
@@ -663,6 +670,9 @@ Tus células y tu sistema nervioso autónomo están pidiendo tregua. No fuerces 
       // Resumen con la estructura REAL que ha devuelto Miguel
       const structure = analyzeWeekStructure(newWorkouts, monday);
       const structureLine = `Estructura: ${structure.midweekPlanned} sesiones entre semana + tirada larga ${structure.longRunDay ? `el ${structure.longRunDay}` : '(no planificada)'}.`;
+      const notesLine = plan.validationNotes?.length
+        ? `\n\nCorrecciones automáticas del sistema: ${plan.validationNotes.join(' ')}`
+        : '';
       const warningLine = structure.issues.length
         ? `\n\n⚠️ El plan generado no cumple la regla 3 (o 2) + tirada larga: ${structure.issues.join('; ')}. Revísalo o vuelve a generarlo.`
         : '';
@@ -675,7 +685,7 @@ Tus células y tu sistema nervioso autónomo están pidiendo tregua. No fuerces 
 
 ${plan.weekSummary}
 
-${structureLine} Ya puedes ver los entrenamientos en tu calendario.${warningLine}`,
+${structureLine} Ya puedes ver los entrenamientos en tu calendario.${warningLine}${notesLine}`,
         timestamp: new Date().toISOString(),
         contextType: 'general',
       };
@@ -723,7 +733,8 @@ ${structureLine} Ya puedes ver los entrenamientos en tu calendario.${warningLine
           ? `Sesión consultada: ${JSON.stringify(workouts.find((w) => w.id === contextWorkoutId))}`
           : undefined,
         historyDoc,
-        coachMemory
+        coachMemory,
+        getBrainContext(todayWorkout)
       );
 
       const assistantMsg: ChatMessage = {

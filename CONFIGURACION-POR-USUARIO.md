@@ -222,7 +222,7 @@ Se hace **desde la propia app**, una vez en cada navegador o dispositivo:
 
 A partir de ahí, pulsa **Sincronizar** cuando quieras traer datos nuevos. Cada sincronización:
 
-- Trae los entrenos de los **últimos 365 días** (necesarios para que CTL/ATL/TSB coincidan con Suunto) y el sueño/HRV de los **últimos 28 días**, el máximo que permite Suunto para esos datos.
+- Trae los entrenos de los **últimos 365 días** (con ellos se calculan CTL/ATL/TSB; si Suunto tiene historial anterior, los valores pueden diferir) y el sueño/HRV de los **últimos 28 días**, el máximo que permite Suunto para esos datos.
 - **Entrenos:**
   - Si ese día tenías una sesión planificada sin completar, se marca como completada con los datos reales: duración, distancia, desnivel, FC media y máxima, TSS y tiempo en zonas ZoneSense.
   - Si no, el entreno se añade al calendario como completado.
@@ -230,7 +230,7 @@ A partir de ahí, pulsa **Sincronizar** cuando quieras traer datos nuevos. Cada 
 - **Sueño, HRV y FC mínima de cada noche:** crean los check-ins de readiness de cada mañana.
   - No pisan los check-ins que hayas registrado a mano.
 
-**Qué NO trae la sincronización:** la serie segundo a segundo ni la curva de DFA a1. Para el análisis detallado de una sesión concreta, exporta el `.fit` desde la App Suunto y súbelo en **Suunto & ZoneSense → Analizador .FIT** o en el detalle de la sesión.
+**Qué NO trae la sincronización:** la serie segundo a segundo (sí trae el tiempo en verde/amarillo/rojo de ZoneSense de cada entreno). El .FIT tampoco trae ZoneSense. Para el análisis detallado de una sesión concreta, exporta el `.fit` desde la App Suunto y súbelo en **Suunto & ZoneSense → Analizador .FIT** o en el detalle de la sesión.
 
 ### Si Suunto se desconecta
 

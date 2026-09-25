@@ -1,6 +1,12 @@
 import express, { Request, Response } from 'express';
 import { AiError, aiConfigStatus, ChatTurn, classifyAiError, generateText, GenerateOptions, modelFor, parseModelJson } from './ai.js';
 import { registerSuuntoRoutes } from './suunto-routes.js';
+import { ZONESENSE_PROMPT_RULES, describeBreakdown } from '../src/brain/zonesense.js';
+import { describeDataWindows } from '../src/brain/dataWindows.js';
+import { describeIntensityPrescription, resolveIntensityPrescription } from '../src/brain/intensity.js';
+import { describeReadiness, evaluateReadiness, type ReadinessState } from '../src/brain/readiness.js';
+import { describeLoadHistory } from '../src/utils/trainingLoad.js';
+import { sanitizeAdaptation, sanitizePlanWorkouts } from './brain/validate.js';
 
 // App Express con todas las rutas /api/*. No escucha en ningún puerto:
 // - En Vercel la exporta api/index.ts como función serverless.
@@ -87,11 +93,14 @@ function formatWatchZones(a: any): string {
 function formatLoadContext(lc: any): string {
   if (!lc) return '- Sin datos de carga ni recuperación.';
   const lines: string[] = [];
-  if (lc.ctl != null) lines.push(`- CTL ${lc.ctl} · ATL ${lc.atl} · TSB ${lc.tsb} (TSS de Suunto)`);
+  if (lc.ctl != null) lines.push(`- CTL ${lc.ctl} · ATL ${lc.atl} · TSB ${lc.tsb}${lc.weeklyTss != null ? ` · TSS últimos 7 días ${lc.weeklyTss}` : ''}`);
+  if (lc.loadHistory) lines.push(`- ${describeLoadHistory(lc.loadHistory)}`);
   for (const c of lc.recentCheckIns || []) {
     lines.push(`- ${c.date}: HRV ${c.hrvRmssd} ms (referencia ${c.hrvBaseline} ms), sueño ${c.sleepHours} h${c.recoveryPct != null ? `, Recovery Suunto ${c.recoveryPct}%` : ''}, semáforo ${c.status}`);
   }
-  return lines.length ? lines.join('\n') : '- Sin datos de carga ni recuperación.';
+  if (lc.todayReadiness) lines.push(describeReadiness(lc.todayReadiness as ReadinessState));
+  lines.push(`- ${describeDataWindows()}`);
+  return lines.join('\n');
 }
 
 const MIGUEL_SYSTEM_INSTRUCTION = `
@@ -113,14 +122,7 @@ Tus pilares fundamentales son:
    - Fuerza sin máquinas: Step-ups en rocas/bancos, zancadas búlgaras con pausa isométrica, step-downs excéntricos para blindar los cuádriceps en bajadas, peso muerto rumano a una pierna y circuito de core lumbopélvico.
    - Trabajo de Resistencia Muscular (Muscular Endurance - ME): Subidas empinadas (>20-25% de pendiente) en power-hiking.
 
-2. SUUNTO ZONESENSE (CÓMO FUNCIONA Y CÓMO USARLO):
-   - ZoneSense mide la intensidad con DDFA (análisis de fluctuaciones sin tendencia DINÁMICO) sobre los intervalos R-R de la banda de pecho. Lo desarrolló la Universidad de Tampere (MoniCardi). NO es el DFA a1 clásico: no uses los cortes 0,75 / 0,50 ni hables de "valores de DFA a1" del reloj; el reloj muestra colores.
-   - Colores: VERDE = aeróbico (bajo el umbral aeróbico de ese día); AMARILLO = entre umbral aeróbico y anaeróbico; ROJO = por encima del umbral anaeróbico (zona VO2máx).
-   - REGLA CARDINAL: las zonas de ZoneSense NO equivalen a ninguna frecuencia cardíaca concreta. Se evalúan como desplazamiento respecto a la línea base aeróbica que el reloj fija en los primeros ~10 minutos suaves de CADA entreno. La misma FC puede ser verde un día y amarilla otro (fatiga, calor, cafeína, altitud) o en otro deporte. NUNCA traduzcas un color de ZoneSense a pulsaciones.
-   - Prescribe la intensidad en colores de ZoneSense (con banda de pecho). Las zonas de FC del reloj (AeT/AnT del perfil) son solo la referencia de respaldo cuando no hay banda; si las das, di explícitamente que son zonas de FC, no ZoneSense.
-   - Requisitos y límites: banda de pecho obligatoria; calentamiento suave de ~10 min para fijar la línea base (si arranca fuerte, la referencia sale mal); retraso de 1-2 min, así que sirve para esfuerzos continuos (rodajes, tiradas largas, subidas largas), no para series cortas ni fuerza.
-   - En tiradas largas a ritmo constante es normal que tienda hacia el amarillo con las horas (el índice es sensible a la duración y la fatiga): indícalo como señal para aflojar/caminar, no como error.
-   - Para la base aeróbica (Uphill Athlete), el objetivo es que la inmensa mayoría del tiempo esté en VERDE según el tiempo en zonas que registra Suunto.
+2. ${ZONESENSE_PROMPT_RULES}
 
 3. CÓMO SABER SI LA CUENTA DE SUUNTO ESTÁ CONECTADA O SI SUBIR EL ARCHIVO .FIT:
    - Si el atleta te pregunta cómo se conectan sus entrenamientos con Suunto:
@@ -139,26 +141,24 @@ Tus pilares fundamentales son:
    - Cada pupilo es un mundo biológico único. Odias las plantillas prefabricadas, planes enlatados y tablas genéricas de revista.
    - Cada sesión que prescribes responde con precisión quirúrgica al estado de este atleta hoy: sus adaptaciones fisiológicas previas, sus puntos débiles registrados en su perfil o historial (nunca supongas lesiones que no consten), sus métricas reales de ZoneSense y su evolución de carga.
    - En cada sesión justificas exactamente el motivo personalizado ("Por qué para ti hoy") y qué regla aprendida de sesiones pasadas estás aplicando.
-   - Aprendes de forma acumulativa y permanente: tras cada feedback, cada archivo .FIT analizado, cada caída de HRV o cada conversación, extraes nuevas conclusiones y las incorporas a tu modelo mental del pupilo.
+   - Aprendes de forma acumulativa pero prudente: una sola sesión es una observación, no una regla. Solo aplicas como regla lo que se ha repetido varias veces; lo demás lo vigilas y lo comentas como hipótesis.
 
 8. MONITORIZACIÓN DE PESO ÓPTIMO Y BIOMECÁNICA VERTICAL:
    - Monitorizas la altura, peso actual y peso objetivo de carrera que figuren en sus datos (si no hay objetivo, no lo supongas).
    - No des cifras de kcal o minutos ahorrados por kilo: no hay un dato validado para este atleta.
    - La pérdida de peso debe ser progresiva (300-400g/semana) mediante recomposición corporal y nunca con déficits calóricos severos que provoquen RED-S (Deficiencia Energética Relativa) o degradación muscular.
 
-9. DIRECCIÓN NUTRICIONAL, HIDRATACIÓN Y ENTRENAMIENTO GÁSTRICO (GUT TRAINING):
-   - Como entrenador de élite, diriges y educas al atleta en nutrición e hidratación con la misma rigurosidad que en el entrenamiento físico.
-   - Prescribes pautas concretas para cada sesión:
-     * Carbohidratos: Progresión de 50 g/h hacia 75-90 g/h utilizando ratios óptimos 1:0.8 o 2:1 (maltodextrina:fructosa) para no saturar el transportador intestinal SGLT1 ni causar molestias osmóticas.
-     * Hidratación y Sodio: Para el calor y altitud de La Palma, pautas de reposición del 80% del sudor y 500-750 mg/h de sodio para prevenir hiponatremia.
-     * Fatiga de paladar: Integrar comida real y salada en tiradas largas (>3-4 horas).
-   - Analizas la tolerancia digestiva reportada tras cada sesión, aprendes qué alimentos le sientan bien o mal y ajustas tus recomendaciones futuras.
+9. NUTRICIÓN, HIDRATACIÓN Y ENTRENAMIENTO GÁSTRICO:
+   - Las recomendaciones salen de: punto de partida general + EVIDENCIA DEL ATLETA (tolerancia de carbohidratos registrada en su gut training, tasa de sudoración medida, perfil de pérdida de sodio, historial digestivo) + entorno (calor, altitud) + demanda de la sesión (duración, intensidad).
+   - Sin evidencia del atleta NO des cifras concretas (g/h, ml/h, mg/h) como si fueran suyas: dilo, da el rango general como orientación explícitamente genérica y propón cómo medirlo (test de sudoración, progresión de gut training).
+   - Nunca superes la tolerancia de carbohidratos registrada; progresa desde ella.
+   - Analizas la tolerancia digestiva reportada tras cada sesión y la usas como evidencia.
 `;
 
 // 1. Interactive Chat with Miguel
 app.post('/api/chat', async (req: Request, res: Response) => {
   try {
-    const { messages, athleteProfile, currentReadiness, targetRace, context, athleteHistoryDoc, coachMemory } = req.body;
+    const { messages, athleteProfile, currentReadiness, targetRace, context, athleteHistoryDoc, coachMemory, brainContext } = req.body;
 
     const formattedHistory: ChatTurn[] = (messages || []).map((m: any) => ({
       role: m.role === 'user' ? 'user' : 'assistant',
@@ -258,6 +258,11 @@ ${athleteHistoryDoc.content}
 """
 ` : '[AVISO]: El atleta aún no ha subido su archivo .md de historial. Si necesitas detalles de su pasado o de tests previos de Suunto, pídeselo abiertamente.'}
 ${memoryContext}
+[INTENSIDAD (jerarquía calculada, no la cambies)]:
+${describeIntensityPrescription(resolveIntensityPrescription(athleteProfile))}
+
+[CARGA Y RECUPERACIÓN (hechos calculados por la app, no los recalcules)]:
+${formatLoadContext(brainContext)}
 - Contexto adicional: ${context || 'Conversación general'}
 `;
 
@@ -282,7 +287,18 @@ ${memoryContext}
 // 2. Generate Plan / Microcycle Workouts
 app.post('/api/generate-plan', async (req: Request, res: Response) => {
   try {
-    const { athleteProfile, targetRace, weekStartDate, phaseFocus, existingWorkouts, athleteHistoryDoc, coachMemory, loadContext } = req.body;
+    const { athleteProfile, targetRace, weekStartDate, phaseFocus, existingWorkouts, athleteHistoryDoc, coachMemory, loadContext, nutritionEvidence } = req.body;
+    const intensity = resolveIntensityPrescription(athleteProfile);
+    const weekSessions = Array.isArray(existingWorkouts) && existingWorkouts.length
+      ? existingWorkouts
+          .map((w: any) => `- ${w.date} · ${w.title} (${w.type}) · ${w.status}${w.adapted ? ', adaptada' : ''}${w.fromSuunto ? ', de Suunto' : ''}${w.durationMin ? ` · ${w.durationMin} min` : ''}${w.tss != null ? ` · ${w.tss} TSS` : ''}`)
+          .join('\n')
+      : '- No hay sesiones en esta semana todavía.';
+    const nutritionLine = [
+      nutritionEvidence?.maxCarbsPerHourG ? `tolerancia de carbohidratos registrada ${nutritionEvidence.maxCarbsPerHourG} g/h` : 'sin tolerancia de carbohidratos registrada',
+      nutritionEvidence?.sweatRateLph ? `tasa de sudoración medida ${nutritionEvidence.sweatRateLph} L/h` : 'sin tasa de sudoración medida',
+      nutritionEvidence?.sodiumProfile ? `perfil de sodio: ${nutritionEvidence.sodiumProfile}` : 'sin perfil de sodio',
+    ].join('; ');
 
     const memoryContext = coachMemory ? `
 [APRENDIZAJES ACUMULADOS SOBRE ESTE ATLETA]:
@@ -307,8 +323,17 @@ Genera un microciclo semanal de entrenamiento de 7 días (comenzando el lunes ${
 - Los demás días: DESCANSO TOTAL o movilidad ligera ("type": "rest"). La fuerza sin material puede ir como "strength_core" y no cuenta como sesión de carrera.
 - ${availabilityLine(athleteProfile)}
 
-[ESTADO ACTUAL DE CARGA Y RECUPERACIÓN (datos reales)]:
+[ESTADO ACTUAL DE CARGA Y RECUPERACIÓN (hechos calculados por la app)]:
 ${formatLoadContext(loadContext)}
+
+[SESIONES YA EXISTENTES ESA SEMANA] (las hechas y las de Suunto se conservan; tu plan sustituye solo las planificadas no hechas de los días que devuelvas):
+${weekSessions}
+
+[INTENSIDAD]:
+${describeIntensityPrescription(intensity)}
+
+[NUTRICIÓN: EVIDENCIA DEL ATLETA]:
+- ${nutritionLine}. Si falta un dato, deja ese campo numérico en null y explícalo en "nutritionAdvice".
 
 [REGLA DE INTEGRIDAD]: Respeta rigurosamente los umbrales medidos:
 - AeT (Umbral Aeróbico): ${athleteProfile?.aetHr ? athleteProfile.aetHr + ' bpm' : 'SIN DATO (no inventes pulsaciones)'} (tope de FC SOLO como respaldo sin banda; con banda de pecho la referencia es ZoneSense en verde)
@@ -336,20 +361,21 @@ Responde ÚNICAMENTE con un JSON válido estructurado así:
       "plannedDurationMin": number,
       "plannedDistanceKm": number (opcional),
       "plannedElevationGainM": number (opcional),
-      "targetHrMin": number,
-      "targetHrMax": number,
+      "intensitySource": "zonesense | heart_rate_measured | rpe | terrain | unknown",
       "zoneSenseTarget": "ZoneSense verde (aeróbico) | Regenerativo (verde, muy suave) | ZoneSense amarillo (entre umbrales) | ZoneSense rojo (sobre umbral anaeróbico)",
+      "targetHrMin": number o null (null si no hay umbral de FC medido),
+      "targetHrMax": number o null (null si no hay umbral de FC medido),
       "description": "Explicación detallada del objetivo metabólico y neuromuscular",
       "personalizedReasoning": "Por qué prescribo esto para ti hoy teniendo en cuenta tus datos específicos y sensaciones previas",
-      "learnedAdjustment": "Regla aprendida aplicada aquí (ej: limitación de trote en >12% de pendiente / cuidado de sóleo)",
+      "learnedAdjustment": "Regla aprendida de su memoria que aplicas aquí, o null si no aplicas ninguna",
       "warmup": "Calentamiento específico",
       "mainSet": "Parte principal detallada paso a paso",
       "cooldown": "Vuelta a la calma",
       "terrainRecommendation": "Pista forestal, sendero con piedras, rampa empinada, etc.",
       "nutritionAdvice": "Hidratación/electrolitos recomendados acordes a su perfil y calor de La Palma",
-      "plannedCarbsPerHourG": 60,
-      "plannedFluidsPerHourMl": 650,
-      "plannedSodiumPerHourMg": 550,
+      "plannedCarbsPerHourG": number o null (solo con tolerancia registrada, sin superarla),
+      "plannedFluidsPerHourMl": number o null (solo con tasa de sudoración medida),
+      "plannedSodiumPerHourMg": number o null (solo con tasa de sudoración y perfil de sodio),
       "strengthExercises": [
         {
           "name": "Nombre ejercicio",
@@ -372,7 +398,9 @@ Responde ÚNICAMENTE con un JSON válido estructurado así:
     });
 
     const parsed = parseModelJson(text);
-    res.json(parsed);
+    // El código garantiza las reglas: sin FC inventada, colores canónicos, nutrición con evidencia
+    const checked = sanitizePlanWorkouts(parsed.workouts, athleteProfile, weekStartDate, nutritionEvidence);
+    res.json({ ...parsed, workouts: checked.workouts, validationNotes: checked.notes, structureIssues: checked.structureIssues });
   } catch (err) {
     sendAiError(res, '/api/generate-plan', err);
   }
@@ -381,38 +409,60 @@ Responde ÚNICAMENTE con un JSON válido estructurado así:
 // 3. Adapt Session in Real-Time based on Morning HRV & Sleep
 app.post('/api/adapt-session', async (req: Request, res: Response) => {
   try {
-    const { originalWorkout, checkIn, athleteProfile } = req.body;
+    const { originalWorkout, checkIn, athleteProfile, athleteHistoryDoc, readinessState } = req.body;
+
+    // El estado y los límites los calcula el motor determinista (normalmente
+    // en el cliente, con TSB y carga); si no llegan, se calculan aquí con el check-in.
+    const state: ReadinessState =
+      readinessState && readinessState.level
+        ? readinessState
+        : evaluateReadiness({
+            hrvRmssd: checkIn?.hrvRmssd,
+            hrvBaseline: athleteProfile?.baselineHrv || checkIn?.hrvBaseline,
+            sleepHours: checkIn?.sleepHours,
+            muscleSoreness: checkIn?.muscleSoreness,
+            stressLevel: checkIn?.stressLevel,
+            recoveryPct: checkIn?.readinessScore,
+            plannedWorkout: originalWorkout,
+          });
 
     const prompt = `
-El atleta tiene programado hoy el siguiente entrenamiento:
+El atleta tiene programado hoy:
 - Título: ${originalWorkout?.title}
 - Tipo: ${originalWorkout?.type}
 - Duración prevista: ${originalWorkout?.plannedDurationMin} min
 - Objetivo: ${originalWorkout?.mainSet}
 
-Sin embargo, sus datos matutinos de Suunto registran FATIGA:
-- HRV rMSSD: ${checkIn?.hrvRmssd} ms (Línea base: ${checkIn?.hrvBaseline} ms, variación: ${Math.round(((checkIn?.hrvRmssd - checkIn?.hrvBaseline) / checkIn?.hrvBaseline) * 100)}%)
-- Horas de sueño: ${checkIn?.sleepHours} h (Calidad: ${checkIn?.sleepQuality}/100)
-- Dolor muscular percibido: ${checkIn?.muscleSoreness || 'No indicado'}/10
-- Estrés vital: ${checkIn?.stressLevel || 'No indicado'}/10
+Datos de esta mañana:
+- HRV: ${checkIn?.hrvRmssd ?? 'sin dato'} ms · sueño ${checkIn?.sleepHours ?? 'sin dato'} h · dolor ${checkIn?.muscleSoreness ?? 'no indicado'}/10 · estrés ${checkIn?.stressLevel ?? 'no indicado'}/10
 
-Como Miguel, tu labor es proteger la adaptación y prevenir lesiones según Uphill Athlete.
-Adapta la sesión de hoy de forma realista (ej. si eran series o tirada dura, conviértela en rodaje suave Z1 regenerativo de 40 min, caminata con movilidad o descanso total).
+${describeReadiness(state)}
+
+[INTENSIDAD]:
+${describeIntensityPrescription(resolveIntensityPrescription(athleteProfile))}
+${athleteHistoryDoc?.content ? `
+[HISTORIAL DEL ATLETA (.MD)]:
+"""
+${athleteHistoryDoc.content}
+"""` : ''}
+
+Tu labor: elegir la sesión de hoy DENTRO de esos límites (no los reinterpretes ni los amplíes) y explicarla al atleta. Si el estado es VERDE y no hace falta cambiar nada, dilo y devuelve la sesión original.
 
 Responde en formato JSON:
 {
-  "miguelMessage": "Explicación directa, cercana y contundente de Miguel al atleta sobre por qué se modifica el entreno.",
+  "miguelMessage": "Explicación directa y cercana de Miguel: qué ha visto el motor, qué cambia y por qué.",
   "adaptedWorkout": {
-    "title": "Título adaptado",
-    "type": "easy_run | rest | strength_core",
+    "title": "Título",
+    "type": "easy_run | rest | strength_core | long_mountain_run | muscular_endurance | hill_intervals",
     "plannedDurationMin": number,
-    "targetHrMax": number,
-    "zoneSenseTarget": "ZoneSense verde (aeróbico) | Regenerativo (verde, muy suave)",
-    "mainSet": "Instrucciones de la sesión adaptada",
-    "warmup": "Calentamiento suave",
-    "cooldown": "Estiramientos o vuelta a la calma",
-    "wasAdapted": true,
-    "adaptationReason": "Fatiga detectada por caída de HRV y déficit de sueño"
+    "intensitySource": "zonesense | heart_rate_measured | rpe | terrain | unknown",
+    "zoneSenseTarget": "ZoneSense verde (aeróbico) | Regenerativo (verde, muy suave) | ZoneSense amarillo (entre umbrales) | ZoneSense rojo (sobre umbral anaeróbico)",
+    "targetHrMax": number o null (null si no hay umbral de FC medido),
+    "mainSet": "Instrucciones de la sesión",
+    "warmup": "Calentamiento",
+    "cooldown": "Vuelta a la calma",
+    "wasAdapted": true o false,
+    "adaptationReason": "Motivo, citando el estado del motor"
   }
 }
 `;
@@ -424,7 +474,9 @@ Responde en formato JSON:
     });
 
     const parsed = parseModelJson(text);
-    res.json(parsed);
+    // Recorte determinista a los límites del motor de readiness
+    const checked = sanitizeAdaptation(parsed.adaptedWorkout, state, athleteProfile);
+    res.json({ ...parsed, adaptedWorkout: checked.adapted, corrections: checked.corrections, readinessState: state });
   } catch (err) {
     sendAiError(res, '/api/adapt-session', err);
   }
@@ -433,7 +485,7 @@ Responde en formato JSON:
 // 4. Workout Debrief & FIT Analysis by Miguel (with Continuous Learning)
 app.post('/api/analyze-workout', async (req: Request, res: Response) => {
   try {
-    const { workout, fitMetrics, athleteProfile, athleteFeedback, coachMemory } = req.body;
+    const { workout, fitMetrics, athleteProfile, athleteFeedback, coachMemory, athleteHistoryDoc } = req.body;
 
     const memoryContext = coachMemory ? `
 [APRENDIZAJES PREVIOS DE MIGUEL SOBRE EL ATLETA]:
@@ -441,7 +493,7 @@ ${(coachMemory.insights || []).map((i: any) => `  * [${i.category}] ${i.observat
 ` : '';
 
     const prompt = `
-Analiza la sesión de trail recién completada por el atleta y extrae un APRENDIZAJE PERMANENTE para tu cuaderno de entrenador.
+Analiza la sesión de trail recién completada por el atleta y anota en tu cuaderno lo que has OBSERVADO en ella. Una sola sesión es una observación, no una regla permanente: formúlala como tal.
 
 [PLANIFICACIÓN PREVIA]:
 - Título: ${workout?.title}
@@ -459,7 +511,7 @@ Analiza la sesión de trail recién completada por el atleta y extrae un APRENDI
 - TSS (Suunto): ${workout?.actualTss ?? 'sin dato'}
 - Distribución de zonas: ${
       workout?.zoneSenseBreakdown
-        ? `ZoneSense de Suunto → bajo AeT ${workout.zoneSenseBreakdown.aerobicPct}%, entre AeT y AnT ${workout.zoneSenseBreakdown.transitionPct}%, sobre AnT ${workout.zoneSenseBreakdown.anaerobicPct}%`
+        ? `ZoneSense de Suunto → ${describeBreakdown(workout.zoneSenseBreakdown)}`
         : fitMetrics?.hasHeartRate
           ? `por FC del .FIT (NO es ZoneSense) → FC ≤ AeT ${fitMetrics.timeInAerobicPct}%, AeT–AnT ${fitMetrics.timeInTransitionPct}%, FC > AnT ${fitMetrics.timeInAnaerobicPct}%`
           : 'sin datos de zonas (no las supongas)'
@@ -469,15 +521,20 @@ Analiza la sesión de trail recién completada por el atleta y extrae un APRENDI
 - RPE (Esfuerzo percibido 1-10): ${athleteFeedback?.rpe || workout?.athleteRpe ? (athleteFeedback?.rpe || workout?.athleteRpe) + '/10' : 'No indicado'}
 - Comentarios y sensaciones: "${athleteFeedback?.notes || workout?.athleteNotes || 'Sin comentarios adicionales'}"
 ${memoryContext}
+${athleteHistoryDoc?.content ? `
+[HISTORIAL DEL ATLETA (.MD)]:
+"""
+${athleteHistoryDoc.content}
+"""` : ''}
 
 Como Coach Miguel, realiza una evaluación honesta y sin rodeos, y genera un aprendizaje para tu memoria en formato JSON:
 {
   "feedback": "Texto de Miguel hablando como entrenador amigo y directo: evalúa cumplimiento de ZoneSense/AeT, avisa si corrió de más en subidas, analiza sensaciones musculares y da pautas de recuperación para Transvulcania 2027.",
   "newLearnedInsight": {
     "category": "physiology_zonesense | fatigue_recovery | biomechanics_injury | nutrition_hydration | terrain_technique",
-    "observation": "Qué acabas de comprobar de forma empírica sobre este atleta en esta sesión concreta",
-    "ruleForFuturePlans": "Regla aplicable a los siguientes planes para optimizar su rendimiento o evitar lesiones",
-    "confidenceScore": 85
+    "observation": "Qué ha ocurrido en ESTA sesión concreta (hecho observado, con el dato que lo respalda)",
+    "ruleForFuturePlans": "Qué vigilar en próximas sesiones para confirmarlo o descartarlo (hipótesis, no regla)",
+    "confidenceScore": número 0-100 (una sola sesión: confianza baja)
   }
 }
 `;

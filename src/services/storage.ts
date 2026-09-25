@@ -310,6 +310,27 @@ function fixLegacyReadinessScore(c: DailyCheckIn): DailyCheckIn {
   return { ...c, readinessScore: m ? Number(m[1]) : undefined };
 }
 
+/**
+ * Perfil de gut training vacío: tolerancia 0 (= sin dato), sin tomas.
+ * Las etapas del protocolo son plantilla del programa (rangos de g/h por
+ * etapa), pero el progreso del atleta empieza de cero.
+ */
+function emptyGutProfile(): GutTrainingProfile {
+  return {
+    currentMaxCarbsPerHour: 0,
+    goalCarbsPerHour: 0,
+    trainingPhase: 'Initiation (30-45g/h)',
+    activeStageId: 1,
+    stages: SAMPLE_ADAPTATION_STAGES.map((st, i) => ({
+      ...st,
+      status: i === 0 ? 'in_progress' : 'locked',
+      sessionsCompleted: 0,
+    })),
+    gutSensitivities: [],
+    entries: [],
+  };
+}
+
 export const StorageService = {
   getProfile(): AthleteProfile {
     try {
@@ -370,12 +391,10 @@ export const StorageService = {
     try {
       const stored = localStorage.getItem(STORAGE_KEYS.WORKOUTS);
       if (stored !== null) return JSON.parse(stored);
-      // Auto-populate with sample test workouts ONLY on very first load
-      this.saveWorkouts(SAMPLE_TEST_WORKOUTS);
-      this.setTestDataActive(true);
-      return SAMPLE_TEST_WORKOUTS;
+      // Sin datos → calendario vacío. Los de ejemplo SOLO con "Cargar Prueba".
+      return [];
     } catch {
-      return SAMPLE_TEST_WORKOUTS;
+      return [];
     }
   },
 
@@ -406,10 +425,10 @@ export const StorageService = {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed)) return parsed.map(fixLegacyReadinessScore);
       }
-      // Solo en la primera carga (sin nada guardado) se muestran los de ejemplo
+      // Los de ejemplo solo en modo prueba
       return this.isTestDataActive() ? SAMPLE_DAILY_CHECKINS : [];
     } catch {
-      return SAMPLE_DAILY_CHECKINS;
+      return [];
     }
   },
 
@@ -709,20 +728,17 @@ Puedes revisar tus umbrales (AeT y AnT) en tu perfil, registrar tu test de deriv
   getGutProfile(): GutTrainingProfile {
     try {
       const stored = localStorage.getItem(STORAGE_KEYS.GUT_PROFILE);
-      if (!stored) return SAMPLE_GUT_PROFILE;
+      if (!stored) return this.isTestDataActive() ? SAMPLE_GUT_PROFILE : emptyGutProfile();
       const parsed: GutTrainingProfile = JSON.parse(stored);
       if (!parsed.stages || parsed.stages.length === 0) {
-        parsed.stages = SAMPLE_ADAPTATION_STAGES;
+        parsed.stages = emptyGutProfile().stages;
       }
       if (!parsed.activeStageId) {
-        parsed.activeStageId = 2;
-      }
-      if (!parsed.fatMaxGramsPerHour) {
-        parsed.fatMaxGramsPerHour = 48;
+        parsed.activeStageId = 1;
       }
       return parsed;
     } catch {
-      return SAMPLE_GUT_PROFILE;
+      return emptyGutProfile();
     }
   },
 
@@ -756,7 +772,9 @@ Puedes revisar tus umbrales (AeT y AnT) en tu perfil, registrar tu test de deriv
       // fallback
     }
 
-    const segments = SAMPLE_TRANSVULCANIA_SEGMENTS;
+    // Segmentos del simulador: SOLO en modo prueba. No son datos verificados
+    // del recorrido ni del atleta (incluyen topes de FC y tiempos de ejemplo).
+    const segments = this.isTestDataActive() ? SAMPLE_TRANSVULCANIA_SEGMENTS : [];
     const baseTotalMinutes = segments.reduce((sum, s) => sum + s.estimatedTimeMin, 0);
     const targetTotalMinutes = customFinishHours * 60;
     const ratio = baseTotalMinutes > 0 ? targetTotalMinutes / baseTotalMinutes : 1;
@@ -778,8 +796,8 @@ Puedes revisar tus umbrales (AeT y AnT) en tu perfil, registrar tu test de deriv
       estimatedFinishTimeFormatted: `${hoursPart}h ${formattedMinutes}m`,
       estimatedFinishMinutes: Math.round(targetTotalMinutes),
       segments: scaledSegments,
-      overallPacingStrategy: 'Estrategia de Conservación Uphill: Sub-AeT (< 142 bpm) en las subidas volcánicas hasta El Pilar y cresta de Los Muchachos. Paso a cadencia rápida sin frenar en el descenso de El Time.',
-      eccentricImpactWarning: 'Los 2.410m de caída vertical desde El Roque hasta Tazacorte exigen más del 65% de la capacidad contráctil excéntrica de los cuádriceps.',
+      overallPacingStrategy: 'Subidas en ZoneSense verde (con banda de pecho); en el descenso final, cadencia alta sin frenar en seco.',
+      eccentricImpactWarning: 'El descenso final hasta Tazacorte es muy largo: prepara los cuádriceps con trabajo excéntrico.',
     };
 
     return plan;
@@ -892,9 +910,9 @@ Puedes revisar tus umbrales (AeT y AnT) en tu perfil, registrar tu test de deriv
     try {
       const stored = localStorage.getItem(STORAGE_KEYS.HYDRATION_TESTS);
       if (stored) return JSON.parse(stored);
-      return SAMPLE_HYDRATION_TESTS;
+      return this.isTestDataActive() ? SAMPLE_HYDRATION_TESTS : [];
     } catch {
-      return SAMPLE_HYDRATION_TESTS;
+      return [];
     }
   },
 
@@ -919,18 +937,19 @@ Puedes revisar tus umbrales (AeT y AnT) en tu perfil, registrar tu test de deriv
     return list;
   },
 
+  // Plan de hidratación por tramos: SOLO en modo prueba (cifras de ejemplo, no tuyas).
   getTransvulcaniaHydrationSections(): TransvulcaniaHydrationSection[] {
-    return SAMPLE_TRANSVULCANIA_HYDRATION_SECTIONS;
+    return this.isTestDataActive() ? SAMPLE_TRANSVULCANIA_HYDRATION_SECTIONS : [];
   },
 
   // --- WUT (Weight Urine Thirst) Hydration Check ---
-  getWUTCheck(): WUTDailyCheck {
+  getWUTCheck(): WUTDailyCheck | null {
     try {
       const stored = localStorage.getItem(STORAGE_KEYS.WUT_CHECKS);
       if (stored) return JSON.parse(stored);
-      return SAMPLE_WUT_CHECK;
+      return this.isTestDataActive() ? SAMPLE_WUT_CHECK : null;
     } catch {
-      return SAMPLE_WUT_CHECK;
+      return null;
     }
   },
 
@@ -1051,7 +1070,7 @@ Puedes revisar tus umbrales (AeT y AnT) en tu perfil, registrar tu test de deriv
         weeklySummaries: this.getWeeklySummaries(),
         mesocycleProgression: this.getMesocycleProgression(),
         hydrationTests: this.getHydrationTests(),
-        wutChecks: this.getWUTCheck()
+        wutChecks: this.getWUTCheck() ?? undefined
       }
     };
   },
