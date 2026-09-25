@@ -414,6 +414,7 @@ El banner desaparece solo con la siguiente respuesta correcta. También puedes c
 Con Supabase configurado, la app gana dos cosas (sin él, todo funciona igual que antes):
 
 - **Biblioteca de Miguel (RAG).** Subes documentos de referencia (manuales, apuntes, planes de tu entrenador…). Se trocean, se convierten en *embeddings* y se guardan en Supabase (Postgres + pgvector). En cada mensaje del chat se buscan los fragmentos más parecidos a tu pregunta y se le pasan a Miguel, que los cita como `[B1]`, `[B2]`… Debajo de su respuesta ves de qué documento salió. **No es un modelo entrenado**: Miguel solo "sabe" lo que hay en esos fragmentos, y nunca los usa como tus datos fisiológicos (esos siguen viniendo solo de Suunto, tu .md y tus tests).
+- **Miguel recuerda las conversaciones guardadas.** Al guardar, cada intercambio (tu pregunta + su respuesta) se vectoriza. En una conversación nueva, Miguel recupera los intercambios anteriores más parecidos a lo que preguntas (hasta 3), los cita como `[C1]` con su fecha y debajo de la respuesta ves de qué conversación salen. Los trata como lo que le contaste, no como datos medidos, y si están desactualizados prevalecen tus datos actuales. La conversación abierta no se "recuerda" así porque ya la tiene entera.
 - **Conversaciones guardadas, cuando tú quieras.** El chat **no** se conecta a Supabase por su cuenta: solo se guarda al pulsar **Guardar en Supabase** (ver 10.6). Desde cualquier móvil u ordenador puedes abrir **Conversaciones guardadas** y cargar una. Borrar el chat en el móvil (papelera) **nunca** borra nada de Supabase.
 
 ### 10.1 Crear el proyecto y las tablas en Supabase
@@ -484,3 +485,22 @@ Encima del chat de Miguel hay dos botones:
 - **Papelera del chat**: borra la conversación **solo de este dispositivo** (avisa si hay mensajes sin guardar). En Supabase no se borra nada; la próxima vez que guardes se crea una conversación nueva. La app no tiene ninguna opción para borrar conversaciones de Supabase: si algún día quieres hacerlo, desde el panel de Supabase (**Table Editor → chat_sessions**, borrar la fila; sus mensajes se borran con ella).
 
 La primera vez te pide la clave (`INGEST_SECRET`), la misma que la biblioteca.
+
+Al guardar, además, Miguel indexa los intercambios nuevos para recordarlos en otras conversaciones (10.7). Si eso fallara, los mensajes quedan guardados igual y el aviso lo indica; vuelve a pulsar **Guardar** más tarde y se completa.
+
+### 10.7 Qué recuerda Miguel
+
+| Fuente | Cuándo la usa |
+|---|---|
+| La conversación abierta en el móvil | Siempre, entera |
+| Conversaciones guardadas en Supabase | Solo los intercambios parecidos a tu pregunta (hasta 3), citados como `[C1]`… |
+| Biblioteca de Miguel | Solo los fragmentos parecidos a tu pregunta (hasta 5), citados como `[B1]`… |
+| Memoria de Miguel ("Anotar en memoria") | Siempre, las reglas y hipótesis confirmadas |
+| Suunto, perfil, historial .md, check-in | Siempre |
+
+Lo que no esté guardado en Supabase (mensajes solo en el móvil) no se recuerda desde otras conversaciones. Buscar en la biblioteca y en las conversaciones usa **un solo** embedding por pregunta, así que no duplica el gasto.
+
+### 10.8 Coste
+
+- **Supabase**: el plan gratuito (0 €) basta de sobra: un mensaje ocupa ~1–2 KB, un intercambio vectorizado ~8–10 KB y un documento largo (200.000 caracteres) ~2–3 MB. La pega del plan gratuito es que **pausa el proyecto tras unos 7 días sin actividad**: la biblioteca y las conversaciones dejan de responder (el chat sigue funcionando sin ellas) hasta que lo reactivas con un botón en el panel de Supabase; no se pierde nada. Precios actuales: supabase.com/pricing.
+- **Embeddings (Google, con tu `GEMINI_API_KEY`)**: un embedding pequeño por mensaje del chat y uno por intercambio al guardar; céntimos al mes con un uso normal, dentro del nivel gratuito en muchos casos.
