@@ -38,6 +38,7 @@ import {
 } from './sampleData';
 import { computePmcSeries, localDateKey } from '../utils/trainingLoad';
 import { rebaseSuuntoCheckIn } from '../utils/readiness';
+import { applyEvidence, refreshMemory, type EvidenceContext, type EvidenceItem } from '../brain/memory';
 
 const STORAGE_KEYS = {
   PROFILE: 'uphill_coach_profile',
@@ -628,7 +629,8 @@ Puedes revisar tus umbrales (AeT y AnT) en tu perfil, registrar tu test de deriv
       if (!stored) return DEFAULT_COACH_MEMORY;
       const { memory, changed } = migrateLegacyCoachMemory(JSON.parse(stored));
       if (changed) localStorage.setItem(STORAGE_KEYS.COACH_MEMORY, JSON.stringify(memory));
-      return memory;
+      // Estado de cada aprendizaje recalculado desde sus evidencias (y caducidad)
+      return refreshMemory(memory, localDateKey());
     } catch {
       return DEFAULT_COACH_MEMORY;
     }
@@ -638,30 +640,11 @@ Puedes revisar tus umbrales (AeT y AnT) en tu perfil, registrar tu test de deriv
     localStorage.setItem(STORAGE_KEYS.COACH_MEMORY, JSON.stringify(memory));
   },
 
-  addLearnedInsight(insight: Partial<CoachLearnedInsight> & Pick<CoachLearnedInsight, 'category' | 'observation' | 'ruleForFuturePlans'>): CoachLearnedMemory {
-    const memory = this.getCoachMemory();
-    const newInsight: CoachLearnedInsight = {
-      confidenceScore: 85,
-      learnedFromDate: new Date().toISOString().split('T')[0],
-      sourceEvent: 'Análisis del entrenador Miguel',
-      ...insight,
-      id: `insight-${Date.now()}`,
-    };
-    
-    // Check if duplicate or update existing
-    const existingIdx = memory.insights.findIndex(
-      i => i.observation.toLowerCase().includes(insight.observation.toLowerCase().substring(0, 30))
-    );
-
-    if (existingIdx >= 0) {
-      memory.insights[existingIdx] = newInsight;
-    } else {
-      memory.insights.unshift(newInsight);
-    }
-
-    memory.lastUpdated = new Date().toISOString();
-    this.saveCoachMemory(memory);
-    return memory;
+  /** Aplica evidencias (análisis de sesión, nota del atleta, chat confirmado). El estado lo calcula src/brain/memory.ts. */
+  applyMemoryEvidence(items: EvidenceItem[], ctx: EvidenceContext): { memory: CoachLearnedMemory; changes: string[] } {
+    const r = applyEvidence(this.getCoachMemory(), items, ctx, localDateKey());
+    this.saveCoachMemory(r.memory);
+    return r;
   },
 
   addCoachNotebookNote(note: string): CoachLearnedMemory {

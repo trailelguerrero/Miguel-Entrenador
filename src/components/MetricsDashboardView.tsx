@@ -76,6 +76,15 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
   const [showSuuntoGuideModal, setShowSuuntoGuideModal] = useState(false);
   const [hoveredPmcPoint, setHoveredPmcPoint] = useState<PMCDataPoint | null>(null);
 
+  // Gut training e hidratación: solo lo que el atleta ha registrado
+  const gutProfile = useMemo(() => StorageService.getGutProfile(), []);
+  const gutStagesTotal = gutProfile.stages?.length ?? 0;
+  const gutStagesDone = (gutProfile.stages || []).filter((st) => st.status === 'completed').length;
+  const lastSweatTest = useMemo(
+    () => [...StorageService.getHydrationTests()].sort((a, b) => b.date.localeCompare(a.date))[0] ?? null,
+    [],
+  );
+
   // PMC calculado con todo el historial de entrenos completados (TSS de Suunto)
   const calculatedPmcSeries: PMCDataPoint[] = useMemo(() => {
     const days = period === '7d' ? 14 : period === '30d' ? 30 : period === 'mesocycle' ? 42 : 90;
@@ -1051,7 +1060,7 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
               </div>
               <div>
                 <h4 className="text-sm font-black text-zinc-100">Entrenamiento Gástrico (Gut Training)</h4>
-                <p className="text-[11px] text-zinc-400">Transportadores SGLT1 y GLUT5 para 80g CHO/h</p>
+                <p className="text-[11px] text-zinc-400">Tolerancia registrada en tus sesiones de gut training</p>
               </div>
             </div>
 
@@ -1066,21 +1075,34 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
 
           <div className="grid grid-cols-2 gap-3 text-xs">
             <div className="bg-zinc-950 p-3 rounded-xl border border-zinc-800">
-              <span className="text-[10px] text-zinc-400 block uppercase font-bold">Tasa Actual</span>
-              <div className="text-xl font-black text-zinc-100 font-mono mt-0.5">60 g/h</div>
-              <span className="text-[10px] text-emerald-400">Fase 2 de 4 completada</span>
+              <span className="text-[10px] text-zinc-400 block uppercase font-bold">Tolerancia registrada</span>
+              <div className="text-xl font-black text-zinc-100 font-mono mt-0.5">
+                {gutProfile.currentMaxCarbsPerHour > 0 ? `${gutProfile.currentMaxCarbsPerHour} g/h` : 'Sin dato'}
+              </div>
+              <span className="text-[10px] text-emerald-400">
+                {gutStagesTotal > 0 ? `Fase ${gutStagesDone} de ${gutStagesTotal} completada` : 'Sin fases registradas'}
+              </span>
             </div>
 
             <div className="bg-zinc-950 p-3 rounded-xl border border-zinc-800">
-              <span className="text-[10px] text-zinc-400 block uppercase font-bold">Objetivo Transvulcania</span>
-              <div className="text-xl font-black text-amber-400 font-mono mt-0.5">80 g/h</div>
-              <span className="text-[10px] text-zinc-400">Ratio 1:0.8 malto:fructosa</span>
+              <span className="text-[10px] text-zinc-400 block uppercase font-bold">Tu objetivo</span>
+              <div className="text-xl font-black text-amber-400 font-mono mt-0.5">
+                {gutProfile.goalCarbsPerHour > 0 ? `${gutProfile.goalCarbsPerHour} g/h` : 'Sin definir'}
+              </div>
+              <span className="text-[10px] text-zinc-400">Se progresa desde tu tolerancia, nunca por encima</span>
             </div>
           </div>
 
           <div className="bg-zinc-950 p-3.5 rounded-xl border border-zinc-800 text-xs text-zinc-400 space-y-1 leading-relaxed">
-            <strong className="text-zinc-200 block">Pauta de Sodio e Hidratación:</strong>
-            Para compensar la tasa de sudoración estimada en el volcán de La Palma (calor en Tazacorte y viento seco en crestería), la reposición debe ser de <strong>650 mg de sodio por hora</strong> con <strong>600-750 ml de líquidos</strong>.
+            <strong className="text-zinc-200 block">Sodio e hidratación:</strong>
+            {lastSweatTest ? (
+              <>
+                Último test de sudoración ({lastSweatTest.date}, {lastSweatTest.temperatureC} °C): <strong>{lastSweatTest.sweatRateLitersPerHour} L/h</strong> de sudor.
+                Con ese dato Miguel ajusta tus líquidos; el sodio depende de tu perfil de pérdida de sal.
+              </>
+            ) : (
+              <>Aún no hay un test de sudoración registrado: sin él no hay pauta personal de líquidos ni de sodio. Hazlo en "Plan & Análisis Hidratación".</>
+            )}
           </div>
         </div>
 

@@ -1,3 +1,5 @@
+import { getTsbZoneDiagnosis } from '../utils/pmcCalculations';
+import { isAppliedRule } from '../brain/memory';
 import { localDateKey } from '../utils/trainingLoad';
 import { StorageService } from '../services/storage';
 import React, { useRef } from 'react';
@@ -65,6 +67,16 @@ export const ReportPdfModal: React.FC<ReportPdfModalProps> = ({
   const completedWorkouts = workouts.filter(w => w.completed && w.date >= since30d);
   const totalVolumeHours = (completedWorkouts.reduce((acc, w) => acc + (w.actualDurationMin || 0), 0) / 60).toFixed(1);
   const totalAscentM = completedWorkouts.reduce((acc, w) => acc + (w.actualElevationGainM || 0), 0);
+  const descentWorkouts = completedWorkouts.filter(w => w.actualElevationLossM != null);
+  const totalDescentM = descentWorkouts.reduce((acc, w) => acc + (w.actualElevationLossM || 0), 0);
+  // Gut training e hidratación: solo lo registrado por el atleta
+  const gutProfile = StorageService.getGutProfile();
+  const gutStagesDone = (gutProfile.stages || []).filter(st => st.status === 'completed').length;
+  const gutEntries = gutProfile.entries || [];
+  const avgGiTolerance = gutEntries.length > 0
+    ? (gutEntries.reduce((acc, e) => acc + e.giToleranceRating, 0) / gutEntries.length).toFixed(1)
+    : null;
+  const lastSweatTest = [...StorageService.getHydrationTests()].sort((a, b) => b.date.localeCompare(a.date))[0] ?? null;
   const totalDistanceKm = completedWorkouts.reduce((acc, w) => acc + (w.actualDistanceKm || 0), 0).toFixed(1);
   // % de tiempo aeróbico (ZoneSense) ponderado por duración, solo entrenos con ese dato
   const zsWorkouts = completedWorkouts.filter(w => w.zoneSenseBreakdown && (w.actualDurationMin || 0) > 0);
@@ -74,7 +86,7 @@ export const ReportPdfModal: React.FC<ReportPdfModalProps> = ({
     : null;
 
   // Reglas reales de la memoria de Miguel (no textos fijos)
-  const learnedRules = StorageService.getCoachMemory().insights.slice(0, 3).map(i => i.ruleForFuturePlans);
+  const learnedRules = StorageService.getCoachMemory().insights.filter(i => isAppliedRule(i.status)).slice(0, 3).map(i => i.ruleForFuturePlans);
 
   // Handle browser native print (PDF export)
   const handlePrint = () => {
@@ -274,13 +286,15 @@ export const ReportPdfModal: React.FC<ReportPdfModalProps> = ({
               <div className="bg-zinc-900/60 print:bg-zinc-50 p-3 rounded-xl border border-zinc-800 print:border-zinc-200">
                 <span className="text-[10px] text-zinc-400 print:text-zinc-600 block uppercase font-bold">Forma (TSB)</span>
                 <div className="text-xl font-black text-red-400 print:text-red-700 font-mono">{latestPmc.tsb.toFixed(1)}</div>
-                <span className="text-[10px] text-zinc-500">Sobrecarga Óptima</span>
+                <span className="text-[10px] text-zinc-500">{getTsbZoneDiagnosis(latestPmc.tsb).label}</span>
               </div>
 
               <div className="bg-zinc-900/60 print:bg-zinc-50 p-3 rounded-xl border border-zinc-800 print:border-zinc-200">
                 <span className="text-[10px] text-zinc-400 print:text-zinc-600 block uppercase font-bold">HRV 7d rMSSD</span>
                 <div className="text-xl font-black text-amber-400 print:text-amber-700 font-mono">{avgHrv7d} ms</div>
-                <span className="text-[10px] text-red-400 font-bold font-mono">{hrvDiffPct}% vs basal ({baselineHrv}ms)</span>
+                <span className="text-[10px] text-red-400 font-bold font-mono">
+                  {baselineHrv > 0 && last7CheckIns.length > 0 ? `${hrvDiffPct}% vs basal (${baselineHrv}ms)` : 'Sin referencia de HRV'}
+                </span>
               </div>
             </div>
 
@@ -300,7 +314,9 @@ export const ReportPdfModal: React.FC<ReportPdfModalProps> = ({
 
               <div>
                 <span className="text-[10px] text-zinc-400 print:text-zinc-600 block uppercase font-bold">Descenso Excéntrico (-D)</span>
-                <span className="text-base font-black text-red-400 print:text-red-700 font-mono">-5.250 m</span>
+                <span className="text-base font-black text-red-400 print:text-red-700 font-mono">
+                  {descentWorkouts.length > 0 ? `-${totalDescentM.toLocaleString()} m` : 'Sin dato'}
+                </span>
                 <span className="text-[11px] text-zinc-400 print:text-zinc-600 block">Blindaje de cuádriceps 3-1-1</span>
               </div>
             </div>
@@ -314,18 +330,30 @@ export const ReportPdfModal: React.FC<ReportPdfModalProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
                 <div>
                   <span className="text-[10px] text-zinc-400 print:text-zinc-600 block">Tasa de Carbohidratos:</span>
-                  <span className="font-bold text-zinc-200 print:text-zinc-900">60 g CHO/h (Fase 2)</span>
-                  <span className="text-[10px] text-zinc-500 block">Meta Transvulcania: 80 g/h</span>
+                  <span className="font-bold text-zinc-200 print:text-zinc-900">
+                    {gutProfile.currentMaxCarbsPerHour > 0 ? `${gutProfile.currentMaxCarbsPerHour} g CHO/h (${gutStagesDone} fase(s) completada(s))` : 'Sin tolerancia registrada'}
+                  </span>
+                  <span className="text-[10px] text-zinc-500 block">
+                    {gutProfile.goalCarbsPerHour > 0 ? `Tu objetivo: ${gutProfile.goalCarbsPerHour} g/h` : 'Objetivo sin definir'}
+                  </span>
                 </div>
                 <div>
                   <span className="text-[10px] text-zinc-400 print:text-zinc-600 block">Tolerancia Digestiva:</span>
-                  <span className="font-bold text-emerald-400 print:text-emerald-700">4.2 / 5.0 (Excelente)</span>
-                  <span className="text-[10px] text-zinc-500 block">Sin náuseas ni reflujo reportado</span>
+                  <span className="font-bold text-emerald-400 print:text-emerald-700">
+                    {avgGiTolerance ? `${avgGiTolerance} / 5.0` : 'Sin registros'}
+                  </span>
+                  <span className="text-[10px] text-zinc-500 block">
+                    {gutEntries.length > 0 ? `Media de ${gutEntries.length} sesión(es) registrada(s)` : 'Registra tus sesiones de gut training'}
+                  </span>
                 </div>
                 <div>
-                  <span className="text-[10px] text-zinc-400 print:text-zinc-600 block">Pauta de Sodio:</span>
-                  <span className="font-bold text-zinc-200 print:text-zinc-900">650 mg Na+/hora</span>
-                  <span className="text-[10px] text-zinc-500 block">Protección térmica para La Palma</span>
+                  <span className="text-[10px] text-zinc-400 print:text-zinc-600 block">Tasa de sudoración:</span>
+                  <span className="font-bold text-zinc-200 print:text-zinc-900">
+                    {lastSweatTest ? `${lastSweatTest.sweatRateLitersPerHour} L/h` : 'Sin test'}
+                  </span>
+                  <span className="text-[10px] text-zinc-500 block">
+                    {lastSweatTest ? `Test del ${lastSweatTest.date} a ${lastSweatTest.temperatureC} °C` : 'Sin test no hay pauta personal de sodio'}
+                  </span>
                 </div>
               </div>
             </div>

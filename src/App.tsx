@@ -3,6 +3,7 @@ import { computePmcSeries, getWorkoutLoad } from './utils/trainingLoad';
 import { analyzeWeekStructure, mondayOfKey, addDaysKey } from './utils/weekStructure';
 import { localDateKey } from './utils/trainingLoad';
 import { buildBrainContext, summarizeWeekWorkouts } from './brain/context';
+import { addPending, isAppliedRule } from './brain/memory';
 import { Navbar } from './components/Navbar';
 import { MorningBanner } from './components/MorningBanner';
 import { CalendarView } from './components/CalendarView';
@@ -170,11 +171,6 @@ export default function App() {
   const handleSaveCoachMemory = (memory: CoachLearnedMemory) => {
     setCoachMemory(memory);
     StorageService.saveCoachMemory(memory);
-  };
-
-  const handleAddNewInsight = (insight: Omit<CoachLearnedInsight, 'id'>) => {
-    const updated = StorageService.addLearnedInsight(insight);
-    setCoachMemory(updated);
   };
 
   const handleSaveSecondaryRaces = (races: TargetRace[]) => {
@@ -767,6 +763,18 @@ ${structureLine} Ya puedes ver los entrenamientos en tu calendario.${warningLine
     setActiveTab('chat');
   };
 
+  // Evidencias contadas en el chat: quedan PENDIENTES hasta que el atleta las confirme
+  const handleExtractChatEvidence = async (): Promise<number> => {
+    const msgs = chatMessages.filter((m) => m.role !== 'system').map((m) => ({ role: m.role, content: m.content }));
+    const { evidence } = await ApiService.extractChatEvidence(msgs, coachMemory);
+    if (!evidence?.length) return 0;
+    // refId = la conversación: volver a extraer de ella no suma dos veces al mismo aprendizaje
+    const convId = chatMessages.find((m) => m.role === 'user')?.id ?? String(Date.now());
+    const updated = addPending(StorageService.getCoachMemory(), evidence, localDateKey(), `chat-${convId}`);
+    handleSaveCoachMemory(updated);
+    return evidence.length;
+  };
+
   // Analyze completed workout with Miguel
   const handleAnalyzeWorkout = async (
     workout: Workout,
@@ -782,17 +790,21 @@ ${structureLine} Ya puedes ver los entrenamientos en tu calendario.${warningLine
       coachMemory
     );
 
-    if (result && typeof result === 'object' && result.newLearnedInsight) {
-      const updatedMem = StorageService.addLearnedInsight({
-        category: result.newLearnedInsight.category,
-        observation: result.newLearnedInsight.observation,
-        ruleForFuturePlans: result.newLearnedInsight.ruleForFuturePlans,
-        confidenceScore: result.newLearnedInsight.confidenceScore || 85,
+    // Una sesión aporta EVIDENCIAS; el estado (observación → regla) lo decide src/brain/memory.ts.
+    // refId = la sesión: re-analizarla no cuenta dos veces.
+    let memoryChanges: string[] = [];
+    if (result && Array.isArray(result.evidence) && result.evidence.length > 0) {
+      const applied = StorageService.applyMemoryEvidence(result.evidence, {
+        date: workout.date,
+        source: 'workout_analysis',
+        refId: workout.id,
+        sourceEvent: `Análisis de "${workout.title}"`,
       });
-      setCoachMemory(updatedMem);
+      setCoachMemory(applied.memory);
+      memoryChanges = applied.changes;
     }
 
-    return result;
+    return { ...result, memoryChanges };
   };
 
   return (
@@ -808,7 +820,7 @@ ${structureLine} Ya puedes ver los entrenamientos en tu calendario.${warningLine
         onOpenCheckIn={() => setIsCheckInModalOpen(true)}
         onOpenProfile={() => setIsProfileModalOpen(true)}
         hasHistoryDoc={!!historyDoc}
-        learnedRulesCount={coachMemory.insights.length}
+        learnedRulesCount={coachMemory.insights.filter((i) => isAppliedRule(i.status)).length}
         isTestDataActive={isTestDataActive}
         onToggleTestData={handleToggleTestData}
         onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
@@ -966,6 +978,7 @@ ${structureLine} Ya puedes ver los entrenamientos en tu calendario.${warningLine
               }
             }}
             activeWorkoutContext={activeWorkoutContext}
+            onExtractEvidence={handleExtractChatEvidence}
           />
         )}
 
@@ -1014,7 +1027,6 @@ ${structureLine} Ya puedes ver los entrenamientos en tu calendario.${warningLine
         onAskMiguel={handleAskMiguelAboutWorkout}
         onAnalyzeWorkout={handleAnalyzeWorkout}
         profile={profile}
-        onAddNewInsight={handleAddNewInsight}
       />
 
       {/* Se montan al abrir: así siempre parten del perfil actual (p. ej. recién actualizado desde Suunto) */}

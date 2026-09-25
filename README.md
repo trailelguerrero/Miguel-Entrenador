@@ -9,6 +9,8 @@ Aplicación completa de entrenamiento de montaña inspirada en el manual de cabe
 ### 1. Coach Miguel (IA de Alto Rendimiento)
 - **Tono Cercano y Directo**: Un entrenador amigo que te ayuda, escucha tus sensaciones tras cada sesión y dice las cosas claras. Sin rodeos si te pasas de pulsaciones en días suaves o intentas forzar cuando hay fatiga.
 - **Contexto real**: perfil fisiológico, historial de entrenamientos, carreras secundarias y métricas matutinas. Una sola sesión es una observación, no una regla.
+- **Memoria basada en evidencias (`src/brain/memory.ts`)**: cada análisis de sesión, nota o conversación aporta *evidencias*; el estado lo calcula el código: 1 = observación, 2 = hipótesis (se vigila), ≥3 = regla provisional (se aplica), ≥5 sin contradicciones = consolidada. Cada evidencia en contra baja un nivel y un aprendizaje caduca a los 90 días sin evidencias nuevas. Una misma sesión cuenta una sola vez. Lo que Miguel saca del chat queda pendiente hasta que lo confirmas en *Memoria de Miguel*.
+- **Procedencia de los datos (`src/brain/provenance.ts`)**: lo que recibe Miguel va etiquetado como REAL, DERIVADO, ESTIMADO, HIPÓTESIS o RECOMENDACIÓN, para no mezclar lo medido con lo calculado o lo supuesto.
 - **Diálogo Interactivo**: Puedes debatir cómo te has sentido en la sesión, analizar por qué se planificó un ejercicio, ajustar ritmos o consultar estrategia técnica para la bajada de 2.400m de Transvulcania.
 
 ### 2. Metodología "Training for the Uphill Athlete"

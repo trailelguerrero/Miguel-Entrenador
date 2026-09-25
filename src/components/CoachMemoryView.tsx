@@ -17,6 +17,8 @@ import {
 } from 'lucide-react';
 import { CoachLearnedMemory, CoachLearnedInsight, AthleteProfile } from '../types';
 import { ApiService } from '../services/api';
+import { applyEvidence, confirmPending, countEvidence, discardPending, isAppliedRule, STATUS_LABEL } from '../brain/memory';
+import { localDateKey } from '../utils/trainingLoad';
 
 interface CoachMemoryViewProps {
   memory: CoachLearnedMemory;
@@ -57,21 +59,17 @@ export const CoachMemoryView: React.FC<CoachMemoryViewProps> = ({
 
     try {
       const extracted = await ApiService.extractInsightFromNote(newNoteText, profile, memory);
-      
-      const newInsight: CoachLearnedInsight = {
-        id: `insight-${Date.now()}`,
-        category: extracted.category,
-        observation: extracted.observation,
-        ruleForFuturePlans: extracted.ruleForFuturePlans,
-        confidenceScore: extracted.confidenceScore || 90,
-        learnedFromDate: new Date().toISOString().split('T')[0],
-        sourceEvent: 'Aportación directa del atleta a la libreta de Miguel',
-      };
+      const today = localDateKey();
+      // La nota es UNA evidencia; el estado (observación → regla) lo calcula el código
+      const { memory: withEvidence, changes } = applyEvidence(memory, extracted.evidence || [], {
+        date: today,
+        source: 'athlete_note',
+        refId: `note-${Date.now()}`,
+        sourceEvent: 'Nota del atleta en la libreta de Miguel',
+      }, today);
 
       const updatedMemory: CoachLearnedMemory = {
-        ...memory,
-        lastUpdated: new Date().toISOString(),
-        insights: [newInsight, ...memory.insights],
+        ...withEvidence,
         coachNotebookNotes: [
           newNoteText,
           ...(memory.coachNotebookNotes || []),
@@ -79,13 +77,36 @@ export const CoachMemoryView: React.FC<CoachMemoryViewProps> = ({
       };
 
       onUpdateMemory(updatedMemory);
-      setMiguelFeedback(extracted.miguelConfirmation || '¡Anotado en mi libreta! Lo tendré en cuenta en cada sesión que prescriba.');
+      setMiguelFeedback(
+        [extracted.miguelConfirmation || 'Anotado en mi libreta.', changes.length ? `(${changes.join(' · ')})` : '(La guardo como nota: no aporta evidencia concreta.)'].join(' '),
+      );
       setNewNoteText('');
     } catch (err: any) {
       // El banner "Error de API de IA" ya muestra el detalle y qué hacer
       console.error('Error al procesar la nota:', err);
     } finally {
       setIsExtracting(false);
+    }
+  };
+
+  const pending = memory.pendingEvidence || [];
+  const appliedCount = memory.insights.filter((i) => isAppliedRule(i.status)).length;
+  const handleConfirmPending = (id: string) => onUpdateMemory(confirmPending(memory, id, localDateKey()).memory);
+  const handleDiscardPending = (id: string) => onUpdateMemory(discardPending(memory, id));
+
+  const getStatusBadge = (status: CoachLearnedInsight['status']) => {
+    switch (status) {
+      case 'consolidated_rule':
+        return 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40';
+      case 'provisional_rule':
+        return 'bg-teal-500/20 text-teal-300 border-teal-500/40';
+      case 'hypothesis':
+        return 'bg-amber-500/20 text-amber-300 border-amber-500/40';
+      case 'refuted':
+      case 'expired':
+        return 'bg-stone-700/40 text-stone-400 border-stone-600';
+      default:
+        return 'bg-stone-500/20 text-stone-300 border-stone-500/30';
     }
   };
 
@@ -134,7 +155,7 @@ export const CoachMemoryView: React.FC<CoachMemoryViewProps> = ({
             <div className="flex items-center gap-2">
               <span className="text-xs bg-stone-800 text-stone-300 px-3 py-1.5 rounded-lg border border-stone-700 flex items-center gap-1.5 font-medium">
                 <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                {memory.insights.length} Reglas Aprendidas
+                {appliedCount} reglas aplicadas · {memory.insights.length} aprendizajes
               </span>
               {onRegeneratePlanWithMemory && (
                 <button
@@ -172,7 +193,7 @@ export const CoachMemoryView: React.FC<CoachMemoryViewProps> = ({
           Enseña a Miguel: Cuéntale cómo responde tu cuerpo
         </h2>
         <p className="text-xs text-stone-400 mb-3">
-          ¿Has probado un nuevo desayuno? ¿Te molestó el tendón tras una bajada con barro? Escríbelo con tus palabras: Miguel lo procesará para extraer una regla adaptativa permanente.
+          ¿Has probado un nuevo desayuno? ¿Te molestó el tendón tras una bajada con barro? Escríbelo con tus palabras: Miguel lo anota como una evidencia. Solo se convierte en regla si se repite (3 o más evidencias a favor; 5 sin contradicciones para consolidarla).
         </p>
 
         <div className="flex flex-col sm:flex-row gap-3">
@@ -210,6 +231,45 @@ export const CoachMemoryView: React.FC<CoachMemoryViewProps> = ({
           </div>
         )}
       </div>
+
+      {/* Evidencias del chat pendientes de confirmar */}
+      {pending.length > 0 && (
+        <div className="bg-stone-900 border border-amber-500/30 rounded-2xl p-5 shadow-lg">
+          <h2 className="text-sm font-bold text-white flex items-center gap-2 mb-1">
+            <AlertTriangle className="w-4 h-4 text-amber-400" />
+            Evidencias de tus conversaciones pendientes de confirmar ({pending.length})
+          </h2>
+          <p className="text-xs text-stone-400 mb-3">
+            Miguel las ha sacado del chat. Solo cuentan si confirmas que son ciertas.
+          </p>
+          <div className="space-y-2">
+            {pending.map((p) => {
+              const target = p.item.insightId ? memory.insights.find((i) => i.id === p.item.insightId) : null;
+              return (
+                <div key={p.id} className="bg-stone-950 border border-stone-800 rounded-xl p-3 text-xs text-stone-200 flex flex-col sm:flex-row sm:items-center gap-2">
+                  <div className="flex-1">
+                    <p>{p.item.summary}</p>
+                    <p className="text-[11px] text-stone-400 mt-0.5">
+                      {target
+                        ? `${p.item.supports ? 'Apoya' : 'Contradice'}: "${target.observation}"`
+                        : `Nuevo hallazgo: "${p.item.observation}"`}{' '}
+                      · {p.date}
+                    </p>
+                  </div>
+                  <div className="flex gap-2 shrink-0">
+                    <button onClick={() => handleConfirmPending(p.id)} className="px-3 py-1.5 rounded-lg bg-emerald-500 text-stone-950 font-bold cursor-pointer">
+                      Es cierto
+                    </button>
+                    <button onClick={() => handleDiscardPending(p.id)} className="px-3 py-1.5 rounded-lg bg-stone-800 text-stone-300 font-bold cursor-pointer">
+                      Descartar
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Category Filter Pills */}
       <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
@@ -252,31 +312,47 @@ export const CoachMemoryView: React.FC<CoachMemoryViewProps> = ({
                   <span className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-md border ${badge.bg}`}>
                     {badge.label}
                   </span>
-                  <span className="text-[11px] text-stone-400 font-mono flex items-center gap-1">
-                    <TrendingUp className="w-3 h-3 text-emerald-400" />
-                    {insight.confidenceScore}% confianza
+                  <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-md border ${getStatusBadge(insight.status)}`}>
+                    {STATUS_LABEL[insight.status ?? 'observation']}
                   </span>
                 </div>
 
                 {/* Observation */}
                 <div className="mb-3">
                   <h4 className="text-xs font-bold text-stone-400 uppercase tracking-wider mb-1">
-                    Observación Verificada:
+                    Observación:
                   </h4>
                   <p className="text-sm font-medium text-stone-100 leading-snug">
                     "{insight.observation}"
                   </p>
                 </div>
 
-                {/* Applied Rule for Future Plans */}
-                <div className="bg-stone-950/70 border border-emerald-500/20 rounded-xl p-3 mb-3">
-                  <h5 className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5 mb-1">
-                    <ShieldCheck className="w-3.5 h-3.5" />
-                    Regla Aplicada en tus Planes:
-                  </h5>
-                  <p className="text-xs text-stone-300 leading-relaxed font-mono">
-                    {insight.ruleForFuturePlans}
+                {/* Regla (solo si ya se aplica) o hipótesis a vigilar */}
+                {insight.ruleForFuturePlans && (
+                  <div className={`bg-stone-950/70 border rounded-xl p-3 mb-3 ${isAppliedRule(insight.status) ? 'border-emerald-500/20' : 'border-stone-700/60'}`}>
+                    <h5 className={`text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5 mb-1 ${isAppliedRule(insight.status) ? 'text-emerald-400' : 'text-stone-400'}`}>
+                      <ShieldCheck className="w-3.5 h-3.5" />
+                      {isAppliedRule(insight.status) ? 'Regla aplicada en tus planes:' : 'A vigilar (todavía no se aplica):'}
+                    </h5>
+                    <p className="text-xs text-stone-300 leading-relaxed font-mono">
+                      {insight.ruleForFuturePlans}
+                    </p>
+                  </div>
+                )}
+
+                {/* Evidencias */}
+                <div className="mb-3">
+                  <p className="text-[11px] text-stone-400 flex items-center gap-1 mb-1">
+                    <TrendingUp className="w-3 h-3 text-emerald-400" />
+                    {countEvidence(insight.evidence).support} a favor · {countEvidence(insight.evidence).against} en contra · última {insight.lastEvidenceAt}
                   </p>
+                  <ul className="space-y-0.5">
+                    {(insight.evidence || []).slice(-4).map((e, k) => (
+                      <li key={k} className="text-[11px] text-stone-400">
+                        <span className={e.supports ? 'text-emerald-400' : 'text-red-400'}>{e.supports ? '+' : '−'}</span> {e.date}: {e.summary}
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               </div>
 

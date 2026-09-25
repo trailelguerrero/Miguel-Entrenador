@@ -12,6 +12,7 @@ import {
 } from '../types';
 
 import { ApiError, apiStatus } from './apiStatus';
+import type { EvidenceItem } from '../brain/memory';
 import type { BrainContext, summarizeWeekWorkouts } from '../brain/context';
 import type { ReadinessState } from '../brain/readiness';
 
@@ -159,7 +160,8 @@ export const ApiService = {
     coachMemory?: CoachLearnedMemory | null
   ): Promise<{
     feedback: string;
-    newLearnedInsight?: Omit<CoachLearnedInsight, 'id' | 'learnedFromDate' | 'sourceEvent'>;
+    /** Evidencias ya validadas por el servidor; el estado lo calcula src/brain/memory.ts. */
+    evidence: EvidenceItem[];
   }> {
     return await apiFetch('/api/analyze-workout', {
         workout,
@@ -176,17 +178,25 @@ export const ApiService = {
     athleteProfile: AthleteProfile,
     currentMemory?: CoachLearnedMemory | null
   ): Promise<{
-    category: CoachLearnedInsight['category'];
-    observation: string;
-    ruleForFuturePlans: string;
-    confidenceScore: number;
-    miguelConfirmation: string;
+    evidence: EvidenceItem[];
+    miguelConfirmation?: string;
   }> {
     return await apiFetch('/api/coach-memory/extract-insight', {
         noteText,
         athleteProfile,
         currentMemory,
       }, 'ai', 'Error al extraer aprendizaje de la nota');
+  },
+
+  /** Evidencias que el atleta contó en el chat (quedan pendientes de su confirmación). */
+  async extractChatEvidence(
+    messages: { role: string; content: string }[],
+    currentMemory: CoachLearnedMemory,
+  ): Promise<{ evidence: EvidenceItem[] }> {
+    return await apiFetch('/api/coach-memory/extract-chat-evidence', {
+        messages,
+        currentMemory,
+      }, 'ai', 'Error al extraer aprendizajes de la conversación');
   },
 
   async getRaceInfo(

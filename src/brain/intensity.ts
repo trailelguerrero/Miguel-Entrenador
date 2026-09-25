@@ -64,7 +64,7 @@ export function describeIntensityPrescription(p: IntensityPrescription): string 
   const lines = [
     `Fuente principal de intensidad: ${p.primary === 'zonesense' ? 'ZoneSense (con banda de pecho)' : p.primary === 'heart_rate_measured' ? 'zonas de FC del reloj (umbral medido)' : 'esfuerzo percibido / test del habla / terreno'}.`,
     p.hrAllowed
-      ? `Respaldo por FC permitido (sin banda): umbral aeróbico medido ${p.aetHr} ppm${p.antHr ? `, anaeróbico ${p.antHr} ppm` : ''}.`
+      ? `Respaldo por FC permitido (sin banda): [REAL] umbral aeróbico medido ${p.aetHr} ppm${p.antHr ? `, anaeróbico ${p.antHr} ppm` : ''}.`
       : 'NO hay umbral de FC medido: targetHrMin y targetHrMax deben ser null; no des pulsaciones.',
   ];
   if (p.missing.length) lines.push(`Datos que faltan: ${p.missing.join(', ')}.`);
