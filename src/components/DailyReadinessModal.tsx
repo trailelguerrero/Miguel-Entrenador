@@ -39,6 +39,7 @@ export const DailyReadinessModal: React.FC<DailyReadinessModalProps> = ({
     hrvBaseline,
     sleepHours,
     muscleSoreness,
+    stressLevel,
   });
 
   const handleSave = () => {
@@ -231,6 +232,8 @@ export const DailyReadinessModal: React.FC<DailyReadinessModalProps> = ({
           <div className={`p-4 rounded-xl border flex items-start space-x-3 ${
             calculatedStatus === 'optimal'
               ? 'bg-emerald-950/20 border-emerald-800/40 text-emerald-200'
+              : calculatedStatus === 'unknown'
+              ? 'bg-zinc-900/40 border-zinc-700 text-zinc-300'
               : calculatedStatus === 'moderate'
               ? 'bg-amber-950/20 border-amber-800/40 text-amber-200'
               : 'bg-red-950/20 border-red-800/40 text-red-200'
@@ -238,18 +241,20 @@ export const DailyReadinessModal: React.FC<DailyReadinessModalProps> = ({
             {calculatedStatus === 'optimal' ? (
               <CheckCircle className="w-5 h-5 text-emerald-400 mt-0.5 shrink-0" />
             ) : (
-              <AlertTriangle className={`w-5 h-5 mt-0.5 shrink-0 ${calculatedStatus === 'fatigued' ? 'text-red-400' : 'text-amber-400'}`} />
+              <AlertTriangle className={`w-5 h-5 mt-0.5 shrink-0 ${calculatedStatus === 'fatigued' ? 'text-red-400' : calculatedStatus === 'unknown' ? 'text-zinc-400' : 'text-amber-400'}`} />
             )}
             <div className="space-y-1 text-xs">
               <div className="font-bold text-sm">
                 {calculatedStatus === 'optimal' && 'Estado Óptimo: Luz Verde'}
                 {calculatedStatus === 'moderate' && 'Recuperación Media: Cuidado con la intensidad'}
                 {calculatedStatus === 'fatigued' && 'Alerta de Fatiga: Miguel recomienda adaptar la sesión'}
+                {calculatedStatus === 'unknown' && 'Sin datos: no se puede valorar la recuperación'}
               </div>
               <p className="opacity-90 leading-relaxed">
                 {calculatedStatus === 'optimal' && 'Tu sistema nervioso autónomo está recuperado. Perfecto para cumplir la sesión programada.'}
                 {calculatedStatus === 'moderate' && 'Variación perceptible en HRV o sueño. Mantente estricto por debajo de tu umbral AeT.'}
                 {calculatedStatus === 'fatigued' && 'Caída acusada de HRV o déficit severo de descanso. No forces hoy o entrarás en déficit crónico.'}
+                {calculatedStatus === 'unknown' && 'Faltan HRV, sueño y dolor muscular. Introdúcelos o sincroniza Suunto para que Miguel pueda valorar el día.'}
               </p>
             </div>
           </div>

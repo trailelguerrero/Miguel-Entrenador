@@ -1,4 +1,5 @@
-import express, { Request, Response } from 'express';
+import express, { NextFunction, Request, Response } from 'express';
+import { timingSafeEqual } from 'node:crypto';
 import { AiError, aiConfigStatus, classifyAiError, generateText, GenerateOptions, modelFor, parseModelJson, searchWithGemini } from './ai.js';
 import { registerSuuntoRoutes } from './suunto-routes.js';
 import { sanitizeEvidenceItems } from '../src/brain/memory.js';
@@ -41,6 +42,49 @@ const app = express();
 
 app.use(express.json({ limit: '25mb' }));
 
+// Clave de la app: con APP_SECRET (o, si no, INGEST_SECRET) en Vercel, las rutas
+// que usan la IA o tus datos exigen la cabecera x-app-secret. Sin ninguna de las
+// dos variables siguen abiertas (como antes) y /api/health lo avisa.
+// Sin esto, quien conozca la URL gasta tu cuota de IA y puede preguntarle a
+// Miguel por tus conversaciones guardadas.
+const PROTECTED_ROUTES = [
+  '/api/chat',
+  '/api/generate-plan',
+  '/api/adapt-session',
+  '/api/analyze-workout',
+  '/api/coach-memory',
+  '/api/race-info',
+  '/api/parse-markdown-history',
+  '/api/health/ai-test',
+];
+
+/** Claves válidas: APP_SECRET y/o INGEST_SECRET (la misma que ya usa la biblioteca). */
+export function appSecrets(): string[] {
+  return [process.env.APP_SECRET, process.env.INGEST_SECRET].filter((s): s is string => !!s);
+}
+
+export function isProtectedRoute(path: string): boolean {
+  return PROTECTED_ROUTES.some((p) => path === p || path.startsWith(`${p}/`));
+}
+
+export function appSecretMatches(provided: string | undefined, expected: string): boolean {
+  const a = Buffer.from(provided ?? '');
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const secrets = appSecrets();
+  if (!secrets.length || !isProtectedRoute(req.path)) return next();
+  const provided = req.get('x-app-secret');
+  if (secrets.some((s) => appSecretMatches(provided, s))) return next();
+  res.status(401).json({
+    error: 'Falta la clave de la app o no es correcta.',
+    code: 'APP_AUTH',
+    hint: 'Escribe la clave de la app (el valor de APP_SECRET o INGEST_SECRET en Vercel) cuando la app te la pida.',
+  });
+});
+
 // Llama a la IA y, si respondió el respaldo (Gemini en vez de Experiential),
 // lo avisa al navegador con la cabecera X-AI-Fallback (la app muestra un aviso).
 async function runAi(res: Response, opts: GenerateOptions): Promise<string> {
@@ -70,6 +114,8 @@ app.get('/api/health', (_req: Request, res: Response) => {
     ok: true,
     ai: aiConfigStatus(),
     knowledge: knowledgeConfigStatus(),
+    // false = las rutas de IA están abiertas a cualquiera que conozca la URL
+    apiProtected: appSecrets().length > 0,
     suuntoMcpUrl: process.env.SUUNTO_MCP_URL || 'https://mcp-ten-kappa.vercel.app',
   });
 });
@@ -285,7 +331,7 @@ app.post('/api/adapt-session', async (req: Request, res: Response) => {
 
     const parsed = parseModelJson(text);
     // Recorte determinista a los límites del motor de readiness
-    const checked = sanitizeAdaptation(parsed.adaptedWorkout, state, athleteProfile);
+    const checked = sanitizeAdaptation(parsed.adaptedWorkout, state, athleteProfile, req.body?.originalWorkout);
     res.json({ ...parsed, adaptedWorkout: checked.adapted, corrections: checked.corrections, readinessState: state });
   } catch (err) {
     sendAiError(res, '/api/adapt-session', err);

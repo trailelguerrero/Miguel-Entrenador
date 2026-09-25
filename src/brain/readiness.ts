@@ -19,8 +19,8 @@
  * El Recovery de Suunto se informa pero NO cambia el nivel: no hay un corte
  * validado para él. Los límites son MÁXIMOS: Miguel puede proponer menos.
  */
-import type { WeeklyLoadThresholds } from '../utils/trainingLoad';
-import { colorRank, type ZoneSenseColor } from './zonesense';
+import type { WeeklyLoadThresholds } from '../utils/trainingLoad.js';
+import { colorRank, type ZoneSenseColor } from './zonesense.js';
 
 export type ReadinessLevel = 'green' | 'amber' | 'red' | 'unknown';
 

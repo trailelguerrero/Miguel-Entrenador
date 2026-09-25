@@ -3,7 +3,7 @@
  * + 1 tirada larga en sábado o domingo. Miguel puede bajar a 2 sesiones
  * entre semana por fatiga o por la disponibilidad del atleta.
  */
-import { Workout } from '../types';
+import type { Workout } from '../types/index.js';
 import { localDateKey } from './trainingLoad.js';
 
 export const MIDWEEK_SESSIONS_DEFAULT = 3;

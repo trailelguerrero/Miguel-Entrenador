@@ -10,3 +10,4 @@ coverage/
 
 # Service worker generado por vite-plugin-pwa en modo dev
 dev-dist/
+.esm-check-*/

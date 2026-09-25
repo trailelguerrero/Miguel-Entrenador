@@ -79,7 +79,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   const daysToRace = getDaysUntilRace(targetRace.date);
 
   const getStatusColor = () => {
-    if (!todayCheckIn) return 'bg-zinc-700 text-zinc-300';
+    if (!todayCheckIn || todayCheckIn.status === 'unknown') return 'bg-zinc-700 text-zinc-300';
     if (todayCheckIn.status === 'optimal') return 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
     if (todayCheckIn.status === 'moderate') return 'bg-amber-500/20 text-amber-400 border border-amber-500/30';
     return 'bg-red-500/20 text-red-400 border border-red-500/30';
@@ -199,6 +199,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span className="hidden sm:inline">
                 {todayCheckIn ? (
                   todayCheckIn.status === 'optimal' ? 'Recuperación Óptima' :
+                  todayCheckIn.status === 'unknown' ? 'Recuperación sin datos' :
                   todayCheckIn.status === 'moderate' ? 'Fatiga Moderada' : 'Fatiga Alta'
                 ) : 'Check-in HRV'}
               </span>

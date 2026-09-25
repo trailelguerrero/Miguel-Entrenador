@@ -100,15 +100,31 @@ export function sanitizePlanWorkouts(
   return { workouts: out, notes, structureIssues };
 }
 
-/** Recorta una sesión adaptada a los límites del motor de readiness. */
+/** Número que la IA puede devolver como texto ("90") → número; si no, se deja tal cual. */
+function toNumber(v: unknown): unknown {
+  if (typeof v !== 'string' || !v.trim()) return v;
+  const n = Number(v.trim().replace(',', '.'));
+  return Number.isFinite(n) ? n : v;
+}
+
+/**
+ * Recorta una sesión adaptada a los límites del motor de readiness. Se valida la
+ * sesión RESULTANTE (original + cambios de la IA): lo que la IA no devuelve se
+ * conserva de la original y también tiene que cumplir los límites.
+ */
 export function sanitizeAdaptation(
   adapted: any,
   state: ReadinessState,
   profile: Partial<AthleteProfile> | undefined,
+  original?: any,
 ): { adapted: any; corrections: string[] } {
-  const w = { ...(adapted || {}) };
+  const base = original && typeof original === 'object' ? original : {};
+  const w = { ...base, ...(adapted && typeof adapted === 'object' ? adapted : {}) };
   const corrections: string[] = [];
   const l = state.limits;
+  for (const k of ['plannedDurationMin', 'targetHrMin', 'targetHrMax']) w[k] = toNumber(w[k]);
+  // Duración no válida de la IA → la de la sesión original (que después se recorta)
+  if (!pos(w.plannedDurationMin) && w.plannedDurationMin !== 0 && pos(base.plannedDurationMin)) w.plannedDurationMin = base.plannedDurationMin;
 
   if (l.mandatoryRest) {
     if (w.type !== 'rest') corrections.push('El motor de readiness exige descanso total: la sesión pasa a descanso.');
@@ -118,9 +134,14 @@ export function sanitizeAdaptation(
       corrections.push(`Sin series hoy (estado ${state.level}): "${w.type}" pasa a rodaje suave.`);
       w.type = 'easy_run';
     }
-    if (l.maxDurationMin != null && pos(w.plannedDurationMin) && w.plannedDurationMin > l.maxDurationMin) {
-      corrections.push(`Duración ${w.plannedDurationMin} min recortada al máximo de hoy (${l.maxDurationMin} min).`);
-      w.plannedDurationMin = l.maxDurationMin;
+    if (l.maxDurationMin != null && w.type !== 'rest') {
+      if (!pos(w.plannedDurationMin)) {
+        corrections.push(`Sin duración válida: se fija el máximo de hoy (${l.maxDurationMin} min).`);
+        w.plannedDurationMin = l.maxDurationMin;
+      } else if (w.plannedDurationMin > l.maxDurationMin) {
+        corrections.push(`Duración ${w.plannedDurationMin} min recortada al máximo de hoy (${l.maxDurationMin} min).`);
+        w.plannedDurationMin = l.maxDurationMin;
+      }
     }
     const target = normalizeZoneSenseTarget(w.zoneSenseTarget);
     if (w.type !== 'rest' && (!target || colorRank(TARGET_COLOR[target]) > colorRank(l.maxZoneSense))) {
