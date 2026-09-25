@@ -18,6 +18,19 @@ import { resolveReadinessState } from './brain/context.js';
 import { sanitizeAdaptation, sanitizePlanWorkouts } from './brain/decision/validate.js';
 import { RACE_NUMERIC_FIELDS, RACE_TEXT_FIELDS, verifyRaceInfo } from './brain/decision/race.js';
 import { verifyHistoryNumbers } from './brain/decision/history.js';
+import { buildKnowledgeBlock, buildKnowledgeQuery } from './brain/prompts/knowledge.js';
+import { KnowledgeError } from './rag/supabase.js';
+import { ensureSession, saveMessages } from './rag/chatStore.js';
+import {
+  KnowledgeMatch,
+  checkIngestSecret,
+  deleteDocument,
+  ingestDocument,
+  knowledgeConfigStatus,
+  listDocuments,
+  parseIngestInput,
+  searchKnowledge,
+} from './rag/knowledge.js';
 
 // App Express con todas las rutas /api/*. No escucha en ningún puerto:
 // - En Vercel la exporta api/index.ts como función serverless.
@@ -54,6 +67,7 @@ app.get('/api/health', (_req: Request, res: Response) => {
   res.json({
     ok: true,
     ai: aiConfigStatus(),
+    knowledge: knowledgeConfigStatus(),
     suuntoMcpUrl: process.env.SUUNTO_MCP_URL || 'https://mcp-ten-kappa.vercel.app',
   });
 });
@@ -80,19 +94,112 @@ app.post('/api/health/ai-test', async (_req: Request, res: Response) => {
   }
 });
 
+// Tiempo máximo buscando en la biblioteca antes de responder sin ella.
+const KNOWLEDGE_TIMEOUT_MS = 8_000;
+
+/** Busca en la Biblioteca de Miguel. Nunca rompe el chat: sin configurar o con
+ * error, Miguel responde como siempre y se devuelve un aviso. */
+async function findKnowledge(query: string): Promise<{ matches: KnowledgeMatch[]; warning?: string }> {
+  if (!query || !knowledgeConfigStatus().enabled) return { matches: [] };
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('timeout')), KNOWLEDGE_TIMEOUT_MS);
+    });
+    return { matches: await Promise.race([searchKnowledge(query), timeout]) };
+  } catch (err) {
+    const e = err as KnowledgeError;
+    console.error(`[knowledge] Búsqueda fallida: ${e.message}`, e.detail ?? '');
+    return { matches: [], warning: e.message === 'timeout' ? 'La biblioteca tardó demasiado; Miguel respondió sin ella.' : `Biblioteca no disponible: ${e.message}` };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Guarda en Supabase la última pregunta del atleta y la respuesta de Miguel.
+ * Nunca rompe el chat: si Supabase no está configurado o falla, se avisa. */
+async function storeChatTurn(body: any, reply: string): Promise<{ sessionId?: string; historyWarning?: string }> {
+  if (!knowledgeConfigStatus().chatHistoryEnabled) return {};
+  const lastUser = [...(Array.isArray(body?.messages) ? body.messages : [])]
+    .reverse()
+    .find((m: any) => m?.role === 'user' && typeof m.content === 'string');
+  try {
+    const sessionId = await ensureSession(body?.sessionId);
+    await saveMessages(sessionId, [
+      ...(lastUser ? [{ role: 'user' as const, content: lastUser.content }] : []),
+      { role: 'assistant' as const, content: reply },
+    ]);
+    return { sessionId };
+  } catch (err) {
+    const e = err as KnowledgeError;
+    console.error(`[chat-history] No se pudo guardar: ${e.message}`, e.detail ?? '');
+    return { historyWarning: `La conversación no se guardó en Supabase: ${e.message}` };
+  }
+}
+
+function sendKnowledgeError(res: Response, route: string, err: unknown) {
+  if (err instanceof KnowledgeError) {
+    if (err.httpStatus >= 500) console.error(`Error in ${route}: [${err.code}] ${err.message}`, err.detail ?? '');
+    res.status(err.httpStatus).json({ error: err.message, code: err.code, hint: err.hint });
+    return;
+  }
+  console.error(`Error in ${route}:`, (err as Error)?.message ?? err);
+  res.status(500).json({ error: 'Error inesperado en la Biblioteca de Miguel.', code: 'KB_UNKNOWN', hint: 'Revisa los logs de Vercel.' });
+}
+
+// Biblioteca de Miguel (RAG). Añadir, listar y borrar documentos exige la
+// cabecera x-ingest-secret = INGEST_SECRET.
+app.post('/api/knowledge/ingest', async (req: Request, res: Response) => {
+  try {
+    checkIngestSecret(req.get('x-ingest-secret'));
+    const input = parseIngestInput(req.body);
+    const result = await ingestDocument(input);
+    res.json({ ok: true, title: input.title, ...result });
+  } catch (err) {
+    sendKnowledgeError(res, '/api/knowledge/ingest', err);
+  }
+});
+
+app.get('/api/knowledge/documents', async (req: Request, res: Response) => {
+  try {
+    checkIngestSecret(req.get('x-ingest-secret'));
+    res.json({ documents: await listDocuments() });
+  } catch (err) {
+    sendKnowledgeError(res, '/api/knowledge/documents', err);
+  }
+});
+
+app.delete('/api/knowledge/documents', async (req: Request, res: Response) => {
+  try {
+    checkIngestSecret(req.get('x-ingest-secret'));
+    const title = typeof req.body?.title === 'string' ? req.body.title.trim() : '';
+    if (!title) throw new KnowledgeError('KB_INPUT', 'Falta el título del documento a borrar.', 'Envía JSON con "title".', 400);
+    res.json({ ok: true, deleted: await deleteDocument(title) });
+  } catch (err) {
+    sendKnowledgeError(res, '/api/knowledge/documents', err);
+  }
+});
+
 // 1. Interactive Chat with Miguel
 app.post('/api/chat', async (req: Request, res: Response) => {
   try {
     const conversation = buildChatConversation(req.body);
+    const knowledge = await findKnowledge(buildKnowledgeQuery(conversation));
 
     const text = await runAi(res, {
-      system: MIGUEL_SYSTEM_INSTRUCTION,
+      system: MIGUEL_SYSTEM_INSTRUCTION + buildKnowledgeBlock(knowledge.matches),
       input: conversation,
       temperature: 0.7,
     });
 
     const reply = text || 'Oye, ha habido un pequeño corte en la comunicación, pero aquí estoy. Cuéntame cómo vas.';
-    res.json({ reply });
+    const stored = await storeChatTurn(req.body, reply);
+    res.json({
+      reply,
+      knowledgeSources: knowledge.matches.map(({ title, source, similarity }) => ({ title, source, similarity })),
+      ...(knowledge.warning ? { knowledgeWarning: knowledge.warning } : {}),
+      ...stored,
+    });
   } catch (err) {
     sendAiError(res, '/api/chat', err);
   }
