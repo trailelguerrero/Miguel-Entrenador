@@ -58,6 +58,8 @@ import {
   ToastType
 } from './types';
 import { StorageService } from './services/storage';
+import { RemoteData, type RemoteState } from './services/remoteData';
+import { ServerDataBanner } from './components/ServerDataBanner';
 import { ApiService, isSavableMessage } from './services/api';
 
 export default function App() {
@@ -135,6 +137,18 @@ export default function App() {
       title: 'Perfil Actualizado',
       message: `AeT: ${updated.aetHr} bpm • AnT: ${updated.antHr} bpm • Peso: ${updated.weightKg} kg`,
     });
+  };
+
+  /** Vuelve a leer todo de la caché (tras cargar del servidor). */
+  const reloadFromStorage = () => {
+    setProfile(StorageService.getProfile());
+    setWorkouts(StorageService.getWorkouts());
+    setTargetRace(StorageService.getTargetRace());
+    setTodayCheckIn(StorageService.getTodayCheckIn());
+    setCoachMemory(StorageService.getCoachMemory());
+    setHistoryDoc(StorageService.getAthleteHistory());
+    setSuuntoConfig(StorageService.getSuuntoConfig());
+    setIsTestDataActive(StorageService.isTestDataActive());
   };
 
   const handleRestoreSuccess = (summary: Record<string, number>) => {
@@ -236,8 +250,20 @@ export default function App() {
     }
   };
 
-  const handleDisconnectSuunto = () => {
-    if (!confirm('¿Desconectar tu cuenta Suunto de esta app?\n\nSe borran los tokens de conexión de este navegador. Tus entrenos importados y tu perfil se conservan.')) return;
+  const handleDisconnectSuunto = async () => {
+    if (!confirm('¿Desconectar tu cuenta Suunto de esta app?\n\nSe borran los tokens de conexión. Tus entrenos importados y tu perfil se conservan.')) return;
+    if (RemoteData.state.mode === 'server') {
+      try {
+        await RemoteData.disconnectSuunto();
+        reloadFromStorage();
+      } catch (err: any) {
+        showToast({ type: 'error', title: 'No se pudo desconectar Suunto', message: err.message });
+        return;
+      }
+      apiStatus.reportSuuntoDisconnected('Cuenta Suunto desconectada.');
+      showToast({ type: 'info', title: 'Suunto desconectado', message: 'Puedes volver a conectarlo cuando quieras con "Conectar Suunto".' });
+      return;
+    }
     handleUpdateSuuntoConfig({
       ...StorageService.getSuuntoConfig(),
       auth: undefined,
@@ -250,7 +276,51 @@ export default function App() {
   };
 
   // Trae workouts y sueño/HRV reales de Suunto y los integra en el calendario y los check-ins.
+  // Fase B: el servidor sincroniza con Suunto (tokens cifrados en Supabase) y devuelve el estado fusionado
+  const handleSyncSuuntoOnServer = async (): Promise<string> => {
+    setIsSyncingSuunto(true);
+    setSuuntoConfig({ ...StorageService.getSuuntoConfig(), syncStatus: 'syncing' });
+    try {
+      const res = await RemoteData.syncSuunto(localDateKey());
+      reloadFromStorage();
+      if (!res.ok) {
+        apiStatus.reportSuuntoDisconnected(res.message);
+        showToast({ type: 'warning', title: 'Reconecta Suunto', message: res.message });
+        return res.message;
+      }
+      const newProfile = StorageService.getProfile();
+      if (res.profileChanges.length) {
+        showToast({
+          type: 'info',
+          title: 'Perfil actualizado desde Suunto',
+          message: res.profileChanges.map((c: ProfileChange) => `${SUUNTO_FIELD_LABELS[c.field]}: ${formatProfileValue(c.to)}`).join(' • '),
+          duration: 7000,
+        });
+        askMiguelAboutSuuntoProfile(newProfile, res.profileChanges);
+      }
+      if (res.freshZoneAdvice.length) {
+        showToast({
+          type: 'warning',
+          title: 'Revisa las zonas de FC de tu reloj',
+          message: res.freshZoneAdvice.map((r: any) => `${r.label}: ${r.current} → ${r.suggested}`).join(' • '),
+          duration: 9000,
+        });
+      }
+      apiStatus.reportSuuntoOk();
+      showToast({ type: 'success', title: 'Suunto sincronizado', message: res.message });
+      return res.message;
+    } catch (err: any) {
+      reloadFromStorage();
+      const message = `Fallo de sincronización: ${err.message}`;
+      showToast({ type: 'error', title: 'Error de API de Suunto', message: err.message });
+      return message;
+    } finally {
+      setIsSyncingSuunto(false);
+    }
+  };
+
   const handleSyncSuunto = async (): Promise<string> => {
+    if (RemoteData.state.mode === 'server') return handleSyncSuuntoOnServer();
     const current = StorageService.getSuuntoConfig();
     if (!current.auth) {
       return 'Suunto no está conectado. Pulsa "Conectar Suunto".';
@@ -379,18 +449,48 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [suuntoConfig.connected]);
 
-  // Vuelta del login de Suunto (/api/suunto/callback redirige a /?suunto=connected):
-  // recarga la config con los tokens nuevos y sincroniza automáticamente.
+  // Datos en el servidor (Fase B): al abrir, carga del servidor (o pide la subida única),
+  // y sincroniza con Suunto si vuelves del login o si hace más de 3 h de la última vez.
+  const [remote, setRemote] = useState<RemoteState>(RemoteData.state);
+  useEffect(() => RemoteData.subscribe(setRemote), []);
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('suunto') !== 'connected') return;
-    window.history.replaceState(null, '', window.location.pathname);
-    setSuuntoConfig(StorageService.getSuuntoConfig());
-    handleSyncSuunto();
-    // Si se conectó desde la guía de setup (sin terminar), se vuelve a ella
-    if (!StorageService.getProfile().setupCompleted) setIsSetupGuideOpen(true);
+    const onReload = () => reloadFromStorage();
+    window.addEventListener(RemoteData.RELOAD_EVENT, onReload);
+    return () => window.removeEventListener(RemoteData.RELOAD_EVENT, onReload);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  const initStarted = useRef(false);
+  useEffect(() => {
+    if (initStarted.current) return;
+    initStarted.current = true;
+    const params = new URLSearchParams(window.location.search);
+    const backFromSuunto = params.get('suunto') === 'connected';
+    if (backFromSuunto) window.history.replaceState(null, '', window.location.pathname);
+    RemoteData.init({ onError: (message) => showToast({ type: 'error', title: 'No se ha guardado', message, duration: 9000 }) })
+      .then((st) => {
+        reloadFromStorage();
+        if (st.mode === 'server' && st.needsImport) return;
+        const cfg = StorageService.getSuuntoConfig();
+        const stale = !cfg.lastSync || Date.now() - Date.parse(cfg.lastSync) > 3 * 3600_000;
+        if (backFromSuunto || (cfg.connected && stale && navigator.onLine !== false)) handleSyncSuunto();
+      })
+      .catch((err) => showToast({ type: 'error', title: 'No se pudieron cargar tus datos del servidor', message: err.message }));
+    // Si se conectó desde la guía de setup (sin terminar), se vuelve a ella
+    if (backFromSuunto && !StorageService.getProfile().setupCompleted) setIsSetupGuideOpen(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleServerImport = async (uploadLocal: boolean) => {
+    try {
+      const message = await RemoteData.runImport(uploadLocal);
+      reloadFromStorage();
+      showToast({ type: 'success', title: uploadLocal ? 'Datos subidos al servidor' : 'Datos del servidor cargados', message, duration: 7000 });
+      const cfg = StorageService.getSuuntoConfig();
+      if (cfg.connected) handleSyncSuunto();
+    } catch (err: any) {
+      showToast({ type: 'error', title: 'No se pudo completar la subida', message: err.message, duration: 9000 });
+    }
+  };
 
   const handleSaveSingleWorkout = (workout: Workout) => {
     StorageService.addOrUpdateWorkout(workout);
@@ -825,6 +925,7 @@ ${structureLine} Ya puedes ver los entrenamientos en tu calendario.${warningLine
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-24 md:pb-6 space-y-6">
         
         {/* Sincronizar con Suunto desde la pantalla principal (o conectarlo) */}
+        {remote.needsImport && <ServerDataBanner onImport={handleServerImport} />}
         <SuuntoSyncBar config={suuntoConfig} isSyncing={isSyncingSuunto} onSync={() => void handleSyncSuunto()} />
 
         {/* Morning Readiness & Fatigue Warning Banner */}

@@ -3,7 +3,7 @@
  * Todo lo que aquí aparece son hechos calculados de forma determinista; la IA
  * no los recalcula.
  */
-import type { AthleteProfile, DailyCheckIn, Workout } from '../types';
+import type { AthleteProfile, DailyCheckIn, Workout } from '../types/index.js';
 import {
   computePmcSeries,
   getLoadHistoryInfo,
@@ -52,10 +52,11 @@ export function buildBrainContext(
   profile: AthleteProfile,
   checkIns: DailyCheckIn[],
   plannedToday?: Workout | null,
+  /** Fecha del atleta (el servidor la pasa: en Vercel el reloj está en UTC). */
+  today: string = localDateKey(),
 ): BrainContext {
-  const series = computePmcSeries(workouts, profile.antHr);
+  const series = computePmcSeries(workouts, profile.antHr, undefined, today);
   const latest = series[series.length - 1];
-  const today = localDateKey();
   const since = addDays(today, -6);
   const weeklyTss = Math.round(
     workouts.filter((w) => w.date >= since && w.date <= today).reduce((a, w) => a + (getWorkoutLoad(w, profile.antHr)?.tss ?? 0), 0),
@@ -85,7 +86,7 @@ export function buildBrainContext(
     atl: latest?.atl,
     tsb: latest?.tsb,
     weeklyTss,
-    loadHistory: getLoadHistoryInfo(workouts, profile.antHr),
+    loadHistory: getLoadHistoryInfo(workouts, profile.antHr, today),
     recentCheckIns: sorted.slice(-7).map((c) => ({
       date: c.date,
       hrvRmssd: c.hrvRmssd,

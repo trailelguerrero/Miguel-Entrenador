@@ -28,7 +28,7 @@ export function timeAgo(iso: string | undefined, now = Date.now()): string {
  * sin tener que ir a la pestaña Suunto & ZoneSense.
  */
 export const SuuntoSyncBar: React.FC<SuuntoSyncBarProps> = ({ config, isSyncing, onSync }) => {
-  const connected = config.connected && !!config.auth;
+  const connected = config.connected && (config.serverManaged || !!config.auth);
   const error = config.syncStatus === 'error';
 
   if (!connected) {

@@ -192,7 +192,7 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
     : 0;
 
   // Suunto API connection status
-  const isSuuntoApiConnected = suuntoConfig.connected && !!suuntoConfig.auth;
+  const isSuuntoApiConnected = suuntoConfig.connected && (suuntoConfig.serverManaged || !!suuntoConfig.auth);
 
   return (
     <div className="space-y-6">

@@ -11,9 +11,9 @@ Estado: `npm test` → 113/113 (18 tests nuevos en `tests/audit5.test.ts`) · `t
 
 | # | Hallazgo | Estado | Qué se ha hecho |
 |---|---|---|---|
-| C1 | El servidor recalcula con lo que envía el cliente | ⏳ Fase B | Con un solo atleta el riesgo no es que alguien falsee datos, sino la desincronización entre dispositivos. Solución: datos en Supabase. |
-| C2 | La API está abierta si no hay secreto | ⏳ Fase B | Hoy está protegida (`apiProtected: true`). Queda cerrarla por defecto aunque falte la clave. |
-| C3 | Dos readiness | ◐ Parcial | El semáforo ya usa el motor (auditoría anterior). Queda guardar solo los datos crudos del check-in y recalcular siempre el estado (Fase B). |
+| C1 | El servidor recalcula con lo que envía el cliente | ✅ Fase B | Los datos viven en Supabase (`athlete_docs`). Tras la subida única, el chat, el plan, la adaptación y la memoria leen perfil, carga, check-ins y memoria **del servidor** (`server/brain/serverData.ts`) y calculan CTL/ATL/TSB y el readiness allí, con la fecha del atleta. |
+| C2 | La API está abierta si no hay secreto | ✅ Fase B | Cerrada por defecto: sin clave configurada responde 503. Toda `/api/*` exige sesión (cookie HttpOnly firmada de 90 días, `server/auth.ts`); la clave ya no se guarda en el navegador. |
+| C3 | Dos readiness | ◐ Casi | El servidor recalcula el readiness de hoy con el motor desde los check-ins guardados (ya no se fía del estado del cliente). Queda dejar de guardar el `status` en el check-in (esquemas, C27). |
 | C4 | Se mezclan "recuperación desconocida" y "carga" | ⏳ Fase B | Separar el estado de recuperación y el de carga es un cambio de modelo. |
 | C5 | Sin dato de banda se asumía que había banda | ✅ | Tres estados: sí / no / desconocido (`hasChestStrap`). Con "desconocido" no se asume ZoneSense. Se deduce de Suunto (ZoneSense en los últimos 30 días) o se elige en la ficha. |
 | C6 | La política solo se aplicaba al tipo de sesión | ✅ | `src/brain/workoutContract.ts` fija los tipos permitidos por nivel. Rojo: regenerativo o descanso (la fuerza pasa a descanso, la tirada larga y el test de deriva a regenerativo). Ámbar: sin series ni test. Sin datos: suave o descanso. Los **textos se reescriben** si describen intensidad no permitida. En rojo, sin desnivel ni distancia heredados. |
@@ -46,10 +46,16 @@ Estado: `npm test` → 113/113 (18 tests nuevos en `tests/audit5.test.ts`) · `t
 - **C6:** una tirada larga de 180 min en rojo no pasaba: la duración ya se recortaba a 35 min. El fallo real era que se mantenían el tipo, la distancia, el desnivel y el texto. Ya está corregido.
 - **C11:** contar a favor y en contra el mismo día fue una decisión del arreglo anterior, protegida por un test. Se cambia a la propuesta del auditor, que es mejor.
 
+## Fase B · entrega 1 (hecha)
+- Datos del atleta en Supabase (`athlete_docs`): perfil, entrenos, check-ins, memoria, carrera objetivo, historial .md y tokens de Suunto **cifrados** (AES-256-GCM).
+- Suunto lo sincroniza el servidor: cron diario (07:00 UTC), al abrir la app si hace >3 h y con el botón. Las reglas de fusión viven en `src/brain/suuntoMerge.ts` (una sola fuente para servidor y cliente).
+- Subida única desde el navegador con confirmación (gana el más reciente; lo medido lo pone Suunto).
+- Sin conexión: caché de lectura; los cambios exigen conexión y avisan "no se ha guardado".
+- Tests: `tests/faseb.test.ts` y `tests/apiauth.test.ts`.
+
 ## Pendiente: Fase B
-Se diseñará con el atleta:
-1. Datos en Supabase y el servidor como fuente de verdad (C1, C3).
-2. API cerrada por defecto y autenticación de un solo usuario (C2).
+1. Segunda entrega de datos: gut training, peso, hidratación y chat.
+2. Quitar `status` guardado del check-in (C3).
 3. Esquemas en tiempo de ejecución (C27).
 4. Personalización con `factIds` comprobables (C10).
 5. Memoria 2.0 estructurada (C12 completo).

@@ -204,3 +204,34 @@ $$;
 
 revoke execute on function public.match_conversation_memory(vector, double precision, integer, text, uuid) from public, anon, authenticated;
 grant execute on function public.match_conversation_memory(vector, double precision, integer, text, uuid) to service_role;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Datos del atleta en el servidor (Fase B): el servidor es la fuente de verdad.
+--   athlete_docs → un documento JSON por registro, agrupados por colección:
+--     profile/me, target_race/main, coach_memory/main, history_md/main,
+--     workouts/<id>, checkins/<YYYY-MM-DD>, suunto_auth/main (CIFRADO),
+--     suunto_status/main
+--   athlete_id: preparado para varios atletas; hoy siempre 'me'.
+-- Solo el servidor (service_role) lee y escribe: RLS sin políticas públicas.
+-- ─────────────────────────────────────────────────────────────────────────────
+create table if not exists public.athlete_docs (
+  athlete_id text not null default 'me',
+  collection text not null,
+  id text not null,
+  data jsonb not null,
+  updated_at timestamptz not null default now(),
+  primary key (athlete_id, collection, id)
+);
+
+create index if not exists athlete_docs_updated_idx
+  on public.athlete_docs(athlete_id, collection, updated_at desc);
+
+alter table public.athlete_docs enable row level security;
+
+drop policy if exists "service_role_athlete_docs_all" on public.athlete_docs;
+create policy "service_role_athlete_docs_all"
+  on public.athlete_docs
+  for all
+  to service_role
+  using (true)
+  with check (true);

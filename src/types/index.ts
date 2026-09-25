@@ -730,6 +730,8 @@ export interface SuuntoAuth {
 
 export interface SuuntoIntegrationConfig {
   connected: boolean;
+  /** Fase B: los tokens viven cifrados en el servidor, que sincroniza (el navegador no los ve). */
+  serverManaged?: boolean;
   auth?: SuuntoAuth;
   lastSync?: string;
   syncStatus?: 'synced' | 'pending' | 'error' | 'syncing';
