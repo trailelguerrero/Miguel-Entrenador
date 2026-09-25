@@ -270,6 +270,27 @@ export interface TargetRace {
   terrainDescription: string;
   targetPaceOrTime?: string;
   notes?: string;
+  /** De dónde sale cada dato: 'web' = verificado con fuentes; 'athlete' = lo introdujo el atleta. Sin entrada = sin dato. */
+  dataSources?: Partial<Record<RaceDataField, 'web' | 'athlete'>>;
+  /** Páginas que respaldan los datos verificados. */
+  webSources?: { title: string; uri: string }[];
+  /** Datos que la búsqueda no pudo verificar. */
+  unverifiedFields?: RaceDataField[];
+  verifiedAt?: string;
+}
+
+export type RaceDataField = 'name' | 'date' | 'distanceKm' | 'elevationGainM' | 'elevationLossM' | 'location' | 'terrainDescription' | 'altitudeRange';
+
+/** Respuesta de /api/race-info: solo datos respaldados por páginas reales. */
+export interface RaceInfoResult {
+  verified: boolean;
+  fields: Partial<Record<RaceDataField, { value: string | number; sources: { title: string; uri: string }[] }>>;
+  unverified: RaceDataField[];
+  sources: { title: string; uri: string }[];
+  queries: string[];
+  strategicAdvice: string | null;
+  message?: string;
+  checkedAt?: string;
 }
 
 export interface AthleteHistoryDocument {

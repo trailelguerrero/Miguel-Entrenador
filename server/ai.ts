@@ -234,6 +234,69 @@ function fallbackAvailable(): boolean {
   return !!process.env.GEMINI_API_KEY && (process.env.AI_FALLBACK || 'on').toLowerCase() !== 'off';
 }
 
+export interface WebSource {
+  title: string;
+  uri: string;
+}
+
+export interface GroundedSegment {
+  /** Fragmento de la respuesta respaldado por Google. */
+  text: string;
+  /** Índices en `sources` de las páginas que lo respaldan. */
+  sourceIdx: number[];
+}
+
+export interface SearchResult {
+  text: string;
+  sources: WebSource[];
+  segments: GroundedSegment[];
+  queries: string[];
+}
+
+/**
+ * Búsqueda real en Google con Gemini (grounding). Solo Gemini: con Experiential
+ * no hay herramienta de búsqueda y el modelo inventaría. Devuelve las páginas
+ * consultadas y qué fragmentos de la respuesta respalda cada una.
+ */
+export async function searchWithGemini(system: string, prompt: string): Promise<SearchResult> {
+  if (!process.env.GEMINI_API_KEY) {
+    throw new AiError(
+      'AI_CONFIG',
+      'La búsqueda de carreras necesita GEMINI_API_KEY (usa la búsqueda de Google de Gemini).',
+      `Cárgala en Vercel (Settings → Environment Variables) y haz Redeploy (secciones 2 y 3 de ${GUIDE}). Sin búsqueda real no se rellenan datos de la carrera.`,
+      'gemini',
+    );
+  }
+  geminiClient ??= new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  const model = process.env.GEMINI_MODEL || GEMINI_DEFAULT_MODEL;
+  let response;
+  try {
+    response = await geminiClient.models.generateContent({
+      model,
+      contents: prompt,
+      config: { systemInstruction: system, tools: [{ googleSearch: {} }], temperature: 0 },
+    });
+  } catch (err) {
+    const raw = String((err as Error)?.message ?? err);
+    if (/google_?search|grounding|tool/i.test(raw) && /not supported|unsupported|not enabled|invalid/i.test(raw)) {
+      throw new AiError(
+        'AI_MODEL',
+        `El modelo "${model}" no admite la búsqueda de Google: no se rellenan datos de la carrera para no inventarlos.`,
+        `Usa un modelo de Gemini con búsqueda (GEMINI_MODEL en Vercel, sección 4 de ${GUIDE}) o introduce los datos a mano.`,
+        'gemini',
+        raw.slice(0, 400),
+      );
+    }
+    throw classifyAiError(err, 'gemini');
+  }
+  const meta = response.candidates?.[0]?.groundingMetadata;
+  const sources: WebSource[] = (meta?.groundingChunks || []).map((c) => ({ title: c.web?.title || c.web?.uri || '', uri: c.web?.uri || '' }));
+  const segments: GroundedSegment[] = (meta?.groundingSupports || [])
+    .map((g) => ({ text: g.segment?.text || '', sourceIdx: (g.groundingChunkIndices || []).filter((i) => i >= 0 && i < sources.length) }))
+    .filter((g) => g.text && g.sourceIdx.length > 0);
+  return { text: response.text || '', sources, segments, queries: meta?.webSearchQueries || [] };
+}
+
 /** Estado de la configuración de IA, sin llamar a ningún modelo (no gasta tokens). */
 export function aiConfigStatus() {
   const models = {
