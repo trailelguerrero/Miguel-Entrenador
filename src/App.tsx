@@ -723,7 +723,7 @@ ${structureLine} Ya puedes ver los entrenamientos en tu calendario.${warningLine
         content: m.content,
       }));
 
-      const { reply, knowledgeSources, knowledgeWarning } = await ApiService.sendMessage(
+      const { reply, knowledgeSources, memorySources, knowledgeWarning } = await ApiService.sendMessage(
         historyPayload,
         profile,
         todayCheckIn,
@@ -742,6 +742,7 @@ ${structureLine} Ya puedes ver los entrenamientos en tu calendario.${warningLine
         content: reply,
         timestamp: new Date().toISOString(),
         knowledgeSources,
+        memorySources,
         knowledgeWarning,
       };
 

@@ -51,14 +51,20 @@ export const ChatCloudPanel: React.FC<ChatCloudPanelProps> = ({ messages, onMark
 
   const handleSave = () =>
     run(async () => {
-      if (!pending.length) {
+      if (!pending.length && !currentSession) {
         setNotice('No hay mensajes nuevos que guardar.');
         return;
       }
+      // Sin mensajes nuevos pero con conversación en Supabase: se llama igual para
+      // completar la memoria de Miguel si un guardado anterior no pudo hacerlo.
       const result = await ConversationService.save(secret, currentSession, pending);
       StorageService.setChatSessionId(result.sessionId);
       onMarkSaved(result.clientIds, new Date().toISOString());
-      setNotice(`Guardado en Supabase: ${result.saved} mensaje(s) nuevo(s).`);
+      setNotice(
+        (result.saved ? `Guardado en Supabase: ${result.saved} mensaje(s) nuevo(s).` : 'No había mensajes nuevos que guardar.') +
+          (result.memoryIndexed ? ` Miguel podrá recordar ${result.memoryIndexed} intercambio(s) en otras conversaciones.` : ''),
+      );
+      if (result.memoryWarning) setError(result.memoryWarning);
     });
 
   const handleOpenList = () =>

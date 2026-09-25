@@ -10,10 +10,12 @@ import {
   CoachLearnedInsight,
   WatchZoneAdvice,
   KnowledgeSource,
+  MemorySource,
   ChatMessage
 } from '../types';
 
 import { ApiError, apiStatus } from './apiStatus';
+import { StorageService } from './storage';
 import type { RaceInfoResult } from '../types';
 import type { EvidenceItem } from '../brain/memory';
 import type { BrainContext, summarizeWeekWorkouts } from '../brain/context';
@@ -87,6 +89,7 @@ async function apiFetch(
 export interface ChatReply {
   reply: string;
   knowledgeSources: KnowledgeSource[];
+  memorySources: MemorySource[];
   /** La biblioteca no respondió (sin configurar bien, caída…): Miguel contestó sin ella. */
   knowledgeWarning?: string;
 }
@@ -114,11 +117,14 @@ export const ApiService = {
         athleteHistoryDoc,
         coachMemory,
         brainContext,
+        // Solo para que Miguel no "recuerde" la conversación que ya tiene abierta.
+        sessionId: StorageService.getChatSessionId(),
       }, 'ai', 'Error al comunicar con Miguel');
     if (data.knowledgeWarning) console.warn(`[Biblioteca de Miguel] ${data.knowledgeWarning}`);
     return {
       reply: data.reply,
       knowledgeSources: Array.isArray(data.knowledgeSources) ? data.knowledgeSources : [],
+      memorySources: Array.isArray(data.memorySources) ? data.memorySources : [],
       knowledgeWarning: data.knowledgeWarning,
     };
   },
@@ -378,7 +384,11 @@ export function isSavableMessage(m: ChatMessage): boolean {
 /** Conversaciones guardadas en Supabase. Solo se escribe al pulsar "Guardar". */
 export const ConversationService = {
   /** Guarda los mensajes aún no guardados en `sessionId` (o en una conversación nueva). */
-  async save(secret: string, sessionId: string | null, messages: ChatMessage[]): Promise<{ sessionId: string; saved: number; clientIds: string[] }> {
+  async save(
+    secret: string,
+    sessionId: string | null,
+    messages: ChatMessage[],
+  ): Promise<{ sessionId: string; saved: number; clientIds: string[]; memoryIndexed: number; memoryWarning?: string }> {
     return await knowledgeFetch('/api/conversations/save', secret, 'POST', {
       sessionId,
       messages: messages.map((m) => ({
