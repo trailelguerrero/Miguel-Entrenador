@@ -11,6 +11,7 @@ import { CoachChat } from './components/CoachChat';
 import { AthleteHistoryView } from './components/AthleteHistoryView';
 import { CoachMemoryView } from './components/CoachMemoryView';
 import { KnowledgeLibraryView } from './components/KnowledgeLibraryView';
+import { ChatCloudPanel } from './components/ChatCloudPanel';
 import { PeriodizationView } from './components/PeriodizationView';
 import { ZoneSenseSuuntoView } from './components/ZoneSenseSuuntoView';
 import { DriftTestView } from './components/DriftTestView';
@@ -55,7 +56,7 @@ import {
   ToastType
 } from './types';
 import { StorageService } from './services/storage';
-import { ApiService } from './services/api';
+import { ApiService, isSavableMessage } from './services/api';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<string>('calendar');
@@ -760,6 +761,20 @@ ${structureLine} Ya puedes ver los entrenamientos en tu calendario.${warningLine
     }
   };
 
+  // Mensajes ya guardados en Supabase (botón "Guardar en Supabase" del chat)
+  const handleMarkChatSaved = (clientIds: string[], savedAt: string) => {
+    const ids = new Set(clientIds);
+    const msgs = StorageService.getChatMessages().map((m) => (ids.has(m.id) && !m.savedAt ? { ...m, savedAt } : m));
+    StorageService.saveChatMessages(msgs);
+    setChatMessages(msgs);
+  };
+
+  // Conversación cargada desde Supabase: sustituye a la del dispositivo
+  const handleLoadConversation = (msgs: ChatMessage[]) => {
+    StorageService.saveChatMessages(msgs);
+    setChatMessages(msgs);
+  };
+
   // Jump to chat with a workout context
   const handleAskMiguelAboutWorkout = (workout: Workout) => {
     setActiveWorkoutContext(workout);
@@ -969,6 +984,12 @@ ${structureLine} Ya puedes ver los entrenamientos en tu calendario.${warningLine
         )}
 
         {activeTab === 'chat' && (
+          <div className="space-y-3">
+          <ChatCloudPanel
+            messages={chatMessages}
+            onMarkSaved={handleMarkChatSaved}
+            onLoadConversation={handleLoadConversation}
+          />
           <CoachChat
             messages={chatMessages}
             onSendMessage={handleSendMessage}
@@ -978,7 +999,9 @@ ${structureLine} Ya puedes ver los entrenamientos en tu calendario.${warningLine
             targetRace={targetRace}
             recentWorkouts={workouts.slice(-5)}
             onClearHistory={() => {
-              if (confirm('¿Reiniciar la conversación con Miguel?')) {
+              const unsaved = chatMessages.filter((m) => isSavableMessage(m) && !m.savedAt).length;
+              const warning = unsaved ? `\n\n⚠️ Hay ${unsaved} mensaje(s) sin guardar en Supabase: se perderán.` : '';
+              if (confirm(`¿Borrar la conversación de este dispositivo?\n\nLo que ya esté guardado en Supabase NO se borra y puedes volver a cargarlo.${warning}`)) {
                 StorageService.saveChatMessages([]);
                 StorageService.setChatSessionId(null);
                 setChatMessages(StorageService.getChatMessages());
@@ -987,6 +1010,7 @@ ${structureLine} Ya puedes ver los entrenamientos en tu calendario.${warningLine
             activeWorkoutContext={activeWorkoutContext}
             onExtractEvidence={handleExtractChatEvidence}
           />
+          </div>
         )}
 
         {activeTab === 'periodization' && (

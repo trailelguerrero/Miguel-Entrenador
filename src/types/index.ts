@@ -664,6 +664,8 @@ export interface ChatMessage {
   knowledgeSources?: KnowledgeSource[];
   /** La biblioteca falló y Miguel respondió sin ella. */
   knowledgeWarning?: string;
+  /** Cuándo se guardó en Supabase (sin valor = solo está en este dispositivo). */
+  savedAt?: string;
 }
 
 /** Fragmento de la Biblioteca de Miguel (RAG) usado en una respuesta. */

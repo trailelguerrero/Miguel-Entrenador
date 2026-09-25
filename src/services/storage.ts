@@ -571,7 +571,7 @@ Puedes revisar tus umbrales (AeT y AnT) en tu perfil, registrar tu test de deriv
     localStorage.setItem(STORAGE_KEYS.CHAT_MESSAGES, JSON.stringify(messages));
   },
 
-  /** Conversación de Supabase a la que se añaden los mensajes (null = empezar una nueva). */
+  /** Conversación de Supabase donde "Guardar" añade los mensajes (null = la próxima vez se crea una nueva). */
   getChatSessionId(): string | null {
     try {
       return localStorage.getItem(STORAGE_KEYS.CHAT_SESSION_ID);
@@ -585,7 +585,7 @@ Puedes revisar tus umbrales (AeT y AnT) en tu perfil, registrar tu test de deriv
       if (id) localStorage.setItem(STORAGE_KEYS.CHAT_SESSION_ID, id);
       else localStorage.removeItem(STORAGE_KEYS.CHAT_SESSION_ID);
     } catch {
-      // sin localStorage: cada mensaje abriría una conversación nueva en Supabase
+      // sin localStorage: cada guardado crearía una conversación nueva en Supabase
     }
   },
 

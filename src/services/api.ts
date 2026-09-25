@@ -9,11 +9,11 @@ import {
   CoachLearnedMemory,
   CoachLearnedInsight,
   WatchZoneAdvice,
-  KnowledgeSource
+  KnowledgeSource,
+  ChatMessage
 } from '../types';
 
 import { ApiError, apiStatus } from './apiStatus';
-import { StorageService } from './storage';
 import type { RaceInfoResult } from '../types';
 import type { EvidenceItem } from '../brain/memory';
 import type { BrainContext, summarizeWeekWorkouts } from '../brain/context';
@@ -114,10 +114,7 @@ export const ApiService = {
         athleteHistoryDoc,
         coachMemory,
         brainContext,
-        sessionId: StorageService.getChatSessionId(),
       }, 'ai', 'Error al comunicar con Miguel');
-    if (data.sessionId) StorageService.setChatSessionId(data.sessionId);
-    if (data.historyWarning) console.warn(`[Conversación] ${data.historyWarning}`);
     if (data.knowledgeWarning) console.warn(`[Biblioteca de Miguel] ${data.knowledgeWarning}`);
     return {
       reply: data.reply,
@@ -318,7 +315,7 @@ export interface HealthStatus {
 export interface KnowledgeStatus {
   /** Biblioteca activa (Supabase + proveedor de embeddings configurados). */
   enabled: boolean;
-  /** Las conversaciones se guardan en Supabase. */
+  /** Supabase configurado: se pueden guardar y cargar conversaciones. */
   chatHistoryEnabled: boolean;
   missing: string[];
   embeddingModel: string;
@@ -361,5 +358,53 @@ export const KnowledgeService = {
   },
   async remove(secret: string, title: string): Promise<number> {
     return (await knowledgeFetch('/api/knowledge/documents', secret, 'DELETE', { title })).deleted ?? 0;
+  },
+};
+
+export interface ConversationSummary {
+  id: string;
+  title: string | null;
+  createdAt: string;
+  updatedAt: string;
+  messageCount: number;
+}
+
+/** Mensajes que se pueden guardar en Supabase: los de la conversación real,
+ * sin el saludo inicial ni los avisos de error. */
+export function isSavableMessage(m: ChatMessage): boolean {
+  return (m.role === 'user' || m.role === 'assistant') && m.id !== 'welcome-miguel' && !m.id.startsWith('error-') && !!m.content.trim();
+}
+
+/** Conversaciones guardadas en Supabase. Solo se escribe al pulsar "Guardar". */
+export const ConversationService = {
+  /** Guarda los mensajes aún no guardados en `sessionId` (o en una conversación nueva). */
+  async save(secret: string, sessionId: string | null, messages: ChatMessage[]): Promise<{ sessionId: string; saved: number; clientIds: string[] }> {
+    return await knowledgeFetch('/api/conversations/save', secret, 'POST', {
+      sessionId,
+      messages: messages.map((m) => ({
+        clientId: m.id,
+        role: m.role,
+        content: m.content,
+        timestamp: m.timestamp,
+        knowledgeSources: m.knowledgeSources,
+      })),
+    });
+  },
+
+  async list(secret: string): Promise<ConversationSummary[]> {
+    return (await knowledgeFetch('/api/conversations', secret, 'GET')).conversations ?? [];
+  },
+
+  /** Mensajes de una conversación, ya en el formato del chat de la app. */
+  async load(secret: string, sessionId: string): Promise<ChatMessage[]> {
+    const data = await knowledgeFetch(`/api/conversations/${encodeURIComponent(sessionId)}`, secret, 'GET');
+    return (data.messages ?? []).map((m: any) => ({
+      id: m.clientId,
+      role: m.role,
+      content: m.content,
+      timestamp: m.timestamp,
+      knowledgeSources: m.knowledgeSources,
+      savedAt: m.savedAt,
+    }));
   },
 };

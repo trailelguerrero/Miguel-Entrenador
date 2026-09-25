@@ -1,32 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { BookOpen, Upload, Trash2, RefreshCw, KeyRound, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { ApiService, KnowledgeService, type KnowledgeDocument, type KnowledgeStatus } from '../services/api';
+import { AppSecret } from '../services/appSecret';
 
-// La clave de la biblioteca (INGEST_SECRET) solo se guarda en esta pestaña del
-// navegador (sessionStorage): al cerrarla hay que volver a escribirla.
-const SECRET_KEY = 'uphill_coach_knowledge_secret';
 const MAX_CHARS = 200_000;
-
-function readSecret(): string {
-  try {
-    return sessionStorage.getItem(SECRET_KEY) || '';
-  } catch {
-    return '';
-  }
-}
-
-function writeSecret(value: string) {
-  try {
-    if (value) sessionStorage.setItem(SECRET_KEY, value);
-    else sessionStorage.removeItem(SECRET_KEY);
-  } catch {
-    // sin sessionStorage: habrá que escribir la clave en cada visita
-  }
-}
 
 export const KnowledgeLibraryView: React.FC = () => {
   const [status, setStatus] = useState<KnowledgeStatus | null>(null);
-  const [secret, setSecret] = useState(readSecret);
+  const [secret, setSecret] = useState(AppSecret.get);
+  const [remember, setRemember] = useState(AppSecret.isRemembered);
   const [documents, setDocuments] = useState<KnowledgeDocument[] | null>(null);
   const [title, setTitle] = useState('');
   const [source, setSource] = useState('');
@@ -56,7 +38,7 @@ export const KnowledgeLibraryView: React.FC = () => {
 
   const loadDocuments = () =>
     run(async () => {
-      writeSecret(secret);
+      AppSecret.set(secret, remember);
       setDocuments(await KnowledgeService.list(secret));
     });
 
@@ -72,7 +54,7 @@ export const KnowledgeLibraryView: React.FC = () => {
 
   const handleIngest = () =>
     run(async () => {
-      writeSecret(secret);
+      AppSecret.set(secret, remember);
       const result = await KnowledgeService.ingest(secret, { title: title.trim(), text, source: source.trim() || undefined });
       setNotice(
         `"${title.trim()}" guardado en ${result.chunks} fragmento(s)${result.replaced ? ` (sustituye a la versión anterior)` : ''}.`,
@@ -148,7 +130,17 @@ export const KnowledgeLibraryView: React.FC = () => {
             <span>Ver documentos</span>
           </button>
         </div>
-        <p className="text-[11px] text-zinc-500">Solo se guarda en esta pestaña del navegador y se olvida al cerrarla.</p>
+        <label className="flex items-center space-x-2 text-[11px] text-zinc-400">
+          <input
+            type="checkbox"
+            checked={remember}
+            onChange={(e) => {
+              setRemember(e.target.checked);
+              AppSecret.set(secret, e.target.checked);
+            }}
+          />
+          <span>Recordar en este dispositivo (si no, se olvida al cerrar la pestaña). También sirve para guardar y cargar conversaciones.</span>
+        </label>
       </div>
 
       {error && (
