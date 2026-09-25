@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import type { SearchResult } from '../server/ai.js';
 import { describeReadiness, evaluateReadiness, strictestReadiness } from '../src/brain/readiness.js';
 import { weeklyLoadThresholds } from '../src/utils/trainingLoad.js';
-import { formatLoadContext, resolveReadinessState } from '../server/brain/context.js';
+import { formatLoadContext, resolveReadinessState, verifyTodayReadiness } from '../server/brain/context.js';
 import { adviceUsesOnlyVerifiedNumbers, keywords, numberAppears, textAppears, verifyRaceInfo } from '../server/brain/decision/race.js';
 
 // ── Readiness: varios riesgos a la vez ─────────────────────────────────────
@@ -73,9 +73,36 @@ test('Cada línea de datos del contexto de carga lleva etiqueta de procedencia',
     loadHistory: { status: 'stabilized', startDate: '2025-09-01', days: 380 },
     recentCheckIns: [{ date: '2026-09-25', hrvRmssd: 45, hrvBaseline: 60, sleepHours: 7.5, status: 'fatigued', fromSuunto: true }],
     todayReadiness: state,
+    todayReadinessInputs: { hrvRmssd: 45, hrvBaseline: 60, sleepHours: 7.5 },
   });
   const untagged = txt.split('\n').filter((l) => !l.includes('Ventanas de datos') && !/\[(REAL|DERIVADO|ESTIMADO)\]/.test(l));
   assert.deepEqual(untagged, []);
+});
+
+// ── Readiness del chat y del plan ──────────────────────────────────────────
+const fakeGreenState = { level: 'green', reasons: [], missingData: [], hrvDeltaPct: 0, limits: { maxDurationMin: null, maxZoneSense: 'red', allowIntervals: true, mandatoryRest: false } };
+
+test('Chat/plan: un "verde" del cliente con HRV −25 % se describe como ROJO', () => {
+  const lc = { tsb: -5, weeklyTss: 300, ctl: 50, recentCheckIns: [], todayReadiness: fakeGreenState, todayReadinessInputs: { hrvRmssd: 45, hrvBaseline: 60, sleepHours: 7.5 } };
+  assert.equal(verifyTodayReadiness(lc)!.level, 'red');
+  const txt = formatLoadContext(lc);
+  assert.ok(txt.includes('ROJO'));
+  assert.ok(!txt.includes('VERDE'));
+});
+
+test('Chat/plan: la carga del contexto (TSB) entra en el recálculo', () => {
+  const lc = { tsb: -45, weeklyTss: 300, ctl: 50, recentCheckIns: [], todayReadinessInputs: { hrvRmssd: 45, hrvBaseline: 60, sleepHours: 7.5 } };
+  assert.equal(verifyTodayReadiness(lc)!.limits.mandatoryRest, true);
+});
+
+test('Chat/plan: sin datos crudos no se describe un estado sin verificar', () => {
+  const lc = { recentCheckIns: [], todayReadiness: fakeGreenState };
+  assert.equal(verifyTodayReadiness(lc), null);
+  const txt = formatLoadContext(lc);
+  assert.ok(txt.includes('no verificable'));
+  assert.ok(!txt.includes('LÍMITES OBLIGATORIOS'));
+  // Sin check-in de hoy no se dice nada
+  assert.ok(!formatLoadContext({ recentCheckIns: [] }).includes('readiness'));
 });
 
 // ── Carreras ───────────────────────────────────────────────────────────────

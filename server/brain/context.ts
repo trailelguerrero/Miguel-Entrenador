@@ -34,21 +34,54 @@ export function formatLoadContext(lc: any): string {
   for (const c of lc.recentCheckIns || []) {
     lines.push(`- ${c.date}: ${c.fromSuunto ? `${tag('real')} (Suunto)` : `${tag('real')} (declarado por el atleta)`} HRV ${c.hrvRmssd} ms (referencia ${c.hrvBaseline} ms), sueño ${c.sleepHours} h${c.recoveryPct != null ? `, Recovery Suunto ${c.recoveryPct}%` : ''}, semáforo ${tag('derived')} ${c.status}`);
   }
-  if (lc.todayReadiness) lines.push(`- ${tag('derived')} ${describeReadiness(lc.todayReadiness as ReadinessState).split('\n').join(`\n  ${tag('derived')} `)}`);
+  // El estado de hoy se recalcula aquí con los datos crudos; el del cliente solo puede endurecerlo
+  const today = verifyTodayReadiness(lc);
+  if (today) lines.push(`- ${tag('derived')} ${describeReadiness(today).split('\n').join(`\n  ${tag('derived')} `)}`);
+  else if (lc.todayReadiness) lines.push('- Estado de readiness de hoy: no verificable (la app no envió los datos del check-in). No supongas un nivel ni unos límites.');
   lines.push(`- ${describeDataWindows()}`);
   return lines.join('\n');
 }
 
 const finite = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
+/** Carga enviada por el cliente (TSB, TSS 7 días, CTL), saneada. */
+function loadInputs(load: any) {
+  const ctl = finite(load?.ctl);
+  return { tsb: finite(load?.tsb), weeklyTss: finite(load?.weeklyTss), weeklyThresholds: weeklyLoadThresholds(ctl ?? undefined) };
+}
+
+function plannedFrom(w: any) {
+  return w && typeof w === 'object' ? { type: typeof w.type === 'string' ? w.type : undefined, plannedDurationMin: finite(w.plannedDurationMin) ?? undefined } : null;
+}
+
 /**
- * Estado de readiness. El servidor SIEMPRE lo recalcula con el motor a partir del
- * check-in y de la carga que envía el cliente (readinessInputs: TSB, TSS 7 días, CTL).
- * El estado que calculó el cliente solo puede endurecerlo, nunca relajarlo.
+ * Estado de hoy para el chat y el plan: se recalcula con los datos crudos del check-in
+ * (todayReadinessInputs) y la carga del contexto. El todayReadiness del cliente solo
+ * puede endurecerlo. Sin datos crudos → null (no se describe un estado sin verificar).
+ */
+export function verifyTodayReadiness(lc: any): ReadinessState | null {
+  const i = lc?.todayReadinessInputs;
+  if (!i || typeof i !== 'object') return null;
+  const computed = evaluateReadiness({
+    hrvRmssd: finite(i.hrvRmssd),
+    hrvBaseline: finite(i.hrvBaseline),
+    sleepHours: finite(i.sleepHours),
+    muscleSoreness: finite(i.muscleSoreness),
+    stressLevel: finite(i.stressLevel),
+    recoveryPct: finite(i.recoveryPct),
+    ...loadInputs(lc),
+    plannedWorkout: plannedFrom(i.plannedWorkout),
+  });
+  return strictestReadiness(computed, lc.todayReadiness);
+}
+
+/**
+ * Estado de readiness para adaptar la sesión. El servidor SIEMPRE lo recalcula con el
+ * motor a partir del check-in y de la carga que envía el cliente (readinessInputs:
+ * TSB, TSS 7 días, CTL). El estado que calculó el cliente solo puede endurecerlo.
  */
 export function resolveReadinessState(body: any): ReadinessState {
   const { readinessState, readinessInputs, checkIn, athleteProfile, originalWorkout } = body || {};
-  const ctl = finite(readinessInputs?.ctl);
   const computed = evaluateReadiness({
     hrvRmssd: checkIn?.hrvRmssd,
     hrvBaseline: athleteProfile?.baselineHrv || checkIn?.hrvBaseline,
@@ -56,10 +89,8 @@ export function resolveReadinessState(body: any): ReadinessState {
     muscleSoreness: checkIn?.muscleSoreness,
     stressLevel: checkIn?.stressLevel,
     recoveryPct: checkIn?.readinessScore,
-    tsb: finite(readinessInputs?.tsb),
-    weeklyTss: finite(readinessInputs?.weeklyTss),
-    weeklyThresholds: weeklyLoadThresholds(ctl ?? undefined),
-    plannedWorkout: originalWorkout,
+    ...loadInputs(readinessInputs),
+    plannedWorkout: plannedFrom(originalWorkout),
   });
   return strictestReadiness(computed, readinessState);
 }

@@ -12,7 +12,7 @@ import {
   weeklyLoadThresholds,
   type LoadHistoryInfo,
 } from '../utils/trainingLoad.js';
-import { evaluateReadiness, type ReadinessState } from './readiness.js';
+import { evaluateReadiness, type ReadinessState, type TodayReadinessInputs } from './readiness.js';
 
 export interface BrainCheckInSummary {
   date: string;
@@ -34,6 +34,8 @@ export interface BrainContext {
   recentCheckIns: BrainCheckInSummary[];
   /** Estado de hoy según el motor de readiness (null si no hay check-in de hoy). */
   todayReadiness: ReadinessState | null;
+  /** Datos crudos de hoy con los que el servidor recalcula (y verifica) todayReadiness. */
+  todayReadinessInputs: TodayReadinessInputs | null;
 }
 
 function addDays(key: string, n: number): string {
@@ -57,19 +59,19 @@ export function buildBrainContext(
   const sorted = [...checkIns].sort((a, b) => a.date.localeCompare(b.date));
   const todayCi = sorted.find((c) => c.date === today) ?? null;
 
-  const todayReadiness = todayCi
-    ? evaluateReadiness({
+  const todayReadinessInputs: TodayReadinessInputs | null = todayCi
+    ? {
         hrvRmssd: todayCi.hrvRmssd,
         hrvBaseline: profile.baselineHrv || todayCi.hrvBaseline,
         sleepHours: todayCi.sleepHours,
         muscleSoreness: todayCi.muscleSoreness,
         stressLevel: todayCi.stressLevel,
         recoveryPct: todayCi.readinessScore,
-        tsb: latest?.tsb,
-        weeklyTss,
-        weeklyThresholds: weeklyLoadThresholds(latest?.ctl),
-        plannedWorkout: plannedToday ?? null,
-      })
+        plannedWorkout: plannedToday ? { type: plannedToday.type, plannedDurationMin: plannedToday.plannedDurationMin } : null,
+      }
+    : null;
+  const todayReadiness = todayReadinessInputs
+    ? evaluateReadiness({ ...todayReadinessInputs, tsb: latest?.tsb, weeklyTss, weeklyThresholds: weeklyLoadThresholds(latest?.ctl) })
     : null;
 
   return {
@@ -88,6 +90,7 @@ export function buildBrainContext(
       fromSuunto: c.source === 'suunto',
     })),
     todayReadiness,
+    todayReadinessInputs,
   };
 }
 
