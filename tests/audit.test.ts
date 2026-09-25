@@ -9,7 +9,7 @@ import type { SearchResult } from '../server/ai.js';
 import { describeReadiness, evaluateReadiness, strictestReadiness } from '../src/brain/readiness.js';
 import { weeklyLoadThresholds } from '../src/utils/trainingLoad.js';
 import { formatLoadContext, resolveReadinessState, verifyTodayReadiness } from '../server/brain/context.js';
-import { adviceUsesOnlyVerifiedNumbers, keywords, numberAppears, textAppears, verifyRaceInfo } from '../server/brain/decision/race.js';
+import { adviceUsesOnlyVerifiedNumbers, filterRaceAdvice, keywords, numberAppears, textAppears, verifyRaceInfo } from '../server/brain/decision/race.js';
 
 // ── Readiness: varios riesgos a la vez ─────────────────────────────────────
 test('ROJO de base + escalador → descanso obligatorio (no es lo mismo que un rojo por dormir mal)', () => {
@@ -150,4 +150,22 @@ test('El consejo no puede citar cifras de km/m que no estén verificadas', () =>
   assert.ok(!adviceUsesOnlyVerifiedNumbers('Con 45,5 km y unos 3.100 m de desnivel...', v));
   assert.ok(!adviceUsesOnlyVerifiedNumbers('Baja unos 2900 metros.', v));
   assert.ok(adviceUsesOnlyVerifiedNumbers('Buena carrera B a 8 semanas.', v));
+});
+
+test('El consejo admite cifras derivadas al comparar con la Transvulcania', () => {
+  const v = { fields: { distanceKm: { value: 45.5, sources: [] }, elevationGainM: { value: 2850, sources: [] } }, unverified: [], sources: [], queries: [], warnings: [] } as any;
+  // 73 − 45,5 = 27,5 km; 4350 − 2850 = 1500 m; 2850/45,5 ≈ 63 m/km
+  assert.ok(adviceUsesOnlyVerifiedNumbers('Le faltan 27,5 km y 1.500 m de desnivel respecto a la Transvulcania.', v));
+  assert.ok(adviceUsesOnlyVerifiedNumbers('Unos 63 m/km de desnivel, algo más que los 60 m/km de La Palma.', v));
+  // Unidades separadas: 1500 no vale como km
+  assert.ok(!adviceUsesOnlyVerifiedNumbers('Son 1500 km.', v));
+});
+
+test('Solo se quitan las frases con cifras sin respaldo, no todo el consejo', () => {
+  const v = { fields: { distanceKm: { value: 45.5, sources: [] }, elevationGainM: { value: 2850, sources: [] } }, unverified: [], sources: [], queries: [], warnings: [] } as any;
+  const r = filterRaceAdvice('Buena carrera B con 45,5 km. Tiene una bajada de 2.900 m. Colócala a 8 semanas de La Palma.', v);
+  assert.equal(r.advice, 'Buena carrera B con 45,5 km. Colócala a 8 semanas de La Palma.');
+  assert.deepEqual(r.removed, ['2900 m']);
+  // Si todas las frases tienen cifras inventadas, no queda consejo
+  assert.equal(filterRaceAdvice('Tiene 3.100 m de desnivel.', v).advice, null);
 });
