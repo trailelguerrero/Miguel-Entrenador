@@ -4,11 +4,11 @@
 //   - Objetivos ZoneSense siempre canónicos (colores).
 //   - Nutrición numérica solo con evidencia del atleta y sin pasar de ella.
 //   - Adaptaciones recortadas a los límites del motor de readiness.
-import type { AthleteProfile, IntensitySource, Workout } from '../../src/types/index.js';
-import { resolveIntensityPrescription, type IntensityPrescription } from '../../src/brain/intensity.js';
-import { normalizeZoneSenseTarget, TARGET_COLOR, colorRank } from '../../src/brain/zonesense.js';
-import type { ReadinessState } from '../../src/brain/readiness.js';
-import { analyzeWeekStructure } from '../../src/utils/weekStructure.js';
+import type { AthleteProfile, IntensitySource, Workout } from '../../../src/types/index.js';
+import { resolveIntensityPrescription, type IntensityPrescription } from '../../../src/brain/intensity.js';
+import { normalizeZoneSenseTarget, TARGET_COLOR, colorRank } from '../../../src/brain/zonesense.js';
+import type { ReadinessState } from '../../../src/brain/readiness.js';
+import { analyzeWeekStructure } from '../../../src/utils/weekStructure.js';
 
 /** Evidencia nutricional real del atleta (la envía el cliente). */
 export interface NutritionEvidence {

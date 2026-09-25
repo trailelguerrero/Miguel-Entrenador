@@ -32,6 +32,7 @@ Aplicación completa de entrenamiento de montaña inspirada en el manual de cabe
 - **Estructura semanal**: 3 sesiones entre semana (2 si la fatiga o la disponibilidad lo aconsejan) + tirada larga el sábado o el domingo.
 - **Edición Directa**: Puedes escribir, reprogramar, completar o eliminar entrenamientos directamente en el calendario.
 - **Generador de Microciclos con IA**: Miguel planifica semanas completas detallando calentamiento, series principales, terreno recomendado y pautas nutricionales.
+- **Carreras preparatorias con fuentes**: al añadir una carrera se busca en Google (búsqueda de Gemini) y solo se guardan los datos que respalda alguna página, con su enlace. Cada cifra tiene que aparecer en un fragmento respaldado por una fuente; lo que no, queda *sin verificar*. Lo que escribes tú se marca como dato tuyo. Requiere `GEMINI_API_KEY` aunque uses Experiential.
 - **Gestor de Carreras Secundarias (B y C)**: Búsqueda con IA de perfiles técnicos y análisis de cómo encajan en el camino a La Palma.
 
 ### 5. Lector de Archivos Reales .FIT de Suunto
@@ -51,6 +52,7 @@ Aplicación completa de entrenamiento de montaña inspirada en el manual de cabe
 
 - **Frontend**: React 19, TypeScript, Tailwind CSS, Lucide Icons, Motion.
 - **Backend / API**: Express (función serverless de Vercel en `api/index.ts`). IA intercambiable en `server/ai.ts`: Gemini (`@google/genai`, por defecto) o cualquier modelo de Experiential Labs (Claude, GPT…) con `AI_PROVIDER=experiential`.
+- **Cerebro de Miguel**: `src/brain/` (reglas compartidas cliente/servidor: ZoneSense, intensidad, readiness, memoria, procedencia) y `server/brain/` (`prompts/` = texto para la IA, `context.ts` = hechos → texto, `decision/` = validación en código de lo que devuelve la IA). `server/app.ts` solo tiene las rutas HTTP. Pruebas: `npm test`.
 - **Decodificador de Telemetría**: `fit-file-parser` (procesamiento binario de `.fit`).
 - **Almacenamiento**: Persistencia local en navegador (`localStorage`).
 

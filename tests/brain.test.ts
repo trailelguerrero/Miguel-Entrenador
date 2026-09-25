@@ -17,7 +17,7 @@ import { normalizeSuuntoZoneSense, toStoredBreakdown, normalizeZoneSenseTarget }
 import { getWorkoutLoad, getLoadHistoryInfo, localDateKey, weeklyLoadThresholds } from '../src/utils/trainingLoad.js';
 import { analyzeWeekStructure, mondayOfKey, addDaysKey } from '../src/utils/weekStructure.js';
 import { computeReadiness } from '../src/utils/readiness.js';
-import { sanitizePlanWorkouts, sanitizeAdaptation } from '../server/brain/validate.js';
+import { sanitizePlanWorkouts, sanitizeAdaptation } from '../server/brain/decision/validate.js';
 
 // ── Atleta de referencia: umbrales medidos por Suunto ──────────────────────
 const measured: Partial<AthleteProfile> = {
@@ -184,8 +184,7 @@ test('9b. Historial de carga: "en calentamiento" con < 42 días, "estabilizado" 
   assert.equal(getLoadHistoryInfo([]).status, 'none');
 });
 
-// ── 10. Carrera desconocida ────────────────────────────────────────────────
-test.todo('10. Carrera desconocida: "sin fuente = sin verificar" (fase 3: race-info con búsqueda y fuentes)');
+// ── 10. Carrera desconocida: ver tests/race.test.ts ──
 
 // ── ZoneSense y nutrición ─────────────────────────────────────────────────
 test('ZoneSense de Suunto → colores canónicos (aeróbica=verde, anaeróbica=amarillo, VO2max=rojo)', () => {

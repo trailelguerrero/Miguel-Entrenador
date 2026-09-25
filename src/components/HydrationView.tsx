@@ -134,10 +134,10 @@ export const HydrationView: React.FC<HydrationViewProps> = ({ profile }) => {
 
     if (score === 1) {
       status = 'mild_risk';
-      advice = 'Riesgo leve de hipohidratación. Bebe 400-500 ml de agua con una pizca de sal o electrolitos 60 min antes de la sesión.';
+      advice = 'Riesgo leve de hipohidratación. Pauta general (no medida para ti): 400-500 ml de agua con una pizca de sal o electrolitos 60 min antes de la sesión. Tu test de sudoración la personaliza.';
     } else if (score >= 2) {
       status = 'dehydrated';
-      advice = 'Hipohidratación confirmada (2 o 3 factores positivos). Inicia prehidratación con 600-800 ml de electrolitos y reduce la intensidad en subidas.';
+      advice = 'Hipohidratación confirmada (2 o 3 factores positivos). Pauta general (no medida para ti): prehidratación con 600-800 ml de electrolitos y reduce la intensidad en subidas. Tu test de sudoración la personaliza.';
     }
 
     const check: WUTDailyCheck = {

@@ -12,6 +12,7 @@ import {
 } from '../types';
 
 import { ApiError, apiStatus } from './apiStatus';
+import type { RaceInfoResult } from '../types';
 import type { EvidenceItem } from '../brain/memory';
 import type { BrainContext, summarizeWeekWorkouts } from '../brain/context';
 import type { ReadinessState } from '../brain/readiness';
@@ -203,7 +204,7 @@ export const ApiService = {
     raceName: string,
     approximateDate?: string,
     distanceKm?: number
-  ): Promise<any> {
+  ): Promise<RaceInfoResult> {
     return await apiFetch('/api/race-info', {
         raceName,
         approximateDate,
