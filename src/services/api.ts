@@ -8,10 +8,12 @@ import {
   SuuntoProfileSuggestion,
   CoachLearnedMemory,
   CoachLearnedInsight,
-  WatchZoneAdvice
+  WatchZoneAdvice,
+  KnowledgeSource
 } from '../types';
 
 import { ApiError, apiStatus } from './apiStatus';
+import { StorageService } from './storage';
 import type { RaceInfoResult } from '../types';
 import type { EvidenceItem } from '../brain/memory';
 import type { BrainContext, summarizeWeekWorkouts } from '../brain/context';
@@ -81,6 +83,14 @@ async function apiFetch(
   return data;
 }
 
+/** Respuesta del chat: texto de Miguel + documentos de la biblioteca que usó. */
+export interface ChatReply {
+  reply: string;
+  knowledgeSources: KnowledgeSource[];
+  /** La biblioteca no respondió (sin configurar bien, caída…): Miguel contestó sin ella. */
+  knowledgeWarning?: string;
+}
+
 /** Hechos calculados en el cliente para Miguel (ver src/brain/context.ts). */
 export type PlanLoadContext = BrainContext;
 
@@ -94,7 +104,7 @@ export const ApiService = {
     athleteHistoryDoc?: AthleteHistoryDocument | null,
     coachMemory?: CoachLearnedMemory | null,
     brainContext?: BrainContext
-  ): Promise<string> {
+  ): Promise<ChatReply> {
     const data = await apiFetch('/api/chat', {
         messages,
         athleteProfile,
@@ -104,8 +114,16 @@ export const ApiService = {
         athleteHistoryDoc,
         coachMemory,
         brainContext,
+        sessionId: StorageService.getChatSessionId(),
       }, 'ai', 'Error al comunicar con Miguel');
-    return data.reply;
+    if (data.sessionId) StorageService.setChatSessionId(data.sessionId);
+    if (data.historyWarning) console.warn(`[Conversación] ${data.historyWarning}`);
+    if (data.knowledgeWarning) console.warn(`[Biblioteca de Miguel] ${data.knowledgeWarning}`);
+    return {
+      reply: data.reply,
+      knowledgeSources: Array.isArray(data.knowledgeSources) ? data.knowledgeSources : [],
+      knowledgeWarning: data.knowledgeWarning,
+    };
   },
 
   async generatePlan(
@@ -293,5 +311,55 @@ export interface HealthStatus {
     models: { gemini: string; experientialChat: string; experientialFast: string };
     fallbackAvailable: boolean;
   };
+  knowledge?: KnowledgeStatus;
   suuntoMcpUrl: string;
 }
+
+export interface KnowledgeStatus {
+  /** Biblioteca activa (Supabase + proveedor de embeddings configurados). */
+  enabled: boolean;
+  /** Las conversaciones se guardan en Supabase. */
+  chatHistoryEnabled: boolean;
+  missing: string[];
+  embeddingModel: string;
+  ingestProtected: boolean;
+}
+
+export interface KnowledgeDocument {
+  title: string;
+  source: string | null;
+  chunks: number;
+  embeddingModel: string | null;
+  createdAt: string;
+}
+
+/** Llamada a la Biblioteca de Miguel con la clave INGEST_SECRET en la cabecera. */
+async function knowledgeFetch(path: string, secret: string, method: 'GET' | 'POST' | 'DELETE', body?: unknown): Promise<any> {
+  let res: Response;
+  try {
+    res = await fetch(path, {
+      method,
+      headers: { 'x-ingest-secret': secret, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    throw new ApiError('NETWORK', 'No hay conexión con el servidor de la app.', 'Vuelve a intentarlo en un momento.');
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new ApiError(data.code || `HTTP_${res.status}`, data.error || 'Error en la Biblioteca de Miguel.', data.hint);
+  }
+  return data;
+}
+
+export const KnowledgeService = {
+  async list(secret: string): Promise<KnowledgeDocument[]> {
+    return (await knowledgeFetch('/api/knowledge/documents', secret, 'GET')).documents ?? [];
+  },
+  async ingest(secret: string, doc: { title: string; text: string; source?: string }): Promise<{ chunks: number; replaced: number }> {
+    return await knowledgeFetch('/api/knowledge/ingest', secret, 'POST', doc);
+  },
+  async remove(secret: string, title: string): Promise<number> {
+    return (await knowledgeFetch('/api/knowledge/documents', secret, 'DELETE', { title })).deleted ?? 0;
+  },
+};

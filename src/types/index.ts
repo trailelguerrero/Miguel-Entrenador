@@ -660,6 +660,17 @@ export interface ChatMessage {
   timestamp: string;
   contextType?: 'workout_debrief' | 'hrv_alert' | 'general' | 'plan_adaptation';
   relatedWorkoutId?: string;
+  /** Documentos de la Biblioteca de Miguel en los que se apoyó la respuesta. */
+  knowledgeSources?: KnowledgeSource[];
+  /** La biblioteca falló y Miguel respondió sin ella. */
+  knowledgeWarning?: string;
+}
+
+/** Fragmento de la Biblioteca de Miguel (RAG) usado en una respuesta. */
+export interface KnowledgeSource {
+  title: string;
+  source: string | null;
+  similarity: number;
 }
 
 // Tokens OAuth del servidor MCP de Suunto (ver server/suunto-routes.ts).

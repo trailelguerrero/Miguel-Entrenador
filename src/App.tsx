@@ -10,6 +10,7 @@ import { CalendarView } from './components/CalendarView';
 import { CoachChat } from './components/CoachChat';
 import { AthleteHistoryView } from './components/AthleteHistoryView';
 import { CoachMemoryView } from './components/CoachMemoryView';
+import { KnowledgeLibraryView } from './components/KnowledgeLibraryView';
 import { PeriodizationView } from './components/PeriodizationView';
 import { ZoneSenseSuuntoView } from './components/ZoneSenseSuuntoView';
 import { DriftTestView } from './components/DriftTestView';
@@ -205,7 +206,7 @@ export default function App() {
       (manual.length ? `\nEstos los mantengo a mano y no se han tocado: ${manual.join(', ')}.` : '') +
       `\nResume en pocas líneas qué has tomado de Suunto, qué significa para mi entrenamiento y qué debería revisar o confirmar yo (por ejemplo, si mis zonas de FC de Suunto no están bien configuradas o conviene hacer el test de deriva para afinar el AeT). Recuerda que peso, altura, edad y lesiones los pongo yo.`;
     try {
-      const reply = await ApiService.sendMessage(
+      const { reply, knowledgeSources } = await ApiService.sendMessage(
         [{ role: 'user', content: prompt }],
         newProfile,
         StorageService.getTodayCheckIn(),
@@ -221,6 +222,7 @@ export default function App() {
         content: reply,
         timestamp: new Date().toISOString(),
         contextType: 'general',
+        knowledgeSources,
       };
       const msgs = [...StorageService.getChatMessages(), msg];
       StorageService.saveChatMessages(msgs);
@@ -720,7 +722,7 @@ ${structureLine} Ya puedes ver los entrenamientos en tu calendario.${warningLine
         content: m.content,
       }));
 
-      const reply = await ApiService.sendMessage(
+      const { reply, knowledgeSources, knowledgeWarning } = await ApiService.sendMessage(
         historyPayload,
         profile,
         todayCheckIn,
@@ -738,6 +740,8 @@ ${structureLine} Ya puedes ver los entrenamientos en tu calendario.${warningLine
         role: 'assistant',
         content: reply,
         timestamp: new Date().toISOString(),
+        knowledgeSources,
+        knowledgeWarning,
       };
 
       const finalMsgs = [...updated, assistantMsg];
@@ -949,6 +953,8 @@ ${structureLine} Ya puedes ver los entrenamientos en tu calendario.${warningLine
           />
         )}
 
+        {activeTab === 'knowledge' && <KnowledgeLibraryView />}
+
         {activeTab === 'history' && (
           <AthleteHistoryView
             profile={profile}
@@ -974,6 +980,7 @@ ${structureLine} Ya puedes ver los entrenamientos en tu calendario.${warningLine
             onClearHistory={() => {
               if (confirm('¿Reiniciar la conversación con Miguel?')) {
                 StorageService.saveChatMessages([]);
+                StorageService.setChatSessionId(null);
                 setChatMessages(StorageService.getChatMessages());
               }
             }}
