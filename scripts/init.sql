@@ -2,6 +2,8 @@
 --   documents      → Biblioteca de Miguel (fragmentos + embeddings, RAG)
 --   chat_sessions  → conversaciones con Miguel (se guardan con el botón del chat)
 --   chat_messages  → mensajes de cada conversación
+--   conversation_memory → intercambios (pregunta + respuesta) de las conversaciones
+--                         guardadas, con embedding, para que Miguel las recuerde
 -- Ejecutar en Supabase → SQL Editor. Es idempotente: se puede ejecutar varias veces.
 
 -- Extensiones necesarias
@@ -42,6 +44,17 @@ alter table public.chat_sessions add column if not exists title text;
 alter table public.chat_sessions add column if not exists updated_at timestamptz not null default now();
 alter table public.chat_messages add column if not exists metadata jsonb not null default '{}'::jsonb;
 
+-- Memoria de conversaciones: cada intercambio guardado (pregunta del atleta +
+-- respuesta de Miguel) con su embedding. Se crea al pulsar "Guardar en Supabase".
+create table if not exists public.conversation_memory (
+  id bigint generated always as identity primary key,
+  session_id uuid not null references public.chat_sessions(id) on delete cascade,
+  content text not null,
+  metadata jsonb not null default '{}'::jsonb,
+  embedding vector(1536),
+  created_at timestamptz not null default now()
+);
+
 -- Índices
 create index if not exists chat_sessions_updated_idx
   on public.chat_sessions(updated_at desc);
@@ -50,6 +63,13 @@ create index if not exists chat_sessions_updated_idx
 create unique index if not exists chat_messages_client_id_idx
   on public.chat_messages(session_id, (metadata->>'client_id'))
   where metadata ? 'client_id';
+
+create unique index if not exists conversation_memory_exchange_idx
+  on public.conversation_memory(session_id, (metadata->>'client_id'));
+
+create index if not exists conversation_memory_embedding_idx
+  on public.conversation_memory
+  using hnsw (embedding vector_cosine_ops);
 
 create index if not exists chat_messages_session_idx
   on public.chat_messages(session_id, created_at);
@@ -70,6 +90,7 @@ create index if not exists documents_title_idx
 alter table public.documents enable row level security;
 alter table public.chat_sessions enable row level security;
 alter table public.chat_messages enable row level security;
+alter table public.conversation_memory enable row level security;
 
 drop policy if exists "service_role_documents_all" on public.documents;
 create policy "service_role_documents_all"
@@ -82,6 +103,14 @@ create policy "service_role_documents_all"
 drop policy if exists "service_role_chat_sessions_all" on public.chat_sessions;
 create policy "service_role_chat_sessions_all"
   on public.chat_sessions
+  for all
+  to service_role
+  using (true)
+  with check (true);
+
+drop policy if exists "service_role_conversation_memory_all" on public.conversation_memory;
+create policy "service_role_conversation_memory_all"
+  on public.conversation_memory
   for all
   to service_role
   using (true)
@@ -134,3 +163,44 @@ $$;
 
 revoke execute on function public.match_documents(vector, double precision, integer, text) from public, anon, authenticated;
 grant execute on function public.match_documents(vector, double precision, integer, text) to service_role;
+
+-- Intercambios de conversaciones anteriores parecidos a la pregunta. Excluye la
+-- conversación abierta (Miguel ya la tiene entera) y los vectores de otro modelo.
+create or replace function public.match_conversation_memory(
+  query_embedding vector(1536),
+  match_threshold double precision,
+  match_count integer,
+  filter_model text default null,
+  exclude_session uuid default null
+)
+returns table (
+  id bigint,
+  session_id uuid,
+  session_title text,
+  content text,
+  metadata jsonb,
+  similarity double precision
+)
+language sql
+stable
+as $$
+  select
+    m.id,
+    m.session_id,
+    s.title as session_title,
+    m.content,
+    m.metadata,
+    1 - (m.embedding <=> query_embedding) as similarity
+  from public.conversation_memory m
+  join public.chat_sessions s on s.id = m.session_id
+  where
+    m.embedding is not null
+    and (filter_model is null or m.metadata->>'embedding_model' = filter_model)
+    and (exclude_session is null or m.session_id <> exclude_session)
+    and 1 - (m.embedding <=> query_embedding) > match_threshold
+  order by m.embedding <=> query_embedding
+  limit match_count;
+$$;
+
+revoke execute on function public.match_conversation_memory(vector, double precision, integer, text, uuid) from public, anon, authenticated;
+grant execute on function public.match_conversation_memory(vector, double precision, integer, text, uuid) to service_role;

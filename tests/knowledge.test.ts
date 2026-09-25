@@ -13,11 +13,14 @@ import { randomUUID } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 
 import { chunkText } from '../server/rag/chunker.js';
-import { buildKnowledgeBlock, buildKnowledgeQuery } from '../server/brain/prompts/knowledge.js';
-import { checkIngestSecret, ingestDocument, knowledgeConfigStatus, listDocuments, parseIngestInput, searchKnowledge, deleteDocument } from '../server/rag/knowledge.js';
+import { buildKnowledgeBlock, buildKnowledgeQuery, chatTurnsFromBody } from '../server/brain/prompts/knowledge.js';
+import { buildChatConversation } from '../server/brain/prompts/routes.js';
+import { checkIngestSecret, embedQuery, ingestDocument, knowledgeConfigStatus, listDocuments, parseIngestInput, searchKnowledge, deleteDocument } from '../server/rag/knowledge.js';
 import { embeddingModelId, missingEmbeddingVars } from '../server/rag/embeddings.js';
 import { getConversation, listConversations, parseIncomingMessages, saveConversation } from '../server/rag/chatStore.js';
 import { KnowledgeError } from '../server/rag/supabase.js';
+import { buildExchanges, exchangeText, indexConversation, searchConversationMemory } from '../server/rag/conversationMemory.js';
+import { buildMemoryBlock } from '../server/brain/prompts/knowledge.js';
 
 const ENV_KEYS = [
   'SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'GEMINI_API_KEY', 'OPENAI_API_KEY',
@@ -53,6 +56,14 @@ test('buildKnowledgeQuery: pregunta corta de seguimiento incluye la anterior', (
   ]);
   assert.match(q, /bajadas técnicas/);
   assert.match(q, /cuántas series/);
+});
+
+test('la búsqueda usa la pregunta del atleta, no el contexto que se añade para la IA', () => {
+  const body = { messages: [{ role: 'user', content: 'Vuelvo a notar el tendón de Aquiles en cuestas' }] };
+  // La conversación para la IA lleva el perfil incrustado: no sirve para buscar.
+  assert.notEqual(buildKnowledgeQuery(buildChatConversation(body)), body.messages[0].content);
+  assert.equal(buildKnowledgeQuery(chatTurnsFromBody(body)), 'Vuelvo a notar el tendón de Aquiles en cuestas');
+  assert.deepEqual(chatTurnsFromBody({ messages: [{ role: 'system', content: 'x' }, null, { role: 'user', content: 1 }] }), []);
 });
 
 test('buildKnowledgeBlock: vacío sin fragmentos; con fragmentos, etiquetas [B1] y reglas', () => {
@@ -118,7 +129,7 @@ function toyEmbedding(text: string): number[] {
   return v.map((x) => x / n);
 }
 
-const db = { documents: [] as any[], chat_sessions: [] as any[], chat_messages: [] as any[] };
+const db = { documents: [] as any[], chat_sessions: [] as any[], chat_messages: [] as any[], conversation_memory: [] as any[] };
 let server: http.Server;
 let seq = 1;
 
@@ -146,6 +157,23 @@ before(async () => {
       const rows = db.documents
         .filter((d) => !body.filter_model || d.metadata.embedding_model === body.filter_model)
         .map((d) => ({ id: d.id, content: d.content, metadata: d.metadata, similarity: q.reduce((s, x, i) => s + x * d.embedding[i], 0) }))
+        .filter((r) => r.similarity > body.match_threshold)
+        .sort((a, b) => b.similarity - a.similarity)
+        .slice(0, body.match_count);
+      return send(200, rows);
+    }
+    if (url.pathname === '/rest/v1/rpc/match_conversation_memory') {
+      const q = body.query_embedding as number[];
+      const rows = db.conversation_memory
+        .filter((m) => (!body.filter_model || m.metadata.embedding_model === body.filter_model) && m.session_id !== body.exclude_session)
+        .map((m) => ({
+          id: m.id,
+          session_id: m.session_id,
+          session_title: db.chat_sessions.find((x) => x.id === m.session_id)?.title ?? null,
+          content: m.content,
+          metadata: m.metadata,
+          similarity: q.reduce((acc, x, i) => acc + x * m.embedding[i], 0),
+        }))
         .filter((r) => r.similarity > body.match_threshold)
         .sort((a, b) => b.similarity - a.similarity)
         .slice(0, body.match_count);
@@ -220,6 +248,8 @@ after(() => {
   }
 });
 
+const search = async (q: string) => searchKnowledge(await embedQuery(q));
+
 test('ingesta → búsqueda → sustitución → borrado', async () => {
   useMockServices();
   const doc = {
@@ -233,12 +263,12 @@ test('ingesta → búsqueda → sustitución → borrado', async () => {
   assert.equal(first.replaced, 0);
   assert.equal(db.documents[0].metadata.embedding_model, 'openai:text-embedding-3-small');
 
-  const hits = await searchKnowledge('¿Qué hago para los cuádriceps en las bajadas?');
+  const hits = await search('¿Qué hago para los cuádriceps en las bajadas?');
   assert.equal(hits.length, 1);
   assert.equal(hits[0].title, 'Fuerza excéntrica');
   assert.equal(hits[0].source, 'apuntes');
 
-  assert.deepEqual(await searchKnowledge('xyzzy quux'), []);
+  assert.deepEqual(await search('xyzzy quux'), []);
 
   // Volver a subir el mismo título sustituye, no duplica.
   const again = await ingestDocument(doc);
@@ -247,7 +277,7 @@ test('ingesta → búsqueda → sustitución → borrado', async () => {
 
   // Documentos de otro modelo de embeddings no se mezclan en la búsqueda.
   process.env.OPENAI_EMBEDDING_MODEL = 'text-embedding-3-large';
-  assert.deepEqual(await searchKnowledge('cuádriceps bajadas'), []);
+  assert.deepEqual(await search('cuádriceps bajadas'), []);
   delete process.env.OPENAI_EMBEDDING_MODEL;
 
   assert.equal(await deleteDocument('Fuerza excéntrica'), 1);
@@ -272,9 +302,16 @@ test('conversaciones: solo se guarda lo nuevo, se listan y se cargan', async () 
   assert.equal(second.alreadySaved, 2);
   assert.deepEqual(second.clientIds, ['user-1', 'assistant-1', 'user-2']);
 
-  // Un id inexistente o inválido abre una conversación nueva.
-  assert.notEqual((await saveConversation('00000000-0000-4000-8000-000000000000', [])).sessionId, first.sessionId);
-  assert.notEqual((await saveConversation('no-es-un-uuid', [])).sessionId, first.sessionId);
+  // Un id inexistente o inválido abre una conversación nueva…
+  const extra = parseIncomingMessages([{ clientId: 'x-1', role: 'user', content: 'Hola' }]);
+  assert.notEqual((await saveConversation('00000000-0000-4000-8000-000000000000', extra)).sessionId, first.sessionId);
+  assert.notEqual((await saveConversation('no-es-un-uuid', extra)).sessionId, first.sessionId);
+  // …pero sin mensajes no se crean conversaciones vacías.
+  const before = db.chat_sessions.length;
+  await assert.rejects(saveConversation('00000000-0000-4000-8000-000000000000', []), (e: KnowledgeError) => e.code === 'KB_INPUT');
+  assert.equal(db.chat_sessions.length, before);
+  // Con la conversación existente y nada nuevo, no falla (sirve para reintentar la memoria).
+  assert.equal((await saveConversation(first.sessionId, [])).saved, 0);
 
   const list = await listConversations();
   const summary = list.find((c) => c.id === first.sessionId)!;
@@ -297,4 +334,49 @@ test('parseIncomingMessages rechaza mensajes sin id, rol o contenido', () => {
   bad({ clientId: 'a', role: 'system', content: 'x' });
   bad({ clientId: 'a', role: 'user', content: '  ' });
   assert.throws(() => parseIncomingMessages('nada'), (e: KnowledgeError) => e.httpStatus === 400);
+});
+
+// ── Memoria de conversaciones ──────────────────────────────────────────────
+test('buildExchanges: pregunta + respuesta siguiente; preguntas sin respuesta se dejan', () => {
+  const ex = buildExchanges([
+    { clientId: 'a0', role: 'assistant', content: 'Resumen Suunto', timestamp: 't0' },
+    { clientId: 'u1', role: 'user', content: 'P1', timestamp: 't1' },
+    { clientId: 'a1', role: 'assistant', content: 'R1', timestamp: 't1b' },
+    { clientId: 'u2', role: 'user', content: 'P2', timestamp: 't2' },
+  ]);
+  assert.deepEqual(ex, [{ clientId: 'u1', timestamp: 't1', question: 'P1', reply: 'R1' }]);
+  assert.equal(exchangeText(ex[0]), 'Atleta: P1\nMiguel: R1');
+  assert.ok(exchangeText({ ...ex[0], reply: 'x'.repeat(5000) }).length < 2700);
+});
+
+test('buildMemoryBlock: fecha, etiqueta [C1] y regla de que no son datos medidos', () => {
+  assert.equal(buildMemoryBlock([]), '');
+  const block = buildMemoryBlock([{ date: '2026-09-01T10:00:00Z', sessionTitle: 'Tobillo', content: 'Atleta: me duele\nMiguel: descansa' }]);
+  assert.match(block, /\[C1\] 1\/9\/2026 · conversación "Tobillo"/);
+  assert.match(block, /no como datos medidos/);
+});
+
+test('memoria: indexa al guardar sin repetir, recuerda otras conversaciones y excluye la abierta', async () => {
+  useMockServices();
+  const old = await saveConversation(undefined, parseIncomingMessages([
+    { clientId: 'm-u1', role: 'user', content: 'Me molesta el tendón de Aquiles tras las cuestas', timestamp: '2026-09-01T09:00:00.000Z' },
+    { clientId: 'm-a1', role: 'assistant', content: 'Baja el volumen de cuestas y vigila el tendón de Aquiles.' },
+    { clientId: 'm-u2', role: 'user', content: '¿Y mañana?' },
+  ]));
+  assert.deepEqual(await indexConversation(old.sessionId), { indexed: 1 });
+  // Idempotente: guardar otra vez no vuelve a vectorizar lo ya hecho.
+  assert.deepEqual(await indexConversation(old.sessionId), { indexed: 0 });
+  // Cuando llega la respuesta pendiente, se indexa solo el intercambio nuevo.
+  await saveConversation(old.sessionId, parseIncomingMessages([{ clientId: 'm-a2', role: 'assistant', content: 'Mañana descanso.' }]));
+  assert.deepEqual(await indexConversation(old.sessionId), { indexed: 1 });
+
+  const query = await embedQuery('Vuelvo a notar el tendón de Aquiles en las cuestas');
+  const hits = await searchConversationMemory(query, null);
+  assert.equal(hits[0].sessionId, old.sessionId);
+  assert.equal(hits[0].date, '2026-09-01T09:00:00.000Z');
+  assert.equal(hits[0].sessionTitle, 'Me molesta el tendón de Aquiles tras las cuestas');
+  assert.match(hits[0].content, /^Atleta: Me molesta el tendón/);
+
+  // La conversación abierta no se "recuerda": Miguel ya la tiene entera.
+  assert.deepEqual(await searchConversationMemory(query, old.sessionId), []);
 });

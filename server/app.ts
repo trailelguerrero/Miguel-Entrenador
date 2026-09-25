@@ -18,7 +18,8 @@ import { resolveReadinessState } from './brain/context.js';
 import { sanitizeAdaptation, sanitizePlanWorkouts } from './brain/decision/validate.js';
 import { RACE_NUMERIC_FIELDS, RACE_TEXT_FIELDS, verifyRaceInfo } from './brain/decision/race.js';
 import { verifyHistoryNumbers } from './brain/decision/history.js';
-import { buildKnowledgeBlock, buildKnowledgeQuery } from './brain/prompts/knowledge.js';
+import { buildKnowledgeBlock, buildKnowledgeQuery, buildMemoryBlock, chatTurnsFromBody } from './brain/prompts/knowledge.js';
+import { MemoryMatch, indexConversation, searchConversationMemory } from './rag/conversationMemory.js';
 import { KnowledgeError } from './rag/supabase.js';
 import { getConversation, listConversations, parseIncomingMessages, saveConversation } from './rag/chatStore.js';
 import {
@@ -29,6 +30,7 @@ import {
   knowledgeConfigStatus,
   listDocuments,
   parseIngestInput,
+  embedQuery,
   searchKnowledge,
 } from './rag/knowledge.js';
 
@@ -97,20 +99,38 @@ app.post('/api/health/ai-test', async (_req: Request, res: Response) => {
 // Tiempo máximo buscando en la biblioteca antes de responder sin ella.
 const KNOWLEDGE_TIMEOUT_MS = 8_000;
 
-/** Busca en la Biblioteca de Miguel. Nunca rompe el chat: sin configurar o con
- * error, Miguel responde como siempre y se devuelve un aviso. */
-async function findKnowledge(query: string): Promise<{ matches: KnowledgeMatch[]; warning?: string }> {
-  if (!query || !knowledgeConfigStatus().enabled) return { matches: [] };
+/** Busca en la Biblioteca de Miguel y en las conversaciones anteriores guardadas
+ * (con un único embedding de la pregunta). Nunca rompe el chat: sin configurar o
+ * con error, Miguel responde como siempre y se devuelve un aviso. */
+async function findContext(
+  query: string,
+  currentSessionId: unknown,
+): Promise<{ matches: KnowledgeMatch[]; memories: MemoryMatch[]; warning?: string }> {
+  if (!query || !knowledgeConfigStatus().enabled) return { matches: [], memories: [] };
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(() => reject(new Error('timeout')), KNOWLEDGE_TIMEOUT_MS);
     });
-    return { matches: await Promise.race([searchKnowledge(query), timeout]) };
+    const search = async () => {
+      const embedding = await embedQuery(query);
+      const [matches, memories] = await Promise.all([
+        searchKnowledge(embedding),
+        searchConversationMemory(embedding, typeof currentSessionId === 'string' ? currentSessionId : null),
+      ]);
+      return { matches, memories };
+    };
+    return await Promise.race([search(), timeout]);
   } catch (err) {
     const e = err as KnowledgeError;
     console.error(`[knowledge] Búsqueda fallida: ${e.message}`, e.detail ?? '');
-    return { matches: [], warning: e.message === 'timeout' ? 'La biblioteca tardó demasiado; Miguel respondió sin ella.' : `Biblioteca no disponible: ${e.message}` };
+    return {
+      matches: [],
+      memories: [],
+      warning: e.message === 'timeout'
+        ? 'La biblioteca tardó demasiado; Miguel respondió sin ella ni sus conversaciones anteriores.'
+        : `Biblioteca no disponible: ${e.message}`,
+    };
   } finally {
     clearTimeout(timer);
   }
@@ -165,7 +185,19 @@ app.post('/api/conversations/save', async (req: Request, res: Response) => {
   try {
     checkIngestSecret(req.get('x-ingest-secret'));
     const messages = parseIncomingMessages(req.body?.messages);
-    res.json({ ok: true, ...(await saveConversation(req.body?.sessionId, messages)) });
+    const result = await saveConversation(req.body?.sessionId, messages);
+    // Memoria de conversaciones: si falla, los mensajes ya están guardados y el
+    // siguiente guardado vuelve a intentarlo.
+    let memoryIndexed = 0;
+    let memoryWarning: string | undefined;
+    try {
+      memoryIndexed = (await indexConversation(result.sessionId)).indexed;
+    } catch (err) {
+      const e = err as KnowledgeError;
+      console.error(`[conversation-memory] No se pudo indexar: ${e.message}`, e.detail ?? '');
+      memoryWarning = `Mensajes guardados, pero Miguel aún no podrá recordarlos: ${e.message} Se reintentará en el próximo guardado.`;
+    }
+    res.json({ ok: true, ...result, memoryIndexed, ...(memoryWarning ? { memoryWarning } : {}) });
   } catch (err) {
     sendKnowledgeError(res, '/api/conversations/save', err);
   }
@@ -193,10 +225,12 @@ app.get('/api/conversations/:id', async (req: Request, res: Response) => {
 app.post('/api/chat', async (req: Request, res: Response) => {
   try {
     const conversation = buildChatConversation(req.body);
-    const knowledge = await findKnowledge(buildKnowledgeQuery(conversation));
+    // Se busca con lo que escribió el atleta, no con `conversation`: esta lleva
+    // el contexto completo (perfil, carga…) incrustado en el último mensaje.
+    const knowledge = await findContext(buildKnowledgeQuery(chatTurnsFromBody(req.body)), req.body?.sessionId);
 
     const text = await runAi(res, {
-      system: MIGUEL_SYSTEM_INSTRUCTION + buildKnowledgeBlock(knowledge.matches),
+      system: MIGUEL_SYSTEM_INSTRUCTION + buildKnowledgeBlock(knowledge.matches) + buildMemoryBlock(knowledge.memories),
       input: conversation,
       temperature: 0.7,
     });
@@ -205,6 +239,7 @@ app.post('/api/chat', async (req: Request, res: Response) => {
     res.json({
       reply,
       knowledgeSources: knowledge.matches.map(({ title, source, similarity }) => ({ title, source, similarity })),
+      memorySources: knowledge.memories.map(({ sessionId, sessionTitle, date, similarity }) => ({ sessionId, sessionTitle, date, similarity })),
       ...(knowledge.warning ? { knowledgeWarning: knowledge.warning } : {}),
     });
   } catch (err) {

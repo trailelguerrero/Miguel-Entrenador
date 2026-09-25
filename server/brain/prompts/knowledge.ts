@@ -7,6 +7,15 @@ export interface KnowledgeSnippet {
   content: string;
 }
 
+/** Mensajes del chat tal como los escribió el atleta. Para buscar no sirve la
+ * conversación de buildChatConversation: lleva el contexto completo (perfil,
+ * carga…) incrustado en el último mensaje y taparía la pregunta. */
+export function chatTurnsFromBody(body: any): ChatTurn[] {
+  return (Array.isArray(body?.messages) ? body.messages : [])
+    .filter((m: any) => (m?.role === 'user' || m?.role === 'assistant') && typeof m.content === 'string')
+    .map((m: any) => ({ role: m.role, content: m.content }));
+}
+
 /**
  * Texto con el que se busca en la biblioteca: la última pregunta del atleta y,
  * si es corta (p. ej. "¿y en bajada?"), también la anterior para dar contexto.
@@ -33,6 +42,36 @@ BIBLIOTECA DE MIGUEL (fragmentos de documentos cargados por el atleta, recuperad
 - NO son datos fisiológicos del atleta: FC, HRV, zonas y cargas del atleta salen solo de Suunto, su historial .md o sus tests.
 - Si un fragmento contradice los datos reales del atleta, prevalecen los datos del atleta; si contradice tus pilares, dilo.
 - No atribuyas a la biblioteca nada que no esté literalmente en estos fragmentos.
+
+${body}`;
+}
+
+export interface MemorySnippet {
+  date: string | null;
+  sessionTitle: string | null;
+  content: string;
+}
+
+/** Fecha corta (dd/mm/aaaa) o "fecha desconocida". */
+function shortDate(iso: string | null): string {
+  if (!iso) return 'fecha desconocida';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? 'fecha desconocida' : d.toLocaleDateString('es-ES', { timeZone: 'Europe/Madrid' });
+}
+
+/** Bloque con intercambios de conversaciones anteriores; cadena vacía si no hay. */
+export function buildMemoryBlock(snippets: MemorySnippet[]): string {
+  if (!snippets.length) return '';
+  const body = snippets
+    .map((s, i) => `[C${i + 1}] ${shortDate(s.date)}${s.sessionTitle ? ` · conversación "${s.sessionTitle}"` : ''}\n${s.content}`)
+    .join('\n\n---\n\n');
+  return `
+
+CONVERSACIONES ANTERIORES (intercambios guardados por el atleta, recuperados por parecido con su pregunta):
+- Son lo que el atleta te CONTÓ y lo que tú le RESPONDISTE en su momento: úsalos para dar continuidad ("hace unas semanas me dijiste…"), no como datos medidos.
+- Pueden estar desactualizados: ten en cuenta la fecha. Si contradicen los datos actuales (Suunto, perfil, check-in, memoria), prevalecen los actuales; si algo ha cambiado, díselo.
+- Cuando te apoyes en uno, cítalo con su etiqueta, por ejemplo [C1]. Si no son relevantes, ignóralos.
+- No atribuyas a conversaciones anteriores nada que no esté literalmente aquí.
 
 ${body}`;
 }

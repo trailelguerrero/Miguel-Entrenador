@@ -55,13 +55,17 @@ export function parseIncomingMessages(raw: unknown): IncomingMessage[] {
   });
 }
 
-/** Sesión existente (si el id es válido y existe) o una nueva con título. */
-async function resolveSession(sessionId: unknown, title: string | null): Promise<string> {
+/** Sesión existente (si el id es válido y existe) o una nueva con título.
+ * Sin mensajes que guardar no se crean conversaciones vacías. */
+async function resolveSession(sessionId: unknown, title: string | null, createIfMissing: boolean): Promise<string> {
   const db = getSupabase();
   if (isUuid(sessionId)) {
     const { data, error } = await db.from('chat_sessions').select('id').eq('id', sessionId).maybeSingle();
     if (error) throw dbError('consultar la conversación', error);
     if (data) return data.id as string;
+  }
+  if (!createIfMissing) {
+    throw new KnowledgeError('KB_INPUT', 'No hay mensajes nuevos que guardar.', 'Escribe a Miguel y vuelve a pulsar Guardar.', 400);
   }
   const { data, error } = await db.from('chat_sessions').insert({ title }).select('id').single();
   if (error || !data) throw dbError('crear la conversación', error ?? { message: 'sin datos' });
@@ -78,7 +82,7 @@ export async function saveConversation(
 ): Promise<{ sessionId: string; saved: number; alreadySaved: number; clientIds: string[] }> {
   const db = getSupabase();
   const firstQuestion = messages.find((m) => m.role === 'user')?.content.trim().replace(/\s+/g, ' ').slice(0, 120) ?? null;
-  const id = await resolveSession(sessionId, firstQuestion);
+  const id = await resolveSession(sessionId, firstQuestion, messages.length > 0);
   if (!messages.length) return { sessionId: id, saved: 0, alreadySaved: 0, clientIds: [] };
 
   const { data: existing, error: readError } = await db

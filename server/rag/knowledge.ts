@@ -17,7 +17,7 @@ const INSERT_BATCH = 100;
 /** Límite de texto por documento: la ingesta debe caber en una función de 60 s. */
 export const MAX_DOCUMENT_CHARS = 200_000;
 
-function matchThreshold(): number {
+export function matchThreshold(): number {
   const v = Number(process.env.KNOWLEDGE_MATCH_THRESHOLD);
   return process.env.KNOWLEDGE_MATCH_THRESHOLD && Number.isFinite(v) && v > -1 && v < 1 ? v : DEFAULT_MATCH_THRESHOLD;
 }
@@ -43,10 +43,16 @@ export interface KnowledgeMatch {
   content: string;
 }
 
-/** Fragmentos de la biblioteca más parecidos a la consulta (vacío si no hay nada relevante). */
-export async function searchKnowledge(query: string): Promise<KnowledgeMatch[]> {
-  const db = getSupabase();
+/** Embedding de la pregunta del atleta: uno solo sirve para buscar en la
+ * biblioteca y en las conversaciones anteriores. */
+export async function embedQuery(query: string): Promise<number[]> {
   const [embedding] = await embedTexts([query], 'query');
+  return embedding;
+}
+
+/** Fragmentos de la biblioteca más parecidos a la pregunta (vacío si no hay nada relevante). */
+export async function searchKnowledge(embedding: number[]): Promise<KnowledgeMatch[]> {
+  const db = getSupabase();
   const { data, error } = await db.rpc('match_documents', {
     query_embedding: embedding,
     match_threshold: matchThreshold(),
