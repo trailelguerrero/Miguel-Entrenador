@@ -4,7 +4,8 @@ Esta guía reúne todo lo que tienes que configurar para que **Uphill Coach AI**
 
 - la API key de la IA (Gemini por defecto; opcionalmente Claude u otros vía Experiential Labs),
 - Vercel,
-- la conexión con tu cuenta Suunto.
+- la conexión con tu cuenta Suunto,
+- *(opcional)* Supabase, para la **Biblioteca de Miguel** (documentos que consulta en el chat) y para guardar las conversaciones.
 
 No hace falta tocar código.
 
@@ -20,6 +21,7 @@ No hace falta tocar código.
 | Cambiar el modelo de Gemini (`GEMINI_MODEL`) | vercel.com | ❌ Opcional | 2 min |
 | Usar Claude u otros modelos vía Experiential Labs (`AI_PROVIDER`) | vercel.com | ❌ Opcional | 5 min |
 | Añadir el connector de Suunto en claude.ai | claude.ai | ❌ Opcional | 2 min |
+| Biblioteca de Miguel y conversaciones en Supabase | supabase.com + vercel.com | ❌ Opcional | 10 min |
 
 **No tienes que configurar nada en la web de desarrolladores de Suunto** (APIZone). Tampoco tienes que copiar tokens de Suunto: la app usa el servidor MCP de Suunto que ya está desplegado y funcionando.
 
@@ -80,6 +82,7 @@ Si el proyecto `miguel` ya existe (ya está creado: https://miguel-seven-sage.ve
 | `GEMINI_MODEL` | Nombre de un modelo de Gemini, p. ej. `gemini-3.8-flash`. Ver la sección 4. | ❌ No. Si no la pones, se usa `gemini-3.8-flash`. |
 | `SUUNTO_MCP_URL` | `https://mcp-ten-kappa.vercel.app` | ❌ No. Es el valor por defecto; solo cámbiala si algún día mueves el servidor MCP de Suunto. |
 | `AI_PROVIDER`, `EXPERIENTIAL_*`, `AI_FALLBACK` | Ver la sección 5 | ❌ No. Solo si quieres usar Claude (u otro modelo) en lugar de Gemini. |
+| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `INGEST_SECRET`, `EMBEDDING_PROVIDER`… | Ver la sección 10 | ❌ No. Solo para la Biblioteca de Miguel y guardar las conversaciones. |
 
 > Las variables **no se aplican solas** a lo que ya está desplegado. Después de añadirlas o cambiarlas tienes que redesplegar (paso 3.3).
 
@@ -399,3 +402,75 @@ El banner desaparece solo con la siguiente respuesta correcta. También puedes c
 | "No se pudo conectar Suunto … rechazó el registro" | El servidor MCP de Suunto no responde | Comprueba que `https://mcp-ten-kappa.vercel.app` abre y dice "Suunto MCP server activo"; si no, revisa el proyecto `mcp` en Vercel |
 | No aparece un botón nuevo o no funciona el zoom en el móvil | La app instalada muestra la versión guardada | Cierra la app del todo y vuelve a abrirla (ver nota arriba) |
 | La app muestra datos de ejemplo | Datos de prueba activos | Pulsa **Datos Prueba** en la barra superior para limpiarlos; tus entrenos reales se conservan |
+| "Biblioteca desactivada: falta …" | Faltan variables de Supabase o de embeddings | Sección 10.2 y **Redeploy** |
+| "Parece que falta el esquema: ejecuta scripts/init.sql" | No se ejecutó el SQL en Supabase | Sección 10.1 |
+| "Clave de la biblioteca incorrecta" | La clave escrita no coincide con `INGEST_SECRET` | Copia el mismo valor que pusiste en Vercel |
+| Miguel no cita documentos que sí están en la biblioteca | Se cambió de proveedor/modelo de embeddings, o el umbral es alto | Vuelve a subir los documentos (10.5) o baja `KNOWLEDGE_MATCH_THRESHOLD` |
+
+---
+
+## 10. Opcional: Biblioteca de Miguel y conversaciones en Supabase
+
+Con Supabase configurado, la app gana dos cosas (sin él, todo funciona igual que antes):
+
+- **Biblioteca de Miguel (RAG).** Subes documentos de referencia (manuales, apuntes, planes de tu entrenador…). Se trocean, se convierten en *embeddings* y se guardan en Supabase (Postgres + pgvector). En cada mensaje del chat se buscan los fragmentos más parecidos a tu pregunta y se le pasan a Miguel, que los cita como `[B1]`, `[B2]`… Debajo de su respuesta ves de qué documento salió. **No es un modelo entrenado**: Miguel solo "sabe" lo que hay en esos fragmentos, y nunca los usa como tus datos fisiológicos (esos siguen viniendo solo de Suunto, tu .md y tus tests).
+- **Conversaciones guardadas.** Cada pregunta y respuesta del chat se guarda en Supabase (tablas `chat_sessions` y `chat_messages`), así no se pierden aunque borres el navegador o cambies de móvil. El chat que ves en la app sigue siendo la copia del navegador; **Reiniciar conversación** empieza una conversación nueva en Supabase.
+
+### 10.1 Crear el proyecto y las tablas en Supabase
+
+1. Entra en [supabase.com](https://supabase.com) → **New project** (el plan gratuito vale). Apunta la contraseña de la base de datos.
+2. Cuando esté listo: menú izquierdo **SQL Editor** → **New query**.
+3. Copia **todo** el contenido de [`scripts/init.sql`](scripts/init.sql), pégalo y pulsa **Run**. Debe terminar en "Success".
+   Crea: la extensión `vector`, las tablas `documents`, `chat_sessions` y `chat_messages`, sus índices, la seguridad (RLS: nadie salvo el servidor de la app puede leer ni escribir) y la función de búsqueda `match_documents`. Se puede ejecutar varias veces sin romper nada.
+4. Comprueba en **Table Editor** que aparecen las tres tablas.
+
+### 10.2 Variables a cargar en Vercel
+
+En Supabase: **Project Settings → API** (o **Data API** / **API Keys**, según la versión del panel):
+
+| Key (nombre exacto) | Value | ¿Obligatoria? |
+|---|---|---|
+| `SUPABASE_URL` | **Project URL** (`https://xxxx.supabase.co`) | ✅ Sí |
+| `SUPABASE_SERVICE_ROLE_KEY` | La clave **service_role** (secreta). ⚠️ No la clave `anon`/publishable. | ✅ Sí |
+| `INGEST_SECRET` | Un secreto largo inventado por ti (ver abajo). Es la clave para añadir o borrar documentos. | ✅ Sí, para subir documentos |
+| `EMBEDDING_PROVIDER` | `gemini` (por defecto) u `openai` | ❌ No |
+| `GEMINI_EMBEDDING_MODEL` | Modelo de embeddings de Gemini. Por defecto `gemini-embedding-001`. | ❌ No |
+| `OPENAI_API_KEY`, `OPENAI_EMBEDDING_MODEL` | Solo con `EMBEDDING_PROVIDER=openai`. Modelo por defecto `text-embedding-3-small`. | ❌ No |
+| `KNOWLEDGE_MATCH_THRESHOLD` | Parecido mínimo (0–1) para que un fragmento llegue a Miguel. Por defecto `0.55`. | ❌ No |
+
+Con Gemini (lo normal) **no hace falta ninguna clave nueva**: los embeddings usan la misma `GEMINI_API_KEY` del chat.
+
+Para inventar un `INGEST_SECRET` seguro, en cualquier ordenador con Node: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`, o usa un generador de contraseñas (40+ caracteres).
+
+> ⚠️ `SUPABASE_SERVICE_ROLE_KEY` e `INGEST_SECRET` son secretos: solo en Vercel, nunca en el código ni en capturas. Si se filtran, rótalos (Supabase → API Keys; `INGEST_SECRET`, cámbialo en Vercel) y haz **Redeploy**.
+
+Marca **Production**, **Preview** y **Development** y haz **Redeploy** (3.3).
+
+### 10.3 Comprobarlo
+
+- Abre `https://<tu-app>/api/health`. En `"knowledge"` debe salir `"enabled": true` y `"chatHistoryEnabled": true`. Si no, `"missing"` dice qué variable falta.
+- En la app: menú **Coach → Biblioteca de Miguel**. Si falta algo, lo indica arriba en amarillo.
+
+### 10.4 Subir documentos
+
+1. **Coach → Biblioteca de Miguel**.
+2. Escribe la clave (`INGEST_SECRET`) y pulsa **Ver documentos**. Solo se recuerda mientras la pestaña esté abierta.
+3. Pon un **título**, opcionalmente la **fuente**, y carga un archivo `.md`/`.txt` o pega el texto. Pulsa **Guardar en la biblioteca**.
+   - Máximo 200.000 caracteres por documento: los libros largos, en partes ("Libro X – parte 1", "parte 2"…).
+   - Subir otra vez un documento con el **mismo título lo sustituye** (no se duplica).
+   - La papelera borra un documento entero.
+4. Pregúntale a Miguel algo de ese documento en el chat: debajo de la respuesta verás **Biblioteca de Miguel · [B1] título**.
+
+También se puede hacer desde un ordenador con `curl`:
+
+```bash
+curl -X POST https://<tu-app>/api/knowledge/ingest \
+  -H "Content-Type: application/json" -H "x-ingest-secret: <INGEST_SECRET>" \
+  --data @sample-ingest.json
+```
+
+### 10.5 Cambiar de proveedor de IA más adelante
+
+- **Chat (quien redacta las respuestas):** se cambia como siempre con `AI_PROVIDER` (sección 5). No afecta a la biblioteca.
+- **Embeddings (quien convierte los documentos en vectores):** se cambia con `EMBEDDING_PROVIDER` (`gemini` u `openai`) y su modelo. Los vectores de modelos distintos no son comparables: cada fragmento guarda con qué modelo se creó y Miguel solo busca entre los del modelo actual. **Tras cambiar de proveedor o de modelo de embeddings, vuelve a subir los documentos** (la lista de la biblioteca avisa de los que se quedaron con el modelo anterior).
+- Añadir otro proveedor de embeddings es añadir una entrada en `server/rag/embeddings.ts`; la columna de Supabase admite vectores de 1536 dimensiones.
