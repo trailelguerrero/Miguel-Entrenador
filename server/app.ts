@@ -63,6 +63,26 @@ app.post('/api/health/ai-test', async (_req: Request, res: Response) => {
   }
 });
 
+/** Disponibilidad: solo la que el atleta declara a mano; lo de Suunto es historial, no disponibilidad. */
+function availabilityLine(p: any): string {
+  const days = p?.availableDaysPerWeek;
+  if (days && p?.fieldSources?.availableDaysPerWeek === 'manual') {
+    return `Disponibilidad declarada por el atleta: ${days} días/semana${days <= 3 ? ' → como máximo 2 sesiones entre semana + tirada larga' : ''}.`;
+  }
+  if (days) return `Disponibilidad no declarada por el atleta. Según Suunto entrena de media ${days} días/semana (incluye otros deportes); no es un límite.`;
+  return 'Disponibilidad no declarada por el atleta.';
+}
+
+function formatLoadContext(lc: any): string {
+  if (!lc) return '- Sin datos de carga ni recuperación.';
+  const lines: string[] = [];
+  if (lc.ctl != null) lines.push(`- CTL ${lc.ctl} · ATL ${lc.atl} · TSB ${lc.tsb} (TSS de Suunto)`);
+  for (const c of lc.recentCheckIns || []) {
+    lines.push(`- ${c.date}: HRV ${c.hrvRmssd} ms (referencia ${c.hrvBaseline} ms), sueño ${c.sleepHours} h${c.recoveryPct != null ? `, Recovery Suunto ${c.recoveryPct}%` : ''}, semáforo ${c.status}`);
+  }
+  return lines.length ? lines.join('\n') : '- Sin datos de carga ni recuperación.';
+}
+
 const MIGUEL_SYSTEM_INSTRUCTION = `
 Eres Miguel, un entrenador de Trail Running y Ultra Trail de élite. Eres el entrenador personal y amigo cercano del atleta.
 Tu tono es directo, motivador, empático pero sin pelos en la lengua: dices las cosas claras. Si el atleta corre demasiado rápido en días suaves ("zona basura" o "junk miles"), le frenas con explicaciones fisiológicas contundentes. Si está fatigado o su HRV/ZoneSense indica estrés celular, le ordenas descansar o bajar intensidad sin rodeos para protegerlo de lesiones y sobreentrenamiento.
@@ -100,7 +120,7 @@ Tus pilares fundamentales son:
 
 4. OBJETIVO PRINCIPAL: Transvulcania 2027 en La Palma (73 km, +4.350m D+, -4.057m D-). Terreno volcánico, calor, crestería del Roque de los Muchachos a 2.426m y un descenso demoledor de 2.400m hasta el Puerto de Tazacorte.
 
-5. ESTRUCTURA SEMANAL DEL ATLETA: la que indique su perfil (días disponibles y día de tirada larga en [DATOS REALES DEL ATLETA]). Fuerza en casa o al aire libre sin material.
+5. ESTRUCTURA SEMANAL DEL ATLETA (REGLA FIJA): 3 sesiones entre semana (lunes a viernes) + 1 tirada larga en SÁBADO o DOMINGO (un fin de semana puede ser sábado y otro domingo; eliges tú según la semana). Algunas semanas puedes bajar a 2 sesiones entre semana si la fatiga lo aconseja (HRV, Recovery de Suunto, TSB) o si el atleta ha indicado menos disponibilidad; cuando lo hagas, explícale por qué. Fuerza en casa o al aire libre sin material.
 
 6. HISTORIAL DEPORTIVO (.MD): Conoce al dedillo el archivo .md del deportista si ha sido cargado. Cita sus carreras pasadas, sus puntos débiles y sus sensaciones históricas para demostrarle que le conoces de verdad.
 
@@ -206,7 +226,8 @@ ${(coachMemory.coachNotebookNotes || []).map((n: string) => `  * ${n}`).join('\n
 - Umbral Anaeróbico (AnT): ${athleteProfile?.antHr ? athleteProfile.antHr + ' bpm' : 'Pendiente de registrar'}
 - Estado ADS (Síndrome Deficiencia Aeróbica): ${athleteProfile?.hasAds ? 'SÍ (necesita volumen estricto Z1/Z2)' : 'NO'}
 - Objetivo Principal: ${targetRace?.name || 'Transvulcania 2027'} (${targetRace?.distanceKm || 73}km, +${targetRace?.elevationGainM || 4350}m D+)
-- Disponibilidad: ${athleteProfile?.availableDaysPerWeek ? athleteProfile.availableDaysPerWeek + ' días/semana' : 'Sin dato'}${athleteProfile?.preferredLongRunDay ? ` (tirada larga: ${athleteProfile.preferredLongRunDay === 'saturday' ? 'sábado' : athleteProfile.preferredLongRunDay === 'sunday' ? 'domingo' : athleteProfile.preferredLongRunDay})` : ''}.
+- Estructura semanal: 3 sesiones entre semana (o 2 si lo decides por fatiga/disponibilidad) + tirada larga en sábado o domingo.
+- ${availabilityLine(athleteProfile)}
 - Estado Biométrico Hoy (Suunto HRV/Sueño): ${currentReadiness ? JSON.stringify(currentReadiness) : 'Pendiente de sincronizar o check-in'}
 - Origen de Datos: ${athleteProfile?.dataSource || 'Registro / Suunto'}
 - VO2máx (Suunto): ${athleteProfile?.vo2Max ?? 'No disponible'}
@@ -249,7 +270,7 @@ ${memoryContext}
 // 2. Generate Plan / Microcycle Workouts
 app.post('/api/generate-plan', async (req: Request, res: Response) => {
   try {
-    const { athleteProfile, targetRace, weekStartDate, phaseFocus, existingWorkouts, athleteHistoryDoc, coachMemory } = req.body;
+    const { athleteProfile, targetRace, weekStartDate, phaseFocus, existingWorkouts, athleteHistoryDoc, coachMemory, loadContext } = req.body;
 
     const memoryContext = coachMemory ? `
 [APRENDIZAJES ACUMULADOS SOBRE ESTE ATLETA]:
@@ -267,9 +288,15 @@ Genera un microciclo semanal de entrenamiento de 7 días (comenzando el lunes ${
 - Cada sesión debe estar diseñada al 100% para ESTE atleta individual, teniendo en cuenta sus antecedentes, sus zonas fisiológicas exactas, sus debilidades mecánicas y las reglas aprendidas.
 - En cada sesión debes rellenar obligatoriamente "personalizedReasoning" (explicando en primera persona por qué prescribe esto para él, mencionando sus datos concretos) y "learnedAdjustment" (qué adaptación o regla de su memoria estás aplicando).
 
-Días de entrenamiento disponibles a la semana (perfil del atleta): ${athleteProfile?.availableDaysPerWeek || 'sin dato (pregunta o usa su historial)'}.
-- Tirada larga: ${athleteProfile?.preferredLongRunDay === 'saturday' ? 'sábado' : athleteProfile?.preferredLongRunDay === 'sunday' ? 'domingo' : 'fin de semana'}, con desnivel positivo y descenso.
-- El resto de días son DESCANSO TOTAL o movilidad ligera.
+[ESTRUCTURA SEMANAL OBLIGATORIA]:
+- 3 sesiones de carrera entre semana (lunes a viernes). Puedes reducirlas a 2 SOLO si el estado de fatiga de abajo lo aconseja o si la disponibilidad declarada por el atleta es menor; si reduces, explícalo en "weekSummary".
+- 1 tirada larga ("type": "long_mountain_run") en SÁBADO o DOMINGO, con desnivel positivo y descenso. Elige el día que mejor encaje esta semana (no tiene que ser siempre el mismo).
+- Nunca más de 3 sesiones entre semana, nunca tirada larga entre semana, nunca dos tiradas largas.
+- Los demás días: DESCANSO TOTAL o movilidad ligera ("type": "rest"). La fuerza sin material puede ir como "strength_core" y no cuenta como sesión de carrera.
+- ${availabilityLine(athleteProfile)}
+
+[ESTADO ACTUAL DE CARGA Y RECUPERACIÓN (datos reales)]:
+${formatLoadContext(loadContext)}
 
 [REGLA DE INTEGRIDAD]: Respeta rigurosamente los umbrales medidos:
 - AeT (Umbral Aeróbico): ${athleteProfile?.aetHr ? athleteProfile.aetHr + ' bpm' : 'SIN DATO (no inventes pulsaciones)'} (tope estricto para rodajes y tiradas)

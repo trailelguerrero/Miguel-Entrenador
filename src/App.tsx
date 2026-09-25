@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { computePmcSeries, getWorkoutLoad } from './utils/trainingLoad';
+import { analyzeWeekStructure, mondayOfKey, addDaysKey } from './utils/weekStructure';
 import { Navbar } from './components/Navbar';
 import { MorningBanner } from './components/MorningBanner';
 import { CalendarView } from './components/CalendarView';
@@ -606,52 +607,73 @@ Tus células y tu sistema nervioso autónomo están pidiendo tregua. No fuerces 
     }
   };
 
-  // Generate 7-day week with Miguel (4 days training: 3 midweek + 1 weekend long run)
+  // Generar semana con Miguel: 3 sesiones entre semana (o 2 si Miguel lo
+  // decide por fatiga o disponibilidad) + tirada larga en sábado o domingo.
   const handleGenerateWeekWithMiguel = async (weekStartDateStr: string) => {
     setIsGeneratingPlan(true);
     try {
+      const monday = mondayOfKey(weekStartDateStr);
+      const latestPmc = pmcData[pmcData.length - 1];
+      const recentCheckIns = [...StorageService.getCheckIns()]
+        .sort((x, y) => x.date.localeCompare(y.date))
+        .slice(-7)
+        .map((c) => ({
+          date: c.date,
+          hrvRmssd: c.hrvRmssd,
+          hrvBaseline: c.hrvBaseline,
+          sleepHours: c.sleepHours,
+          recoveryPct: c.readinessScore,
+          status: c.status,
+        }));
       const plan = await ApiService.generatePlan(
         profile,
         targetRace,
-        weekStartDateStr,
+        monday,
         'Base Aeróbica Estricta & Preparación para Transvulcania 2027',
         historyDoc,
-        coachMemory
+        coachMemory,
+        { ctl: latestPmc?.ctl, atl: latestPmc?.atl, tsb: latestPmc?.tsb, recentCheckIns }
       );
 
-      // Merge generated workouts into calendar
-      const existing = [...workouts];
-      const newWorkouts = plan.workouts.map((w, index) => {
-        // Compute date based on Monday start
-        const startDate = new Date(weekStartDateStr);
-        const targetDate = new Date(startDate);
-        targetDate.setDate(startDate.getDate() + index);
-        const dateStr = targetDate.toISOString().split('T')[0];
+      // Fechas de la semana (lunes..domingo) en hora local
+      const sunday = addDaysKey(monday, 6);
+      const newWorkouts: Workout[] = plan.workouts.map((w, index) => {
+        const fallbackDate = addDaysKey(monday, Math.min(index, 6));
+        const date = w.date && w.date >= monday && w.date <= sunday ? w.date : fallbackDate;
         return {
           ...w,
-          id: `gen-${dateStr}-${Date.now()}-${index}`,
-          date: w.date || dateStr,
+          id: `gen-${date}-${Date.now()}-${index}`,
+          date,
           completed: false,
         };
       });
 
-      // Filter out duplicates for those exact dates if empty
-      const nonOverlapping = existing.filter(
-        (ex) => !newWorkouts.some((nw) => nw.date === ex.date)
+      // Solo se sustituyen sesiones PLANIFICADAS sin completar de esos días.
+      // Nunca se borran entrenos hechos ni actividades importadas de Suunto.
+      const newDates = new Set(newWorkouts.map((nw) => nw.date));
+      const kept = workouts.filter(
+        (ex) => ex.completed || !!ex.suuntoWorkoutKey || !newDates.has(ex.date)
       );
 
-      const combined = [...nonOverlapping, ...newWorkouts];
+      const combined = [...kept, ...newWorkouts];
       handleSaveWorkouts(combined);
+
+      // Resumen con la estructura REAL que ha devuelto Miguel
+      const structure = analyzeWeekStructure(newWorkouts, monday);
+      const structureLine = `Estructura: ${structure.midweekPlanned} sesiones entre semana + tirada larga ${structure.longRunDay ? `el ${structure.longRunDay}` : '(no planificada)'}.`;
+      const warningLine = structure.issues.length
+        ? `\n\n⚠️ El plan generado no cumple la regla 3 (o 2) + tirada larga: ${structure.issues.join('; ')}. Revísalo o vuelve a generarlo.`
+        : '';
 
       // Add Miguel's summary message to the chat
       const chatMsg: ChatMessage = {
         id: `plan-gen-${Date.now()}`,
         role: 'assistant',
-        content: `He preparado el microciclo semanal comenzando el lunes ${weekStartDateStr} para tu camino a Transvulcania 2027.
+        content: `He preparado el microciclo semanal comenzando el lunes ${monday}.
 
 ${plan.weekSummary}
 
-Son exactamente 4 días de carga (3 entre semana y la tirada larga del fin de semana con desnivel), más trabajo de fuerza en casa sin máquinas y 3 días de asimilación/descanso. Ya puedes ver los entrenamientos directamente en tu calendario.`,
+${structureLine} Ya puedes ver los entrenamientos en tu calendario.${warningLine}`,
         timestamp: new Date().toISOString(),
         contextType: 'general',
       };

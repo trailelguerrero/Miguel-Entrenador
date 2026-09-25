@@ -1214,7 +1214,7 @@ export const AthleteProfileModal: React.FC<AthleteProfileModalProps> = ({
                   >
                     {[1, 2, 3, 4, 5, 6, 7].map((n) => (
                       <option key={n} value={n}>
-                        {n === 4 ? '4 días (3 entre semana + 1 fin de semana)' : n === 5 ? '5 días (4 entre semana + 1 fin de semana)' : n === 3 ? '3 días (2 entre semana + 1 fin de semana)' : `${n} ${n === 1 ? 'día' : 'días'}`}
+                        {n >= 4 ? `${n} días → plan 3 entre semana + tirada larga` : n === 3 ? '3 días → plan 2 entre semana + tirada larga' : `${n} ${n === 1 ? 'día' : 'días'} (el plan necesita al menos 3)`}
                       </option>
                     ))}
                   </select>

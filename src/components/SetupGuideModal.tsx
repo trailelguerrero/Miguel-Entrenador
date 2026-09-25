@@ -233,7 +233,7 @@ export const SetupGuideModal: React.FC<SetupGuideModalProps> = ({
   const stepsList = [
     { num: 1, title: 'Entrevista & Experiencia', sub: 'Conociendo al atleta' },
     { num: 2, title: 'Umbrales & Fisiología', sub: 'AeT, AnT, FC Reposo y ADS' },
-    { num: 3, title: 'Objetivo & Rutina', sub: 'Transvulcania y 4 días/semana' },
+    { num: 3, title: 'Objetivo & Rutina', sub: 'Transvulcania y 3 + tirada larga' },
     { num: 4, title: 'Datos & Suunto', sub: 'Sincronización y archivos FIT' },
     { num: 5, title: 'Nutrición & Estómago', sub: 'Gut training e hidratación' },
     { num: 6, title: 'Veredicto & Almacenamiento', sub: 'Checklist y privacidad local' },
@@ -713,7 +713,7 @@ export const SetupGuideModal: React.FC<SetupGuideModalProps> = ({
                   >
                     {[1, 2, 3, 4, 5, 6, 7].map((n) => (
                       <option key={n} value={n}>
-                        {n === 4 ? '4 días (3 entre semana + 1 fin de semana) [Óptimo]' : n === 5 ? '5 días (4 entre semana + 1 fin de semana)' : n === 3 ? '3 días (2 entre semana + 1 fin de semana)' : `${n} ${n === 1 ? 'día' : 'días'}`}
+                        {n >= 4 ? `${n} días → plan 3 entre semana + tirada larga` : n === 3 ? '3 días → plan 2 entre semana + tirada larga' : `${n} ${n === 1 ? 'día' : 'días'} (el plan necesita al menos 3)`}
                       </option>
                     ))}
                   </select>
@@ -901,7 +901,7 @@ export const SetupGuideModal: React.FC<SetupGuideModalProps> = ({
                   <span>Veredicto Táctico de Coach Miguel</span>
                 </div>
                 <p className="text-zinc-200 leading-relaxed">
-                  ¡Ficha completa, <strong>{name}</strong>! Tienes <strong>{age} años</strong>, 12 años de poso montañero y un objetivo claro en <strong>Transvulcania 2027</strong>. Con tu umbral AeT en <strong>{aetHr} bpm</strong> y tu patrón de 4 días semanales, priorizaremos asimilación mitocondrial estricta y blindaje excéntrico de cuádriceps sin pisar un gimnasio.
+                  ¡Ficha completa, <strong>{name}</strong>! {age > 0 && <>Tienes <strong>{age} años</strong>{yearsTrail > 0 ? `, ${yearsTrail} años de montaña` : ''} y </>}un objetivo claro en <strong>Transvulcania 2027</strong>. {aetHr > 0 && <>Con tu umbral AeT en <strong>{aetHr} bpm</strong> y </>}la semana en 3 sesiones + tirada larga, priorizaremos asimilación mitocondrial estricta y blindaje excéntrico de cuádriceps sin pisar un gimnasio.
                 </p>
               </div>
 
@@ -965,7 +965,7 @@ export const SetupGuideModal: React.FC<SetupGuideModalProps> = ({
                   </div>
                   <div className="flex items-center space-x-2 text-emerald-400">
                     <Check className="w-3.5 h-3.5" />
-                    <span>Estructura semanal de 4 días (3+1) y tirada en {longRunDay === 'saturday' ? 'sábado' : 'domingo'} fijada</span>
+                    <span>Estructura semanal 3 (o 2) + tirada larga en sábado o domingo</span>
                   </div>
                   <div className="flex items-center space-x-2 text-emerald-400">
                     <Check className="w-3.5 h-3.5" />

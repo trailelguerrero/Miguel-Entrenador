@@ -215,7 +215,41 @@ export const DEFAULT_SUUNTO_CONFIG: SuuntoIntegrationConfig = {
 // URL del connector MCP de Suunto (el mismo servidor que usa la app para sincronizar).
 export const SUUNTO_MCP_CONNECTOR_URL = 'https://mcp-ten-kappa.vercel.app/mcp';
 
+// Memoria vacía: Miguel solo guarda lo que aprende de verdad (feedback de
+// sesiones, check-ins, conversaciones). Nada de aprendizajes de ejemplo.
 export const DEFAULT_COACH_MEMORY: CoachLearnedMemory = {
+  athleteId: 'pupilo-transvulcania-2027',
+  lastUpdated: new Date().toISOString(),
+  overallPhilosophySummary: 'Objetivo Transvulcania 2027. Estructura semanal: 3 sesiones entre semana (2 si la fatiga o la disponibilidad lo aconsejan) + tirada larga en sábado o domingo. Sin gimnasio.',
+  insights: [],
+  adaptationHistory: [],
+  coachNotebookNotes: [],
+};
+
+/** Quita de una memoria guardada los aprendizajes y notas de ejemplo que nunca se aprendieron. */
+function migrateLegacyCoachMemory(m: CoachLearnedMemory): { memory: CoachLearnedMemory; changed: boolean } {
+  const L = LEGACY_SAMPLE_COACH_MEMORY;
+  const fakeInsight = new Set(L.insights.map((i) => i.observation));
+  const fakeNotes = new Set(L.coachNotebookNotes);
+  const insights = (m.insights || []).filter((i) => !fakeInsight.has(i.observation));
+  const coachNotebookNotes = (m.coachNotebookNotes || []).filter((n) => !fakeNotes.has(n));
+  const summaryIsLegacy = m.overallPhilosophySummary === L.overallPhilosophySummary;
+  const changed = insights.length !== (m.insights || []).length ||
+    coachNotebookNotes.length !== (m.coachNotebookNotes || []).length || summaryIsLegacy;
+  return {
+    memory: {
+      ...m,
+      insights,
+      coachNotebookNotes,
+      overallPhilosophySummary: summaryIsLegacy ? DEFAULT_COACH_MEMORY.overallPhilosophySummary : m.overallPhilosophySummary,
+    },
+    changed,
+  };
+}
+
+// Memoria de EJEMPLO de versiones anteriores (aprendizajes inventados). Solo
+// se usa para detectarlos y quitarlos de memorias guardadas.
+const LEGACY_SAMPLE_COACH_MEMORY: CoachLearnedMemory = {
   athleteId: 'pupilo-transvulcania-2027',
   lastUpdated: new Date().toISOString(),
   overallPhilosophySummary: 'Atleta enfocado en Transvulcania 2027 con disponibilidad de 4 días (3 entre semana + 1 tirada larga). Sin acceso a gimnasio. Perfil metabólico con necesidad de blindaje aeróbico estricto (sub-AeT) para erradicar el ADS y fortalecer la musculatura de cuádriceps de forma excéntrica para el descenso brutal de Tazacorte.',
@@ -503,7 +537,7 @@ export const StorageService = {
 
 Aquí no vamos a perder el tiempo con modas ni con kilometraje basura. Nuestro manual de cabecera es *Training for the Uphill Athlete* y nuestra brújula en cada entreno será tu Suunto con ZoneSense (DFA a1) y tu HRV nocturna.
 
-Organizamos 4 días de entrenamiento semanales (3 entre semana y la tirada larga el fin de semana), con trabajo de fuerza en casa y al aire libre sin máquinas. 
+Organizamos la semana en 3 sesiones entre semana (2 si toca aflojar) y la tirada larga el sábado o el domingo, con trabajo de fuerza en casa y al aire libre sin máquinas. 
 
 Puedes revisar tus umbrales (AeT y AnT) en tu perfil, registrar tu test de deriva cardíaca, subir tus archivos .FIT de Suunto o simplemente contarme cómo te sientes hoy para calibrar la carga. ¡Dime cómo estamos de piernas y empezamos!`,
       timestamp: new Date().toISOString(),
@@ -572,7 +606,10 @@ Puedes revisar tus umbrales (AeT y AnT) en tu perfil, registrar tu test de deriv
   getCoachMemory(): CoachLearnedMemory {
     try {
       const stored = localStorage.getItem(STORAGE_KEYS.COACH_MEMORY);
-      return stored ? JSON.parse(stored) : DEFAULT_COACH_MEMORY;
+      if (!stored) return DEFAULT_COACH_MEMORY;
+      const { memory, changed } = migrateLegacyCoachMemory(JSON.parse(stored));
+      if (changed) localStorage.setItem(STORAGE_KEYS.COACH_MEMORY, JSON.stringify(memory));
+      return memory;
     } catch {
       return DEFAULT_COACH_MEMORY;
     }
