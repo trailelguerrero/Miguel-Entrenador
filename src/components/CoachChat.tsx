@@ -12,7 +12,9 @@ import {
   Activity, 
   HelpCircle,
   ShieldCheck,
-  Brain
+  Brain,
+  BookOpen,
+  History
 } from 'lucide-react';
 import { ChatMessage, AthleteProfile, DailyCheckIn, TargetRace, Workout } from '../types';
 
@@ -210,6 +212,42 @@ export const CoachChat: React.FC<CoachChatProps> = ({
                 <div className="whitespace-pre-line">
                   {msg.content}
                 </div>
+
+                {!isUser && !!msg.knowledgeSources?.length && (
+                  <div className="pt-2 border-t border-zinc-900 text-[10px] text-zinc-400 space-y-0.5">
+                    <div className="flex items-center space-x-1 font-bold uppercase tracking-wider text-emerald-400">
+                      <BookOpen className="w-3 h-3" />
+                      <span>Biblioteca de Miguel</span>
+                    </div>
+                    {msg.knowledgeSources.map((s, i) => (
+                      <div key={i}>
+                        [B{i + 1}] {s.title}
+                        {s.source ? ` · ${s.source}` : ''}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {!isUser && !!msg.memorySources?.length && (
+                  <div className="pt-2 border-t border-zinc-900 text-[10px] text-zinc-400 space-y-0.5">
+                    <div className="flex items-center space-x-1 font-bold uppercase tracking-wider text-amber-400">
+                      <History className="w-3 h-3" />
+                      <span>Conversaciones anteriores</span>
+                    </div>
+                    {msg.memorySources.map((m, i) => (
+                      <div key={i}>
+                        [C{i + 1}] {m.date ? new Date(m.date).toLocaleDateString('es-ES') : 'sin fecha'}
+                        {m.sessionTitle ? ` · ${m.sessionTitle}` : ''}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {!isUser && msg.knowledgeWarning && (
+                  <div className="pt-2 border-t border-zinc-900 text-[10px] text-amber-400">
+                    {msg.knowledgeWarning}
+                  </div>
+                )}
 
                 {!isUser && (
                   <div className="flex items-center justify-between pt-2 border-t border-zinc-900 text-[10px] text-zinc-500">

@@ -21,7 +21,8 @@ import {
   Droplets,
   Search,
   Download,
-  Layers
+  Layers,
+  BookOpen
 } from 'lucide-react';
 import { AthleteProfile, DailyCheckIn, TargetRace } from '../types';
 import { PWAInstallButton } from './PWAInstallButton';
@@ -95,6 +96,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     { id: 'eccentric', label: 'Fuerza Excéntrica', icon: Dumbbell, badge: '3-1-1', hub: 'strategy' },
     { id: 'memory', label: 'Memoria de Miguel', icon: Brain, badge: `${learnedRulesCount ?? 0} Reglas`, hub: 'coach' },
     { id: 'chat', label: 'Coach Miguel', icon: MessageSquare, badge: 'IA', hub: 'coach' },
+    { id: 'knowledge', label: 'Biblioteca de Miguel', icon: BookOpen, badge: 'RAG', hub: 'coach' },
     { id: 'zonesense', label: 'Suunto & ZoneSense', icon: Watch, hub: 'metrics' },
     { id: 'physiology', label: 'Fisiología & Drift', icon: Activity, hub: 'training' },
     { id: 'history', label: 'Historial (.MD)', icon: FileText, badge: hasHistoryDoc ? '✓ MD' : undefined, hub: 'coach' },

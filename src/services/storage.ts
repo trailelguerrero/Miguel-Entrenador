@@ -47,6 +47,7 @@ const STORAGE_KEYS = {
   WORKOUTS: 'uphill_coach_workouts',
   DAILY_CHECKINS: 'uphill_coach_checkins',
   CHAT_MESSAGES: 'uphill_coach_chat_messages',
+  CHAT_SESSION_ID: 'uphill_coach_chat_session_id',
   SUUNTO_CONFIG: 'uphill_coach_suunto_config',
   MACROCYCLE: 'uphill_coach_macrocycle',
   ATHLETE_HISTORY_MD: 'uphill_coach_athlete_history_md',
@@ -568,6 +569,24 @@ Puedes revisar tus umbrales (AeT y AnT) en tu perfil, registrar tu test de deriv
 
   saveChatMessages(messages: ChatMessage[]): void {
     localStorage.setItem(STORAGE_KEYS.CHAT_MESSAGES, JSON.stringify(messages));
+  },
+
+  /** Conversación de Supabase donde "Guardar" añade los mensajes (null = la próxima vez se crea una nueva). */
+  getChatSessionId(): string | null {
+    try {
+      return localStorage.getItem(STORAGE_KEYS.CHAT_SESSION_ID);
+    } catch {
+      return null;
+    }
+  },
+
+  setChatSessionId(id: string | null): void {
+    try {
+      if (id) localStorage.setItem(STORAGE_KEYS.CHAT_SESSION_ID, id);
+      else localStorage.removeItem(STORAGE_KEYS.CHAT_SESSION_ID);
+    } catch {
+      // sin localStorage: cada guardado crearía una conversación nueva en Supabase
+    }
   },
 
   addChatMessage(message: ChatMessage): void {

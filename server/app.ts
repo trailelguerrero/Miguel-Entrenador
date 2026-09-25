@@ -18,6 +18,21 @@ import { resolveReadinessState } from './brain/context.js';
 import { sanitizeAdaptation, sanitizePlanWorkouts } from './brain/decision/validate.js';
 import { RACE_NUMERIC_FIELDS, RACE_TEXT_FIELDS, verifyRaceInfo } from './brain/decision/race.js';
 import { verifyHistoryNumbers } from './brain/decision/history.js';
+import { buildKnowledgeBlock, buildKnowledgeQuery, buildMemoryBlock, chatTurnsFromBody } from './brain/prompts/knowledge.js';
+import { MemoryMatch, indexConversation, searchConversationMemory } from './rag/conversationMemory.js';
+import { KnowledgeError } from './rag/supabase.js';
+import { getConversation, listConversations, parseIncomingMessages, saveConversation } from './rag/chatStore.js';
+import {
+  KnowledgeMatch,
+  checkIngestSecret,
+  deleteDocument,
+  ingestDocument,
+  knowledgeConfigStatus,
+  listDocuments,
+  parseIngestInput,
+  embedQuery,
+  searchKnowledge,
+} from './rag/knowledge.js';
 
 // App Express con todas las rutas /api/*. No escucha en ningún puerto:
 // - En Vercel la exporta api/index.ts como función serverless.
@@ -54,6 +69,7 @@ app.get('/api/health', (_req: Request, res: Response) => {
   res.json({
     ok: true,
     ai: aiConfigStatus(),
+    knowledge: knowledgeConfigStatus(),
     suuntoMcpUrl: process.env.SUUNTO_MCP_URL || 'https://mcp-ten-kappa.vercel.app',
   });
 });
@@ -80,19 +96,152 @@ app.post('/api/health/ai-test', async (_req: Request, res: Response) => {
   }
 });
 
+// Tiempo máximo buscando en la biblioteca antes de responder sin ella.
+const KNOWLEDGE_TIMEOUT_MS = 8_000;
+
+/** Busca en la Biblioteca de Miguel y en las conversaciones anteriores guardadas
+ * (con un único embedding de la pregunta). Nunca rompe el chat: sin configurar o
+ * con error, Miguel responde como siempre y se devuelve un aviso. */
+async function findContext(
+  query: string,
+  currentSessionId: unknown,
+): Promise<{ matches: KnowledgeMatch[]; memories: MemoryMatch[]; warning?: string }> {
+  if (!query || !knowledgeConfigStatus().enabled) return { matches: [], memories: [] };
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('timeout')), KNOWLEDGE_TIMEOUT_MS);
+    });
+    const search = async () => {
+      const embedding = await embedQuery(query);
+      const [matches, memories] = await Promise.all([
+        searchKnowledge(embedding),
+        searchConversationMemory(embedding, typeof currentSessionId === 'string' ? currentSessionId : null),
+      ]);
+      return { matches, memories };
+    };
+    return await Promise.race([search(), timeout]);
+  } catch (err) {
+    const e = err as KnowledgeError;
+    console.error(`[knowledge] Búsqueda fallida: ${e.message}`, e.detail ?? '');
+    return {
+      matches: [],
+      memories: [],
+      warning: e.message === 'timeout'
+        ? 'La biblioteca tardó demasiado; Miguel respondió sin ella ni sus conversaciones anteriores.'
+        : `Biblioteca no disponible: ${e.message}`,
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function sendKnowledgeError(res: Response, route: string, err: unknown) {
+  if (err instanceof KnowledgeError) {
+    if (err.httpStatus >= 500) console.error(`Error in ${route}: [${err.code}] ${err.message}`, err.detail ?? '');
+    res.status(err.httpStatus).json({ error: err.message, code: err.code, hint: err.hint });
+    return;
+  }
+  console.error(`Error in ${route}:`, (err as Error)?.message ?? err);
+  res.status(500).json({ error: 'Error inesperado en la Biblioteca de Miguel.', code: 'KB_UNKNOWN', hint: 'Revisa los logs de Vercel.' });
+}
+
+// Biblioteca de Miguel (RAG). Añadir, listar y borrar documentos exige la
+// cabecera x-ingest-secret = INGEST_SECRET.
+app.post('/api/knowledge/ingest', async (req: Request, res: Response) => {
+  try {
+    checkIngestSecret(req.get('x-ingest-secret'));
+    const input = parseIngestInput(req.body);
+    const result = await ingestDocument(input);
+    res.json({ ok: true, title: input.title, ...result });
+  } catch (err) {
+    sendKnowledgeError(res, '/api/knowledge/ingest', err);
+  }
+});
+
+app.get('/api/knowledge/documents', async (req: Request, res: Response) => {
+  try {
+    checkIngestSecret(req.get('x-ingest-secret'));
+    res.json({ documents: await listDocuments() });
+  } catch (err) {
+    sendKnowledgeError(res, '/api/knowledge/documents', err);
+  }
+});
+
+app.delete('/api/knowledge/documents', async (req: Request, res: Response) => {
+  try {
+    checkIngestSecret(req.get('x-ingest-secret'));
+    const title = typeof req.body?.title === 'string' ? req.body.title.trim() : '';
+    if (!title) throw new KnowledgeError('KB_INPUT', 'Falta el título del documento a borrar.', 'Envía JSON con "title".', 400);
+    res.json({ ok: true, deleted: await deleteDocument(title) });
+  } catch (err) {
+    sendKnowledgeError(res, '/api/knowledge/documents', err);
+  }
+});
+
+// Conversaciones en Supabase: solo se guardan cuando el atleta pulsa "Guardar
+// en Supabase" en el chat. No hay ruta para borrarlas. Misma clave que la biblioteca.
+app.post('/api/conversations/save', async (req: Request, res: Response) => {
+  try {
+    checkIngestSecret(req.get('x-ingest-secret'));
+    const messages = parseIncomingMessages(req.body?.messages);
+    const result = await saveConversation(req.body?.sessionId, messages);
+    // Memoria de conversaciones: si falla, los mensajes ya están guardados y el
+    // siguiente guardado vuelve a intentarlo.
+    let memoryIndexed = 0;
+    let memoryWarning: string | undefined;
+    try {
+      memoryIndexed = (await indexConversation(result.sessionId)).indexed;
+    } catch (err) {
+      const e = err as KnowledgeError;
+      console.error(`[conversation-memory] No se pudo indexar: ${e.message}`, e.detail ?? '');
+      memoryWarning = `Mensajes guardados, pero Miguel aún no podrá recordarlos: ${e.message} Se reintentará en el próximo guardado.`;
+    }
+    res.json({ ok: true, ...result, memoryIndexed, ...(memoryWarning ? { memoryWarning } : {}) });
+  } catch (err) {
+    sendKnowledgeError(res, '/api/conversations/save', err);
+  }
+});
+
+app.get('/api/conversations', async (req: Request, res: Response) => {
+  try {
+    checkIngestSecret(req.get('x-ingest-secret'));
+    res.json({ conversations: await listConversations() });
+  } catch (err) {
+    sendKnowledgeError(res, '/api/conversations', err);
+  }
+});
+
+app.get('/api/conversations/:id', async (req: Request, res: Response) => {
+  try {
+    checkIngestSecret(req.get('x-ingest-secret'));
+    res.json({ sessionId: req.params.id, messages: await getConversation(req.params.id) });
+  } catch (err) {
+    sendKnowledgeError(res, '/api/conversations/:id', err);
+  }
+});
+
 // 1. Interactive Chat with Miguel
 app.post('/api/chat', async (req: Request, res: Response) => {
   try {
     const conversation = buildChatConversation(req.body);
+    // Se busca con lo que escribió el atleta, no con `conversation`: esta lleva
+    // el contexto completo (perfil, carga…) incrustado en el último mensaje.
+    const knowledge = await findContext(buildKnowledgeQuery(chatTurnsFromBody(req.body)), req.body?.sessionId);
 
     const text = await runAi(res, {
-      system: MIGUEL_SYSTEM_INSTRUCTION,
+      system: MIGUEL_SYSTEM_INSTRUCTION + buildKnowledgeBlock(knowledge.matches) + buildMemoryBlock(knowledge.memories),
       input: conversation,
       temperature: 0.7,
     });
 
     const reply = text || 'Oye, ha habido un pequeño corte en la comunicación, pero aquí estoy. Cuéntame cómo vas.';
-    res.json({ reply });
+    res.json({
+      reply,
+      knowledgeSources: knowledge.matches.map(({ title, source, similarity }) => ({ title, source, similarity })),
+      memorySources: knowledge.memories.map(({ sessionId, sessionTitle, date, similarity }) => ({ sessionId, sessionTitle, date, similarity })),
+      ...(knowledge.warning ? { knowledgeWarning: knowledge.warning } : {}),
+    });
   } catch (err) {
     sendAiError(res, '/api/chat', err);
   }

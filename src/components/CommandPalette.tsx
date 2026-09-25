@@ -22,7 +22,8 @@ import {
   User, 
   Sparkles,
   ArrowRight,
-  Database
+  Database,
+  BookOpen
 } from 'lucide-react';
 
 export interface CommandItem {
@@ -293,6 +294,16 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       badge: 'Reglas',
       keywords: ['memoria', 'reglas', 'aprendizaje', 'contexto', 'insights'],
       action: () => { onClose(); onNavigateTab('memory'); }
+    },
+    {
+      id: 'tab-knowledge',
+      title: 'Biblioteca de Miguel',
+      category: 'Vistas',
+      description: 'Documentos de referencia que Miguel consulta en el chat (RAG)',
+      icon: BookOpen,
+      badge: 'RAG',
+      keywords: ['biblioteca', 'documentos', 'rag', 'manual', 'libro', 'conocimiento', 'subir'],
+      action: () => { onClose(); onNavigateTab('knowledge'); }
     },
     {
       id: 'tab-zonesense',

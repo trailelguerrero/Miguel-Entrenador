@@ -8,10 +8,14 @@ import {
   SuuntoProfileSuggestion,
   CoachLearnedMemory,
   CoachLearnedInsight,
-  WatchZoneAdvice
+  WatchZoneAdvice,
+  KnowledgeSource,
+  MemorySource,
+  ChatMessage
 } from '../types';
 
 import { ApiError, apiStatus } from './apiStatus';
+import { StorageService } from './storage';
 import type { RaceInfoResult } from '../types';
 import type { EvidenceItem } from '../brain/memory';
 import type { BrainContext, summarizeWeekWorkouts } from '../brain/context';
@@ -81,6 +85,15 @@ async function apiFetch(
   return data;
 }
 
+/** Respuesta del chat: texto de Miguel + documentos de la biblioteca que usó. */
+export interface ChatReply {
+  reply: string;
+  knowledgeSources: KnowledgeSource[];
+  memorySources: MemorySource[];
+  /** La biblioteca no respondió (sin configurar bien, caída…): Miguel contestó sin ella. */
+  knowledgeWarning?: string;
+}
+
 /** Hechos calculados en el cliente para Miguel (ver src/brain/context.ts). */
 export type PlanLoadContext = BrainContext;
 
@@ -94,7 +107,7 @@ export const ApiService = {
     athleteHistoryDoc?: AthleteHistoryDocument | null,
     coachMemory?: CoachLearnedMemory | null,
     brainContext?: BrainContext
-  ): Promise<string> {
+  ): Promise<ChatReply> {
     const data = await apiFetch('/api/chat', {
         messages,
         athleteProfile,
@@ -104,8 +117,16 @@ export const ApiService = {
         athleteHistoryDoc,
         coachMemory,
         brainContext,
+        // Solo para que Miguel no "recuerde" la conversación que ya tiene abierta.
+        sessionId: StorageService.getChatSessionId(),
       }, 'ai', 'Error al comunicar con Miguel');
-    return data.reply;
+    if (data.knowledgeWarning) console.warn(`[Biblioteca de Miguel] ${data.knowledgeWarning}`);
+    return {
+      reply: data.reply,
+      knowledgeSources: Array.isArray(data.knowledgeSources) ? data.knowledgeSources : [],
+      memorySources: Array.isArray(data.memorySources) ? data.memorySources : [],
+      knowledgeWarning: data.knowledgeWarning,
+    };
   },
 
   async generatePlan(
@@ -293,5 +314,107 @@ export interface HealthStatus {
     models: { gemini: string; experientialChat: string; experientialFast: string };
     fallbackAvailable: boolean;
   };
+  knowledge?: KnowledgeStatus;
   suuntoMcpUrl: string;
 }
+
+export interface KnowledgeStatus {
+  /** Biblioteca activa (Supabase + proveedor de embeddings configurados). */
+  enabled: boolean;
+  /** Supabase configurado: se pueden guardar y cargar conversaciones. */
+  chatHistoryEnabled: boolean;
+  missing: string[];
+  embeddingModel: string;
+  ingestProtected: boolean;
+}
+
+export interface KnowledgeDocument {
+  title: string;
+  source: string | null;
+  chunks: number;
+  embeddingModel: string | null;
+  createdAt: string;
+}
+
+/** Llamada a la Biblioteca de Miguel con la clave INGEST_SECRET en la cabecera. */
+async function knowledgeFetch(path: string, secret: string, method: 'GET' | 'POST' | 'DELETE', body?: unknown): Promise<any> {
+  let res: Response;
+  try {
+    res = await fetch(path, {
+      method,
+      headers: { 'x-ingest-secret': secret, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    throw new ApiError('NETWORK', 'No hay conexión con el servidor de la app.', 'Vuelve a intentarlo en un momento.');
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new ApiError(data.code || `HTTP_${res.status}`, data.error || 'Error en la Biblioteca de Miguel.', data.hint);
+  }
+  return data;
+}
+
+export const KnowledgeService = {
+  async list(secret: string): Promise<KnowledgeDocument[]> {
+    return (await knowledgeFetch('/api/knowledge/documents', secret, 'GET')).documents ?? [];
+  },
+  async ingest(secret: string, doc: { title: string; text: string; source?: string }): Promise<{ chunks: number; replaced: number }> {
+    return await knowledgeFetch('/api/knowledge/ingest', secret, 'POST', doc);
+  },
+  async remove(secret: string, title: string): Promise<number> {
+    return (await knowledgeFetch('/api/knowledge/documents', secret, 'DELETE', { title })).deleted ?? 0;
+  },
+};
+
+export interface ConversationSummary {
+  id: string;
+  title: string | null;
+  createdAt: string;
+  updatedAt: string;
+  messageCount: number;
+}
+
+/** Mensajes que se pueden guardar en Supabase: los de la conversación real,
+ * sin el saludo inicial ni los avisos de error. */
+export function isSavableMessage(m: ChatMessage): boolean {
+  return (m.role === 'user' || m.role === 'assistant') && m.id !== 'welcome-miguel' && !m.id.startsWith('error-') && !!m.content.trim();
+}
+
+/** Conversaciones guardadas en Supabase. Solo se escribe al pulsar "Guardar". */
+export const ConversationService = {
+  /** Guarda los mensajes aún no guardados en `sessionId` (o en una conversación nueva). */
+  async save(
+    secret: string,
+    sessionId: string | null,
+    messages: ChatMessage[],
+  ): Promise<{ sessionId: string; saved: number; clientIds: string[]; memoryIndexed: number; memoryWarning?: string }> {
+    return await knowledgeFetch('/api/conversations/save', secret, 'POST', {
+      sessionId,
+      messages: messages.map((m) => ({
+        clientId: m.id,
+        role: m.role,
+        content: m.content,
+        timestamp: m.timestamp,
+        knowledgeSources: m.knowledgeSources,
+      })),
+    });
+  },
+
+  async list(secret: string): Promise<ConversationSummary[]> {
+    return (await knowledgeFetch('/api/conversations', secret, 'GET')).conversations ?? [];
+  },
+
+  /** Mensajes de una conversación, ya en el formato del chat de la app. */
+  async load(secret: string, sessionId: string): Promise<ChatMessage[]> {
+    const data = await knowledgeFetch(`/api/conversations/${encodeURIComponent(sessionId)}`, secret, 'GET');
+    return (data.messages ?? []).map((m: any) => ({
+      id: m.clientId,
+      role: m.role,
+      content: m.content,
+      timestamp: m.timestamp,
+      knowledgeSources: m.knowledgeSources,
+      savedAt: m.savedAt,
+    }));
+  },
+};

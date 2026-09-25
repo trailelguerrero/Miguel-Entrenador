@@ -660,6 +660,30 @@ export interface ChatMessage {
   timestamp: string;
   contextType?: 'workout_debrief' | 'hrv_alert' | 'general' | 'plan_adaptation';
   relatedWorkoutId?: string;
+  /** Documentos de la Biblioteca de Miguel en los que se apoyó la respuesta. */
+  knowledgeSources?: KnowledgeSource[];
+  /** Intercambios de conversaciones anteriores guardadas que Miguel recordó. */
+  memorySources?: MemorySource[];
+  /** La biblioteca falló y Miguel respondió sin ella. */
+  knowledgeWarning?: string;
+  /** Cuándo se guardó en Supabase (sin valor = solo está en este dispositivo). */
+  savedAt?: string;
+}
+
+/** Intercambio de una conversación anterior guardada en Supabase usado en una respuesta. */
+export interface MemorySource {
+  sessionId: string;
+  sessionTitle: string | null;
+  /** Fecha de la pregunta original (ISO). */
+  date: string | null;
+  similarity: number;
+}
+
+/** Fragmento de la Biblioteca de Miguel (RAG) usado en una respuesta. */
+export interface KnowledgeSource {
+  title: string;
+  source: string | null;
+  similarity: number;
 }
 
 // Tokens OAuth del servidor MCP de Suunto (ver server/suunto-routes.ts).
