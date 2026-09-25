@@ -14,7 +14,7 @@
  * - CTL = media exponencial de 42 días, ATL = de 7 días, TSB = CTL − ATL
  *   (definiciones que Suunto publica para Fitness / Fatigue / Form).
  */
-import { PMCDataPoint, Workout } from '../types';
+import type { PMCDataPoint, Workout } from '../types/index.js';
 import { calculateWorkoutTss } from './pmcCalculations.js';
 
 export const CTL_DAYS = 42;

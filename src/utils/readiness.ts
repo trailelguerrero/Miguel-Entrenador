@@ -1,4 +1,4 @@
-import { DailyCheckIn } from '../types';
+import type { DailyCheckIn } from '../types/index.js';
 import { evaluateReadiness } from '../brain/readiness.js';
 
 // Semáforo diario (verde/ámbar/rojo). La decisión la toma el motor único de
