@@ -39,9 +39,14 @@ function addDaysKey(key: string, days: number): string {
   return localDateKey(d);
 }
 
-// 'suunto' = TSS calculado por Suunto; 'estimated' = estimación de esta app
-// (registro manual sin Suunto), que no tiene por qué coincidir con Suunto.
-export type TssSource = 'suunto' | 'estimated';
+// 'suunto'          = TSS que Suunto calculó con los datos del entreno (medido);
+// 'suunto_assigned' = TSS que Suunto ASIGNA a una actividad añadida a mano (valor
+//                     fijo por hora, sin FC): no es medido ni lo estima esta app;
+// 'estimated'       = estimación de esta app (registro manual sin Suunto).
+export type TssSource = 'suunto' | 'suunto_assigned' | 'estimated';
+
+/** ¿La carga no es medida? (asignada por Suunto o estimada por la app) */
+export const isNonMeasuredLoad = (s: TssSource | undefined) => s === 'estimated' || s === 'suunto_assigned';
 
 export interface WorkoutLoad {
   tss: number;
@@ -57,7 +62,7 @@ export function getWorkoutLoad(w: Workout, antHr?: number): WorkoutLoad | null {
   // Entreno de Suunto: se usa su TSS; si Suunto no le asignó TSS, no suma
   // carga (igual que en la app de Suunto). Nunca se estima.
   // Añadido a mano en Suunto: el TSS es un valor fijo por hora que pone Suunto, no una medida
-  if (w.suuntoWorkoutKey && w.suuntoManualEntry) return { tss: w.actualTss ?? 0, source: 'estimated' };
+  if (w.suuntoWorkoutKey && w.suuntoManualEntry) return { tss: w.actualTss ?? 0, source: 'suunto_assigned' };
   if (w.suuntoWorkoutKey) return { tss: w.actualTss ?? 0, source: 'suunto' };
   if (w.actualTss != null) return { tss: w.actualTss, source: 'estimated' };
   if (w.tss != null) return { tss: w.tss, source: 'estimated' };
@@ -99,7 +104,7 @@ export function buildDailyLoadMap(workouts: Workout[], antHr?: number): Map<stri
     day.elevationLossM += w.actualElevationLossM ?? 0;
     // Minutos en verde = % verde × tiempo MEDIDO (no × duración total)
     if (w.zoneSenseBreakdown) day.zoneSenseAerobicMin += Math.round((dur * w.zoneSenseBreakdown.aerobicPct * (w.zoneSenseBreakdown.measuredPct ?? 100)) / 10000);
-    if (load.source === 'estimated') day.estimatedTss = true;
+    if (isNonMeasuredLoad(load.source)) day.estimatedTss = true;
     if (w.athleteRpe) day.rpes.push(w.athleteRpe);
     if (w.title && !day.titles.includes(w.title)) day.titles.push(w.title);
   }
@@ -171,7 +176,7 @@ export function countEstimatedWorkouts(workouts: Workout[], antHr?: number, sinc
   let n = 0;
   for (const w of workouts || []) {
     if (sinceDate && w.date < sinceDate) continue;
-    if (getWorkoutLoad(w, antHr)?.source === 'estimated') n++;
+    if (isNonMeasuredLoad(getWorkoutLoad(w, antHr)?.source)) n++;
   }
   return n;
 }

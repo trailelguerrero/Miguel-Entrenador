@@ -2,7 +2,7 @@
 // validación están en server/brain/decision/ y en src/brain/.
 import type { ChatTurn } from '../../ai.js';
 import { MIGUEL_SYSTEM_INSTRUCTION, EVIDENCE_JSON_SPEC } from './system.js';
-import { availabilityLine, describeTargetRace, formatLoadContext, formatWatchZones } from '../context.js';
+import { athleteToday, availabilityLine, describeTargetRace, formatLoadContext, formatWatchZones } from '../context.js';
 import { describeMemoryForPrompt } from '../../../src/brain/memory.js';
 import { describeIntensityPrescription, isFormulaMaxHr, resolveIntensityPrescription } from '../../../src/brain/intensity.js';
 import { describeReadiness, type ReadinessState } from '../../../src/brain/readiness.js';
@@ -22,7 +22,7 @@ export function buildChatConversation(body: any): ChatTurn[] {
 
   const memoryContext = coachMemory ? `
 - Diagnóstico general personalizado: ${coachMemory.overallPhilosophySummary || 'En proceso'}
-${describeMemoryForPrompt(coachMemory, localDateKey())}
+${describeMemoryForPrompt(coachMemory, athleteToday(body))}
 ` : '';
 
   const ultraExp = athleteProfile?.ultraExperience;
@@ -130,17 +130,17 @@ export function buildPlanPrompt(body: any): string {
   const intensity = resolveIntensityPrescription(athleteProfile);
   const weekSessions = Array.isArray(existingWorkouts) && existingWorkouts.length
     ? existingWorkouts
-        .map((w: any) => `- ${w.date} · ${w.title} (${w.type}) · ${w.status}${w.adapted ? ', adaptada' : ''}${w.fromSuunto ? ', de Suunto' : ''}${w.durationMin ? ` · ${w.durationMin} min` : ''}${w.tss != null ? ` · ${w.tss} TSS ${w.tssSource === 'suunto' ? tag('real') : tag('estimated')}` : ''}`)
+        .map((w: any) => `- ${w.date} · ${w.title} (${w.type}) · ${w.status}${w.adapted ? ', adaptada' : ''}${w.fromSuunto ? ', de Suunto' : ''}${w.durationMin ? ` · ${w.durationMin} min` : ''}${w.tss != null ? ` · ${w.tss} TSS ${w.tssSource === 'suunto' ? tag('real') : w.tssSource === 'suunto_assigned' ? '[ASIGNADO POR SUUNTO: actividad añadida a mano, sin FC]' : tag('estimated')}` : ''}`)
         .join('\n')
     : '- No hay sesiones en esta semana todavía.';
   const nutritionLine = [
     nutritionEvidence?.maxCarbsPerHourG ? `tolerancia de carbohidratos registrada ${nutritionEvidence.maxCarbsPerHourG} g/h` : 'sin tolerancia de carbohidratos registrada',
     nutritionEvidence?.sweatRateLph ? `tasa de sudoración medida ${nutritionEvidence.sweatRateLph} L/h` : 'sin tasa de sudoración medida',
-    nutritionEvidence?.sodiumProfile ? `perfil de sodio: ${nutritionEvidence.sodiumProfile}` : 'sin perfil de sodio',
+    nutritionEvidence?.sodiumRangeMgPerHour ? `rango de sodio medido ${nutritionEvidence.sodiumRangeMgPerHour.min}-${nutritionEvidence.sodiumRangeMgPerHour.max} mg/h` : `sin rango de sodio medido (plannedSodiumPerHourMg = null${nutritionEvidence?.sodiumProfile ? `; perfil cualitativo: ${nutritionEvidence.sodiumProfile}` : ''})`,
   ].join('; ');
 
   const memoryContext = coachMemory ? `
-${describeMemoryForPrompt(coachMemory, localDateKey())}
+${describeMemoryForPrompt(coachMemory, athleteToday(body))}
 ` : '';
 
   const prompt = `
@@ -154,7 +154,9 @@ Genera un microciclo semanal de entrenamiento de 7 días (comenzando el lunes ${
 
 [ESTRUCTURA SEMANAL OBLIGATORIA]:
 - 3 sesiones de carrera entre semana (lunes a viernes). Puedes reducirlas a 2 SOLO si el estado de fatiga de abajo lo aconseja o si la disponibilidad declarada por el atleta es menor; si reduces, explícalo en "weekSummary".
-- 1 tirada larga ("type": "long_mountain_run") en SÁBADO o DOMINGO, con desnivel positivo y descenso. Elige el día que mejor encaje esta semana (no tiene que ser siempre el mismo).
+- 1 tirada larga ("type": "long_mountain_run") en SÁBADO o DOMINGO, con desnivel positivo y descenso. Elige el día que mejor encaje esta semana (no tiene que ser siempre el mismo). OBLIGATORIO en la tirada larga: "plannedDistanceKm" y "plannedElevationGainM" mayores que 0.
+- Todas las fechas dentro de la semana (lunes a domingo) y como mucho una sesión de carrera por día.
+- El sistema COMPRUEBA esta estructura en código: un plan que no la cumpla se rechaza y no se guarda.
 - Nunca más de 3 sesiones entre semana, nunca tirada larga entre semana, nunca dos tiradas largas.
 - Los demás días: DESCANSO TOTAL o movilidad ligera ("type": "rest"). La fuerza sin material puede ir como "strength_core" y no cuenta como sesión de carrera.
 - ${availabilityLine(athleteProfile)}
@@ -211,7 +213,7 @@ Responde ÚNICAMENTE con un JSON válido estructurado así:
       "nutritionAdvice": "Hidratación/electrolitos recomendados acordes a su perfil y a las condiciones de su carrera objetivo",
       "plannedCarbsPerHourG": number o null (solo con tolerancia registrada, sin superarla),
       "plannedFluidsPerHourMl": number o null (solo con tasa de sudoración medida),
-      "plannedSodiumPerHourMg": number o null (solo con tasa de sudoración y perfil de sodio),
+      "plannedSodiumPerHourMg": number o null (solo dentro de un rango de sodio medido),
       "strengthExercises": [
         {
           "name": "Nombre ejercicio",
@@ -279,7 +281,7 @@ Responde en formato JSON:
 export function buildAnalyzePrompt(body: any): string {
   const { workout, fitMetrics, athleteProfile, athleteFeedback, coachMemory, athleteHistoryDoc } = body || {};
   const memoryContext = coachMemory ? `
-${describeMemoryForPrompt(coachMemory, localDateKey())}
+${describeMemoryForPrompt(coachMemory, athleteToday(body))}
 ` : '';
 
   const prompt = `
@@ -327,12 +329,12 @@ Como Coach Miguel, realiza una evaluación honesta y sin rodeos. Después anota 
 }
 
 /** Prompt de /api/coach-memory/extract-insight: una nota = una evidencia. */
-export function buildNoteEvidencePrompt(noteText: string, currentMemory: any): string {
+export function buildNoteEvidencePrompt(noteText: string, currentMemory: any, today: string = athleteToday(null)): string {
   const prompt = `
 El atleta o el entrenador acaba de registrar una observación clave:
 "${noteText}"
 
-${describeMemoryForPrompt(currentMemory, localDateKey())}
+${describeMemoryForPrompt(currentMemory, today)}
 
 Esto es UNA evidencia aportada por el atleta, no una regla permanente. Anótala en JSON:
 {
@@ -344,14 +346,14 @@ Esto es UNA evidencia aportada por el atleta, no una regla permanente. Anótala 
 }
 
 /** Prompt de /api/coach-memory/extract-chat-evidence: solo lo que afirma el atleta. */
-export function buildChatEvidencePrompt(turns: any[], currentMemory: any): string {
+export function buildChatEvidencePrompt(turns: any[], currentMemory: any, today: string = athleteToday(null)): string {
   const prompt = `
 Lee esta conversación entre el atleta y Miguel y extrae SOLO lo que el ATLETA ha contado sobre su cuerpo, sus sensaciones, su recuperación, su nutrición o el terreno (hechos que él afirma). Lo que dice Miguel son consejos, NO evidencias.
 
 [CONVERSACIÓN]
 ${turns.map((m: any) => `${m.role === 'user' ? 'ATLETA' : 'MIGUEL'}: ${String(m.content ?? '').slice(0, 1500)}`).join('\n')}
 
-${describeMemoryForPrompt(currentMemory, localDateKey())}
+${describeMemoryForPrompt(currentMemory, today)}
 
 Responde en JSON:
 {
@@ -367,7 +369,7 @@ export function buildHistoryPrompt(markdownContent: string): string {
 Eres Miguel, entrenador de Trail Running. El atleta acaba de subir su documento de historial deportivo y métricas de Suunto en formato Markdown (.md).
 
 Debes leer TODO el documento con máxima atención y extraer ÚNICAMENTE la información real que esté explícitamente escrita en él.
-[REGLA DE ORO DE INTEGRIDAD]: ESTÁ TERMINANTEMENTE PROHIBIDO INVENTAR NÚMEROS O ESTIMACIONES. Si el atleta no menciona su FC máxima o sus zonas, déjalos como null.
+[REGLA DE ORO DE INTEGRIDAD]: ESTÁ TERMINANTEMENTE PROHIBIDO INVENTAR NÚMEROS O ESTIMACIONES. Si el atleta no menciona su FC máxima o sus zonas, déjalos como null. Cada cifra va con la frase LITERAL del documento que la dice ("quote"); el sistema comprueba que la frase existe y que habla de ese dato (un "150 km" nunca es una FC).
 
 Documento subido:
 """
@@ -377,21 +379,21 @@ ${markdownContent}
 Responde con un objeto JSON estructurado:
 {
   "summary": {
-    "aetHr": number o null,
-    "antHr": number o null,
-    "maxHr": number o null,
-    "restingHr": number o null,
+    "aetHr": { "value": number, "quote": "frase LITERAL del documento donde aparece" } o null,
+    "antHr": { "value": number, "quote": "frase literal" } o null,
+    "maxHr": { "value": number, "quote": "frase literal" } o null,
+    "restingHr": { "value": number, "quote": "frase literal" } o null,
     "zoneSenseObservations": "Resumen del tiempo en verde/amarillo/rojo de ZoneSense (sin traducirlo a pulsaciones)",
     "keyRaces": ["Carrera 1", "Carrera 2"],
     "injuries": ["Lesión o sobrecarga detectada"],
-    "weeklyVolumeKm": number o null
+    "weeklyVolumeKm": { "value": number, "quote": "frase literal" } o null
   },
   "miguelAnalysis": "Mensaje enérgico, cercano y honesto de Miguel en español de España: dale la bienvenida a su historial, agradece la precisión de los datos, destaca qué puntos fisiológicos vas a cuidar especialmente (ej: debilidades en bajadas, umbrales medidos, historial de sobrecargas) de cara a su carrera objetivo.",
   "extractedProfileUpdates": {
-    "aetHr": number o null,
-    "antHr": number o null,
-    "maxHr": number o null,
-    "restingHr": number o null,
+    "aetHr": { "value": number, "quote": "frase literal" } o null,
+    "antHr": { "value": number, "quote": "frase literal" } o null,
+    "maxHr": { "value": number, "quote": "frase literal" } o null,
+    "restingHr": { "value": number, "quote": "frase literal" } o null,
     "injuryHistory": "string o null"
   }
 }

@@ -509,6 +509,12 @@ export interface AthleteProfile {
   weightHistory?: WeightEntry[];
   restingHr: number;
   baselineHrv?: number; // Línea base rMSSD nocturna (ej. 51.5 ms)
+  /**
+   * ¿Lleva banda de pecho? true = sí (lo indicó el atleta o Suunto registró ZoneSense
+   * en los últimos 30 días); false = no; sin valor = desconocido (no se asume ZoneSense).
+   */
+  hasChestStrap?: boolean;
+  hasChestStrapSource?: 'manual' | 'suunto';
   maxHr: number;
   aetHr: number; // Aerobic Threshold (VT1)
   antHr: number; // Anaerobic Threshold (VT2)

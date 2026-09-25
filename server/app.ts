@@ -15,8 +15,8 @@ import {
   buildPlanPrompt,
 } from './brain/prompts/routes.js';
 import { RACE_EXTRACTION_SYSTEM, RACE_SEARCH_SYSTEM, buildRaceAdvicePrompt, buildRaceExtractionPrompt, buildRaceSearchPrompt } from './brain/prompts/race.js';
-import { resolveReadinessState } from './brain/context.js';
-import { applyTodayReadinessToPlan, sanitizeAdaptation, sanitizePlanWorkouts } from './brain/decision/validate.js';
+import { athleteToday, resolveReadinessState } from './brain/context.js';
+import { applyTodayReadinessToPlan, sanitizeAdaptation, sanitizePlanWorkouts, validatePlanContract } from './brain/decision/validate.js';
 import { filterRaceAdvice, RACE_NUMERIC_FIELDS, RACE_TEXT_FIELDS, targetFigures, verifyRaceInfo } from './brain/decision/race.js';
 import { verifyHistoryNumbers } from './brain/decision/history.js';
 import { RETRIEVED_DATA_RULE, buildKnowledgeBlock, buildKnowledgeQuery, buildMemoryBlock, chatTurnsFromBody, withRetrievedContext } from './brain/prompts/knowledge.js';
@@ -299,20 +299,41 @@ app.post('/api/chat', async (req: Request, res: Response) => {
 app.post('/api/generate-plan', async (req: Request, res: Response) => {
   try {
     const { athleteProfile, weekStartDate, nutritionEvidence } = req.body;
-    const prompt = buildPlanPrompt(req.body);
+    if (typeof weekStartDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(weekStartDate)) {
+      return res.status(400).json({ error: 'Falta el lunes de la semana (weekStartDate).', code: 'PLAN_INPUT' });
+    }
+    const t0 = Date.now();
+    const basePrompt = buildPlanPrompt(req.body);
 
-    const text = await runAi(res, {
-      system: MIGUEL_SYSTEM_INSTRUCTION,
-      input: prompt,
-      json: true,
-    });
-
-    const parsed = parseModelJson(text);
-    // El código garantiza las reglas: sin FC inventada, colores canónicos, nutrición con evidencia
-    const checked = sanitizePlanWorkouts(parsed.workouts, athleteProfile, weekStartDate, nutritionEvidence);
+    // Plan de la IA → limpieza → CONTRATO DEL PLAN. Si lo incumple, un reintento
+    // con los motivos (si queda tiempo en la función de 60 s); si no, se rechaza.
+    const attempt = async (prompt: string) => {
+      const parsed = parseModelJson(await runAi(res, { system: MIGUEL_SYSTEM_INSTRUCTION, input: prompt, json: true }));
+      const checked = sanitizePlanWorkouts(parsed.workouts, athleteProfile, weekStartDate, nutritionEvidence);
+      return { parsed, checked, contract: validatePlanContract(checked.workouts, weekStartDate) };
+    };
+    let r = await attempt(basePrompt);
+    if (r.contract.status === 'rejected' && Date.now() - t0 < 25_000) {
+      r = await attempt(`${basePrompt}\n\n[TU PROPUESTA ANTERIOR SE RECHAZÓ por: ${r.contract.issues.join('; ')}. Corrígelo cumpliendo la estructura obligatoria.]`);
+    }
+    if (r.contract.status === 'rejected') {
+      return res.status(422).json({
+        status: 'rejected',
+        code: 'PLAN_REJECTED',
+        error: 'El plan de Miguel no cumple la estructura obligatoria y no se ha guardado.',
+        issues: r.contract.issues,
+        hint: 'Vuelve a pulsar "Generar semana con Miguel".',
+      });
+    }
     // La sesión de hoy del plan, recortada a los límites del motor de readiness
-    const today = applyTodayReadinessToPlan(checked.workouts, req.body?.loadContext, athleteProfile);
-    res.json({ ...parsed, workouts: today.workouts, validationNotes: [...checked.notes, ...today.corrections], structureIssues: checked.structureIssues });
+    const today = applyTodayReadinessToPlan(r.contract.workouts, req.body?.loadContext, athleteProfile);
+    res.json({
+      ...r.parsed,
+      status: r.contract.status,
+      workouts: today.workouts,
+      validationNotes: [...r.checked.notes, ...r.contract.repairs, ...today.corrections],
+      structureIssues: [],
+    });
   } catch (err) {
     sendAiError(res, '/api/generate-plan', err);
   }
@@ -371,7 +392,7 @@ app.post('/api/coach-memory/extract-insight', async (req: Request, res: Response
       return res.status(400).json({ error: 'Texto no proporcionado' });
     }
 
-    const prompt = buildNoteEvidencePrompt(noteText, currentMemory);
+    const prompt = buildNoteEvidencePrompt(noteText, currentMemory, athleteToday(req.body));
 
     const text = await runAi(res, {
       system: MIGUEL_SYSTEM_INSTRUCTION,
@@ -394,7 +415,7 @@ app.post('/api/coach-memory/extract-chat-evidence', async (req: Request, res: Re
     const athleteTurns = turns.filter((m: any) => m?.role === 'user');
     if (athleteTurns.length === 0) return res.json({ evidence: [] });
 
-    const prompt = buildChatEvidencePrompt(turns, currentMemory);
+    const prompt = buildChatEvidencePrompt(turns, currentMemory, athleteToday(req.body));
 
     const text = await runAi(res, {
       system: MIGUEL_SYSTEM_INSTRUCTION,

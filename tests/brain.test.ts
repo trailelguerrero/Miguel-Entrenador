@@ -206,7 +206,11 @@ test('Nutrición: sin evidencia del atleta no hay cifras; con evidencia, nunca p
   const ev = sanitizePlanWorkouts(aiPlan(), measured, undefined, { maxCarbsPerHourG: 50, sweatRateLph: 0.6, sodiumProfile: 'medio' }).workouts[0];
   assert.equal(ev.plannedCarbsPerHourG, 50);
   assert.equal(ev.plannedFluidsPerHourMl, 600);
-  assert.equal(ev.plannedSodiumPerHourMg, 550);
+  // C23: un perfil cualitativo ("medio") no genera una cifra de sodio
+  assert.equal(ev.plannedSodiumPerHourMg, null);
+  // Con un rango medido, dentro del rango
+  const ranged = sanitizePlanWorkouts(aiPlan(), measured, undefined, { sweatRateLph: 0.6, sodiumRangeMgPerHour: { min: 300, max: 450 } }).workouts[0];
+  assert.equal(ranged.plannedSodiumPerHourMg, 450);
 });
 
 // ── Barrido del repositorio: ni DFA a1 ni cortes 0,75/0,50 fuera de compatibilidad ──

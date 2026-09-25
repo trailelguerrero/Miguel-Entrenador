@@ -186,27 +186,32 @@ const thousands = (s: string) => s.normalize('NFKC').replace(/(\d)[.,\s'’](\d{
 const FIGURE_RE = /(\d+(?:[.,]\d+)?)\s*(km|kms|kil[oó]metros|m\b|metros|mts|d\+|d-)/gi;
 
 /**
- * Cifras que el consejo puede citar, por unidad: las verificadas, las de la
- * Transvulcania y lo que se deriva de ellas al compararlas (diferencias, sumas
- * y metros de desnivel por km).
+ * Cifras que el consejo puede citar, por unidad. Solo derivaciones CON SIGNIFICADO
+ * (no todas las sumas y restas posibles entre cifras):
+ *   - las verificadas de la carrera y las de la carrera objetivo;
+ *   - distancia que le falta / sobra frente al objetivo: |objetivo − carrera|;
+ *   - desnivel positivo y negativo que le falta / sobra: |objetivo − carrera| (D+ con D+, D- con D-);
+ *   - metros de desnivel positivo por km, de la carrera y del objetivo;
+ *   - las altitudes verificadas de la carrera y otras cifras fijas del objetivo.
  */
 export function allowedAdviceFigures(v: VerifiedRaceInfo, target = TARGET_RACE): { km: number[]; m: number[] } {
   const val = (f: RaceField) => (typeof v.fields[f]?.value === 'number' ? (v.fields[f]!.value as number) : null);
   const dist = val('distanceKm');
-  const km = [target.distanceKm, ...(dist != null ? [dist] : [])];
-  const m = [...target.metres, ...[val('elevationGainM'), val('elevationLossM')].filter((x): x is number => x != null)];
+  const gain = val('elevationGainM');
+  const loss = val('elevationLossM');
+  const [tGain, tLoss, ...tOther] = target.metres;
+  const km = [target.distanceKm];
+  if (dist != null) km.push(dist, Math.abs(target.distanceKm - dist));
+  const m = [...target.metres];
+  if (gain != null) m.push(gain, ...(tGain != null ? [Math.abs(tGain - gain)] : []));
+  if (loss != null) m.push(loss, ...(tLoss != null ? [Math.abs(tLoss - loss)] : []));
   const alt = v.fields.altitudeRange?.value;
   if (typeof alt === 'string') for (const x of thousands(alt).matchAll(/\d+(?:[.,]\d+)?/g)) m.push(Number(x[0].replace(',', '.')));
-  const derive = (xs: number[]) => {
-    const out = [...xs];
-    for (let i = 0; i < xs.length; i++) for (let j = i + 1; j < xs.length; j++) out.push(Math.abs(xs[i] - xs[j]), xs[i] + xs[j]);
-    return out;
-  };
-  // Desnivel por km ("60 m/km"), de esta carrera y de la Transvulcania
-  const perKm: number[] = [target.metres[0] / target.distanceKm];
-  const gain = val('elevationGainM');
-  if (gain != null && dist) perKm.push(gain / dist);
-  return { km: derive(km), m: [...derive(m), ...perKm] };
+  // Desnivel por km ("60 m/km"), de esta carrera y del objetivo
+  if (tGain != null && target.distanceKm > 0) m.push(tGain / target.distanceKm);
+  if (gain != null && dist) m.push(gain / dist);
+  void tOther;
+  return { km, m };
 }
 
 /** Una cifra vale si coincide con una permitida (±1 o ±0,5 % por redondeo). */

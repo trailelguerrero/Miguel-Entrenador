@@ -23,6 +23,8 @@ export interface IntensityPrescription {
   maxHr: number | null;
   /** Qué falta, para decírselo al atleta en vez de suponerlo. */
   missing: string[];
+  /** Banda de pecho: sí, no o desconocido (desconocido ≠ sí). */
+  chestStrap: 'yes' | 'no' | 'unknown';
 }
 
 type Measurable = 'aetHr' | 'antHr' | 'maxHr';
@@ -44,12 +46,12 @@ function measured(profile: Partial<AthleteProfile> | undefined, field: Measurabl
 }
 
 /**
- * @param hasChestStrap true/false si se sabe; undefined si no se sabe (se
- *   asume que puede usar ZoneSense pero se añade la FC como respaldo si existe).
+ * @param hasChestStrap true/false si se sabe; si no se pasa, el del perfil. Sin
+ *   dato = DESCONOCIDO: no se asume ZoneSense (necesita banda de pecho).
  */
 export function resolveIntensityPrescription(
   profile: Partial<AthleteProfile> | undefined,
-  hasChestStrap?: boolean,
+  hasChestStrap: boolean | undefined = profile?.hasChestStrap,
 ): IntensityPrescription {
   const aetHr = measured(profile, 'aetHr');
   const antHr = measured(profile, 'antHr');
@@ -61,17 +63,23 @@ export function resolveIntensityPrescription(
 
   const hrAllowed = aetHr != null;
   let primary: IntensitySource;
-  if (hasChestStrap !== false) primary = 'zonesense';
+  if (hasChestStrap === true) primary = 'zonesense';
   else if (hrAllowed) primary = 'heart_rate_measured';
   else primary = 'rpe';
+  if (hasChestStrap === undefined) missing.push('si llevas banda de pecho (sin ella no hay ZoneSense)');
 
-  return { primary, hrAllowed, aetHr, antHr, maxHr, missing };
+  return { primary, hrAllowed, aetHr, antHr, maxHr, missing, chestStrap: hasChestStrap === undefined ? 'unknown' : hasChestStrap ? 'yes' : 'no' };
 }
 
 /** Texto para los prompts de Miguel. */
 export function describeIntensityPrescription(p: IntensityPrescription): string {
   const lines = [
     `Fuente principal de intensidad: ${p.primary === 'zonesense' ? 'ZoneSense (con banda de pecho)' : p.primary === 'heart_rate_measured' ? 'zonas de FC del reloj (umbral medido)' : 'esfuerzo percibido / test del habla / terreno'}.`,
+    p.chestStrap === 'unknown'
+      ? 'Banda de pecho: DESCONOCIDO. No des por hecho que tiene ZoneSense: da el color de ZoneSense solo como opción "si llevas banda" y la referencia principal por la fuente indicada arriba.'
+      : p.chestStrap === 'no'
+        ? 'Banda de pecho: NO. No uses ZoneSense como referencia.'
+        : 'Banda de pecho: SÍ.',
     p.hrAllowed
       ? `Respaldo por FC permitido (sin banda): [REAL] umbral aeróbico medido ${p.aetHr} ppm${p.antHr ? `, anaeróbico ${p.antHr} ppm` : ''}.`
       : 'NO hay umbral de FC medido: targetHrMin y targetHrMax deben ser null; no des pulsaciones.',

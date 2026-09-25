@@ -723,11 +723,13 @@ export const HRVLoadOverreachingView: React.FC<HRVLoadOverreachingViewProps> = (
                   hoveredPoint.status === 'non_functional_overreaching' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' :
                   hoveredPoint.status === 'functional_overreaching' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' :
                   hoveredPoint.status === 'recovery_deload' ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30' :
+                  hoveredPoint.status === 'insufficient_data' ? 'bg-zinc-700/40 text-zinc-300 border border-zinc-600' :
                   'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                 }`}>
                   {hoveredPoint.status === 'non_functional_overreaching' ? 'Fatiga acumulada' :
-                   hoveredPoint.status === 'functional_overreaching' ? 'Sobre-esfuerzo FOR' :
-                   hoveredPoint.status === 'recovery_deload' ? 'Descarga / Asimilación' : 'Adaptación Óptima'}
+                   hoveredPoint.status === 'functional_overreaching' ? 'Carga alta asumida' :
+                   hoveredPoint.status === 'insufficient_data' ? 'Sin datos de HRV' :
+                   hoveredPoint.status === 'recovery_deload' ? 'Descarga / recuperación' : 'Estable'}
                 </span>
               </div>
               <span className="text-zinc-400 text-[11px] block">

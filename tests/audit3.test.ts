@@ -65,11 +65,11 @@ test('Con zonas personalizadas se siguen usando Z3/Z5 del reloj', () => {
 });
 
 // ── TSS de actividades añadidas a mano en Suunto ─────────────────────────
-test('Actividad añadida a mano en Suunto: su TSS cuenta como ESTIMADO, no real', () => {
+test('Actividad añadida a mano en Suunto: su TSS es ASIGNADO por Suunto, no medido', () => {
   const [manual] = mapSuuntoWorkouts([run({ activityId: 73, isManuallyAdded: true, avgHR: 0, maxHR: 0, tss: 35, totalDistanceM: 0, description: 'Entrenamiento funcional con Julia' }) as any]);
   assert.equal(manual.suuntoManualEntry, true);
   assert.equal(manual.type, 'strength_core');
-  assert.deepEqual(getWorkoutLoad(manual), { tss: 35, source: 'estimated' });
+  assert.deepEqual(getWorkoutLoad(manual), { tss: 35, source: 'suunto_assigned' }); // C21: ni medido ni estimado por la app
   const [measured] = mapSuuntoWorkouts([run() as any]);
   assert.equal(getWorkoutLoad(measured)!.source, 'suunto');
 });

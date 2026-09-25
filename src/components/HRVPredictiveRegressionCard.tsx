@@ -727,13 +727,13 @@ export const HRVPredictiveRegressionCard: React.FC<HRVPredictiveRegressionCardPr
 
         {/* Action Buttons to execute the recommended workload adjustment */}
         <div className="pt-2 flex flex-wrap items-center gap-3">
-          {regression.recommendedLoadAdjustmentPct < 0 && onScheduleDeload && (
+          {regression.fatigueRiskLevel === 'critical_overreaching' && onScheduleDeload && (
             <button
               onClick={onScheduleDeload}
               className="px-4 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-400 text-zinc-950 font-black text-xs uppercase tracking-wider transition shadow-lg shadow-rose-500/20 flex items-center gap-2 cursor-pointer"
             >
               <RotateCcw className="w-4 h-4" />
-              <span>Programar Descarga Inmediata ({regression.recommendedLoadAdjustmentPct}%)</span>
+              <span>Programar descarga</span>
             </button>
           )}
 

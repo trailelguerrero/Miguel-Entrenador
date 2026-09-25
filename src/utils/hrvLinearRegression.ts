@@ -39,10 +39,14 @@ export interface ProjectedPoint {
 }
 
 export type FatigueRiskLevel = 
-  | 'critical_overreaching'   // Sharp decline projecting below SWC (Needs immediate deload)
-  | 'moderate_strain'         // Mild negative slope approaching lower bound
-  | 'stable_adaptation'       // Neutral slope within normal SWC band
-  | 'supercompensation';      // Positive slope, rebounding parasympathetic activity
+  | 'insufficient_data'       // Menos de MIN_REGRESSION_NIGHTS noches: no hay tendencia que leer
+  | 'critical_overreaching'   // Tendencia descendente marcada hacia/bajo la banda SWC
+  | 'moderate_strain'         // Tendencia descendente leve
+  | 'stable_adaptation'       // Tendencia neutra dentro de la banda
+  | 'supercompensation';      // Tendencia ascendente (favorable; NO autoriza subir carga)
+
+/** Noches con HRV medida por debajo de las cuales no se calcula tendencia (umbral de la app). */
+export const MIN_REGRESSION_NIGHTS = 10;
 
 
 export interface LinearRegressionResult {
@@ -67,7 +71,8 @@ export interface LinearRegressionResult {
   riskDescription: string;
   riskBadgeColor: string;
   recommendedAction: string;
-  recommendedLoadAdjustmentPct: number; // e.g. -35, -15, 0, +10
+  /** Siempre 0: la tendencia de HRV no fija % de carga (es un modificador, no un autorizador). */
+  recommendedLoadAdjustmentPct: number;
   coachPrescription: string;
   historicalPoints: HistoricalRegressionPoint[];
   projectedPoints: ProjectedPoint[];
@@ -262,7 +267,7 @@ export function calculateHrvPredictiveRegression(
   const projectedHrv7d = finalProjectedDay.simulatedHrv;
   const projectedDelta7d = Math.round((projectedHrv7d - currentHrv7d) * 10) / 10;
 
-  // 4. Clinical Fatigue & Overreaching Classification
+  // 4. Lectura de la tendencia (no es un diagnóstico clínico)
   let fatigueRiskLevel: FatigueRiskLevel;
   let riskTitle: string;
   let riskDescription: string;
@@ -271,38 +276,47 @@ export function calculateHrvPredictiveRegression(
   let recommendedLoadAdjustmentPct: number;
   let coachPrescription: string;
 
-  if (slopeDaily <= -0.28 || projectedHrv7d < swcLower) {
+  // La HRV es un MODIFICADOR, no un autorizador: ninguna tendencia da permiso para subir
+  // carga ni fija un % de recorte. Qué hacer hoy lo decide el motor de readiness.
+  const TODAY_RULE = 'Qué sesión hacer hoy lo decide el semáforo del día (check-in y motor de readiness).';
+  const fit = `ajuste R² ${rSquared.toFixed(2)}${rSquared < 0.1 ? ', tendencia débil' : ''}; ${n} noches`;
+  recommendedLoadAdjustmentPct = 0;
+
+  if (n < MIN_REGRESSION_NIGHTS) {
+    fatigueRiskLevel = 'insufficient_data';
+    riskTitle = 'Datos insuficientes para una tendencia';
+    riskDescription = `Solo hay ${n} noche${n === 1 ? '' : 's'} con HRV de Suunto en los últimos 30 días; hacen falta al menos ${MIN_REGRESSION_NIGHTS} para leer una tendencia.`;
+    riskBadgeColor = 'bg-zinc-700/40 text-zinc-300 border-zinc-600';
+    recommendedAction = 'Sin conclusiones: sincroniza Suunto a diario para acumular noches.';
+    coachPrescription = `Coach Miguel: "Con ${n} noches no puedo sacar una tendencia fiable de tu HRV. ${TODAY_RULE}"`;
+  } else if (slopeDaily <= -0.28 || projectedHrv7d < swcLower) {
     fatigueRiskLevel = 'critical_overreaching';
-    riskTitle = 'Alerta de Fatiga Severa: Riesgo Inminente de Sobre-esfuerzo No Funcional';
-    riskDescription = `La regresión lineal revela una pendiente de decaimiento parasimpático acelerada de ${(slopeDaily).toFixed(2)} ms/día (${slopeWeekly} ms/semana). La proyección a 7 días sitúa el rMSSD en ${projectedHrv7d} ms, penetrando ${Math.abs(Math.round((projectedHrv7d - swcLower) * 10) / 10)} ms por debajo del umbral de tolerancia individual (${swcLower} ms).`;
+    riskTitle = 'Tendencia descendente marcada de la HRV';
+    riskDescription = `La HRV baja ${(slopeDaily).toFixed(2)} ms/día (${slopeWeekly} ms/semana) y, si siguiera igual, en 7 días estaría en ${projectedHrv7d} ms, por debajo de tu banda normal (${swcLower} ms). Es una proyección lineal (${fit}), no un diagnóstico.`;
     riskBadgeColor = 'bg-rose-500/20 text-rose-400 border-rose-500/40';
-    recommendedAction = 'Reducir volumen un -35% a -40% (Microciclo de Descarga Inmediato)';
-    recommendedLoadAdjustmentPct = -35;
-    coachPrescription = `Coach Miguel: "Tu sistema nervioso autónomo está agotando su reserva de adaptación vagal. El modelo proyecta que en ${daysUntilSwcCrossover ?? 3} días el tono parasimpático quedará totalmente suprimido si mantienes la carga. Para Transvulcania, llegar sobreentrenado destruye la capacidad mitocondrial. ${currentWeeklyTss > 0 ? `Baja el TSS semanal un 35-40 % (de ${currentWeeklyTss} a unos ${Math.round(currentWeeklyTss * 0.6)}-${Math.round(currentWeeklyTss * 0.65)})` : 'Baja el volumen semanal un 35-40 %'}, elimina cualquier sesión de cuestas o intensidades por encima de AeT y haz solo rodajes ${profile.aetHr ? `claramente por debajo de ${profile.aetHr} bpm` : 'claramente por debajo de tu AeT'}."`;
+    recommendedAction = 'Vigila la recuperación y considera una descarga si el semáforo del día sale ámbar o rojo.';
+    coachPrescription = `Coach Miguel: "Tu HRV viene bajando de forma clara. No es un diagnóstico, pero conviene no apretar hasta que se estabilice. ${TODAY_RULE}"`;
   } else if (slopeDaily < -0.08 || (projectedHrv7d <= swcLower + 1.5)) {
     fatigueRiskLevel = 'moderate_strain';
-    riskTitle = 'Fatiga Acumulada Progresiva: Sobre-esfuerzo Funcional en Límite';
-    riskDescription = `Tendencia descendente moderada (${(slopeDaily).toFixed(2)} ms/día). El HRV se mantiene aún dentro del corredor normal (${swcLower}-${swcUpper} ms), pero la proyección a 7 días (${projectedHrv7d} ms) roza la frontera inferior de asimilación.`;
+    riskTitle = 'Tendencia descendente leve de la HRV';
+    riskDescription = `Pendiente de ${(slopeDaily).toFixed(2)} ms/día. La HRV sigue en tu banda normal (${swcLower}-${swcUpper} ms), pero la proyección a 7 días (${projectedHrv7d} ms) se acerca al límite inferior (${fit}).`;
     riskBadgeColor = 'bg-amber-500/20 text-amber-400 border-amber-500/40';
-    recommendedAction = 'Ajuste Preventivo de Volumen (-15% a -20%) o día de descanso pasivo';
-    recommendedLoadAdjustmentPct = -15;
-    coachPrescription = `Coach Miguel: "Estamos en zona de sobre-esfuerzo funcional. Es normal en semanas de carga alta para ultras de montaña, pero no dejes que la recta cruce los ${swcLower} ms. Cambia el entrenamiento de intervalos por un trote regenerativo en Z1 y duerme al menos 8 horas para estabilizar la curva."`;
+    recommendedAction = 'Prudencia con la intensidad los próximos días.';
+    coachPrescription = `Coach Miguel: "La tendencia es algo descendente; nada alarmante, pero no la ignores. ${TODAY_RULE}"`;
   } else if (slopeDaily > 0.20 && projectedHrv7d >= baselineHrv) {
     fatigueRiskLevel = 'supercompensation';
-    riskTitle = 'Supercompensación Autonómica: Alta Receptividad al Esfuerzo';
-    riskDescription = `Pendiente positiva vigorosa (+${(slopeDaily).toFixed(2)} ms/día). Tu tono parasimpático está rebotando con fuerza por encima de la línea base (${baselineHrv} ms). El organismo ha asimilado la fatiga previa.`;
+    riskTitle = 'Tendencia ascendente de la HRV';
+    riskDescription = `Pendiente positiva (+${(slopeDaily).toFixed(2)} ms/día) por encima de tu referencia (${baselineHrv} ms) (${fit}). Es una señal favorable de recuperación.`;
     riskBadgeColor = 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40';
-    recommendedAction = 'Autorizado para Bloque de Carga Progresiva (+10% a +15% TSS)';
-    recommendedLoadAdjustmentPct = +10;
-    coachPrescription = `Coach Miguel: "Excelente respuesta adaptativa. Tu variabilidad cardíaca proyecta mantenerse en la zona alta de supercompensación (${projectedHrv7d} ms). Es el momento idóneo para meter la tirada clave de desnivel específico D+ con bastones o series de umbral aeróbico."`;
+    recommendedAction = 'Sin restricciones extra. Una HRV al alza no autoriza por sí sola a subir la carga.';
+    coachPrescription = `Coach Miguel: "Buena señal: tu HRV sube. Sigue el plan; subir la carga lo decide la progresión del plan, no la HRV sola. ${TODAY_RULE}"`;
   } else {
     fatigueRiskLevel = 'stable_adaptation';
-    riskTitle = 'Equilibrio Autonómico Estable: Carga Sostenible';
-    riskDescription = `Pendiente neutral (${(slopeDaily >= 0 ? '+' : '') + (slopeDaily).toFixed(2)} ms/día). La variabilidad proyectada se mantendrá equilibrada alrededor de ${projectedHrv7d} ms dentro de la banda SWC, sin señales de desacople parasimpático.`;
+    riskTitle = 'Tendencia estable de la HRV';
+    riskDescription = `Pendiente neutra (${(slopeDaily >= 0 ? '+' : '') + (slopeDaily).toFixed(2)} ms/día); proyección a 7 días de ${projectedHrv7d} ms dentro de tu banda normal (${fit}).`;
     riskBadgeColor = 'bg-cyan-500/20 text-cyan-400 border-cyan-500/40';
-    recommendedAction = 'Mantener Carga Programada (Sobrecarga Progresiva Normal)';
-    recommendedLoadAdjustmentPct = 0;
-    coachPrescription = `Coach Miguel: "El estímulo de entrenamiento está perfectamente emparejado con tu tasa de recuperación. Mantén las sesiones programadas según el plan Uphill Athlete sin modificaciones extraordinarias."`;
+    recommendedAction = 'Mantén el plan.';
+    coachPrescription = `Coach Miguel: "Tu HRV está estable. ${TODAY_RULE}"`;
   }
 
   return {

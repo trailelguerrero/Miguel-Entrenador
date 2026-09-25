@@ -5,6 +5,7 @@ import { localDateKey } from './utils/trainingLoad';
 import { buildBrainContext, summarizeWeekWorkouts } from './brain/context';
 import { addPending, isAppliedRule } from './brain/memory';
 import { Navbar } from './components/Navbar';
+import { buildDeload } from './brain/deload';
 import { SuuntoSyncBar } from './components/SuuntoSyncBar';
 import { MorningBanner } from './components/MorningBanner';
 import { CalendarView } from './components/CalendarView';
@@ -307,6 +308,17 @@ export default function App() {
       // Después del perfil, para que los check-ins usen su HRV de referencia
       const summary = StorageService.mergeSuuntoSync(res.workouts || [], res.checkIns || []);
       setWorkouts(StorageService.getWorkouts());
+
+      // Banda de pecho: si Suunto registró ZoneSense en los últimos 30 días, la llevas
+      // (lo que hayas indicado a mano no se toca). Sin ZoneSense no se deduce "no".
+      const since30 = addDaysKey(localDateKey(), -30);
+      const zsRecent = (res.workouts || []).some((w: Workout) => w.date >= since30 && !!w.zoneSenseBreakdown);
+      const cur = StorageService.getProfile();
+      if (zsRecent && cur.hasChestStrapSource !== 'manual' && cur.hasChestStrap !== true) {
+        const withStrap = { ...cur, hasChestStrap: true, hasChestStrapSource: 'suunto' as const };
+        setProfile(withStrap);
+        StorageService.saveProfile(withStrap);
+      }
       setTodayCheckIn(StorageService.getTodayCheckIn());
 
       const message = `${res.message} Nuevos: ${summary.addedWorkouts} entrenos añadidos, ${summary.completedPlanned} sesiones planificadas completadas, ${summary.checkInsAdded} check-ins.`;
@@ -408,100 +420,29 @@ export default function App() {
   };
 
   const handleScheduleDeload = (startDateStr?: string) => {
-    // 4 sesiones regenerativas de descarga, en ZoneSense verde muy cómodo.
-    // Empiezan en la fecha pedida o, si no se indica, dentro de 2 días.
-    const startKey = startDateStr || addDaysKey(localDateKey(), 2);
-    
-    const deloadWorkouts: Workout[] = [
-      {
-        id: `deload-w1-${Date.now()}`,
-        date: addDaysKey(startKey, 0),
-        title: 'Microciclo Descarga: Rodaje Regenerativo Z1 Suave',
-        type: 'easy_run',
-        plannedDurationMin: 35,
-        plannedDistanceKm: 5.2,
-        plannedElevationGainM: 80,
-        zoneSenseTarget: 'Regenerativo (verde, muy suave)',
-        description: 'Microciclo de Descarga prescrito por Miguel. Rodaje 100% regenerativo sin impacto articular ni pendientes pronunciadas.',
-        personalizedReasoning: 'Reducción del 45% del volumen para permitir rebote del sistema nervioso parasimpático tras la sobrecarga acumulada del Mesociclo 2.',
-        learnedAdjustment: 'Prohibidas las subidas pronunciadas y el trabajo excéntrico de bajada. Mantener respiración nasal constante.',
-        warmup: '5 min caminando + rotaciones articulares.',
-        mainSet: '25 min de trote muy cómodo sobre hierba o tierra batida. FC < 130 bpm.',
-        cooldown: '5 min caminando descalzo.',
-        completed: false,
-      },
-      {
-        id: `deload-w2-${Date.now() + 1}`,
-        date: addDaysKey(startKey, 2),
-        title: 'Microciclo Descarga: Fartlek Dinámico de Movilidad & Soltura',
-        type: 'easy_run',
-        plannedDurationMin: 40,
-        plannedDistanceKm: 6.0,
-        plannedElevationGainM: 100,
-        zoneSenseTarget: 'Regenerativo (verde, muy suave)',
-        description: 'Cambios sutiles de cadencia (175-180 ppm) para soltar piernas sin activar la glucólisis ni elevar el cortisol.',
-        personalizedReasoning: 'Activa la propiocepción y la elasticidad fascial sin estrés metabólico.',
-        learnedAdjustment: '3 series de sóleo excéntrico en escalón 3-1-1 al terminar para mantener sano el tendón de Aquiles.',
-        warmup: '10 min trote suave.',
-        mainSet: '4 bloques de [1 min zancada alegre y relajada < 132 bpm / 4 min trote muy suave < 120 bpm].',
-        cooldown: '10 min caminando + estiramientos de cadera y sóleos.',
-        completed: false,
-      },
-      {
-        id: `deload-w3-${Date.now() + 2}`,
-        date: addDaysKey(startKey, 4),
-        title: 'Microciclo Descarga: Rodaje Asimilación & Respiración Nasal',
-        type: 'easy_run',
-        plannedDurationMin: 45,
-        plannedDistanceKm: 6.8,
-        plannedElevationGainM: 120,
-        zoneSenseTarget: 'Regenerativo (verde, muy suave)',
-        description: 'Sesión aeróbica de baja tensión para consolidar las adaptaciones mitocondriales del bloque anterior.',
-        personalizedReasoning: 'Consolidación de la base aeróbica y depósitos de glucógeno.',
-        warmup: '8 min caminando.',
-        mainSet: '32 min continuos en ZoneSense verde y muy cómodo. Hidratación con 400 mg de sales.',
-        cooldown: '5 min marcha relajada.',
-        completed: false,
-      },
-      {
-        id: `deload-w4-${Date.now() + 3}`,
-        date: addDaysKey(startKey, 6),
-        title: 'Microciclo Descarga: Rodaje Corto & Test de Sensaciones',
-        type: 'easy_run',
-        plannedDurationMin: 50,
-        plannedDistanceKm: 7.5,
-        plannedElevationGainM: 150,
-        zoneSenseTarget: 'Regenerativo (verde, muy suave)',
-        description: 'Cierre del microciclo de descarga. Evaluación de recuperación muscular y pulso basal matutino.',
-        personalizedReasoning: 'Confirmación de recuperación parasimpática antes de iniciar el siguiente mesociclo de resistencia muscular.',
-        warmup: '10 min trote suave.',
-        mainSet: '35 min rodaje cómodo por senderos cómodos.',
-        cooldown: '5 min caminando descalzo.',
-        completed: false,
-      }
-    ];
-
-    deloadWorkouts.forEach(w => StorageService.addOrUpdateWorkout(w));
+    // Descarga generada por el código con la política del motor (src/brain/deload.ts):
+    // tus sesiones planificadas al 75 % y sin intensidad, sin pulsaciones ni cifras inventadas.
+    const startKey = startDateStr || addDaysKey(localDateKey(), 1);
+    const deload = buildDeload(StorageService.getWorkouts(), startKey);
+    if (!deload.workouts.length) {
+      showToast({ type: 'warning', title: 'Descarga no generada', message: deload.message, duration: 8000 });
+      return;
+    }
+    deload.workouts.forEach((w) => StorageService.addOrUpdateWorkout(w));
     setWorkouts(StorageService.getWorkouts());
 
     const msg: ChatMessage = {
       id: `deload-msg-${Date.now()}`,
       role: 'assistant',
-      content: `🛡️ **Microciclo de Descarga Programado en tu Calendario**\n\nHe insertado ${deloadWorkouts.length} sesiones regenerativas (${Math.round(deloadWorkouts.reduce((acc, w) => acc + w.plannedDurationMin, 0) / 6) / 10} h en total) a partir del ${startKey}. Con banda de pecho: ZoneSense en verde y muy cómodo todo el tiempo. Sin banda: claramente por debajo de tu umbral aeróbico por FC${profile.aetHr ? ` (${profile.aetHr} ppm)` : ''}.\n\nLa idea es dejar que tu HRV vuelva a tu referencia${profile.baselineHrv ? ` (${profile.baselineHrv} ms)` : ''} antes de volver a cargar.`,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      contextType: 'plan_adaptation'
+      content: `🛡️ **Semana de descarga en tu calendario**\n\n${deload.message} Con banda de pecho: ZoneSense en verde todo el tiempo. Sin banda: ${profile.aetHr ? 'por debajo de tu umbral aeróbico medido' : 'ritmo en el que puedas hablar'}.\n\nLo que toque cada día lo sigue decidiendo el semáforo de la mañana.`,
+      timestamp: new Date().toISOString(),
+      contextType: 'plan_adaptation',
     };
     const updatedMsgs = [...chatMessages, msg];
     setChatMessages(updatedMsgs);
     StorageService.saveChatMessages(updatedMsgs);
 
-    showToast({
-      type: 'info',
-      title: 'Microciclo de Descarga Programado',
-      message: '4 sesiones regenerativas (Z1 sub-130 bpm, -45% volumen) añadidas al calendario.',
-      duration: 5000,
-    });
-
+    showToast({ type: 'info', title: 'Descarga programada', message: deload.message, duration: 6000 });
     setActiveTab('calendar');
   };
 
@@ -637,7 +578,7 @@ Tus células y tu sistema nervioso autónomo están pidiendo tregua. No fuerces 
         profile,
         targetRace,
         monday,
-        'Base Aeróbica Estricta & Preparación para Transvulcania 2027',
+        `Base aeróbica estricta y preparación para ${targetRace.name}`,
         historyDoc,
         coachMemory,
         getBrainContext(),
@@ -648,6 +589,17 @@ Tus células y tu sistema nervioso autónomo están pidiendo tregua. No fuerces 
           sodiumProfile: heat?.sodiumLossProfile ?? null,
         }
       );
+
+      // Plan rechazado por el contrato (estructura imposible de reparar sin inventar): no se guarda nada
+      if (plan.status === 'rejected') {
+        showToast({
+          type: 'error',
+          title: 'Plan no guardado',
+          message: `${plan.error || 'El plan no cumple la estructura obligatoria.'} Motivos: ${(plan.issues || []).join('; ')}. Vuelve a generarlo.`,
+          duration: 9000,
+        });
+        return;
+      }
 
       // Fechas de la semana (lunes..domingo) en hora local
       const sunday = addDaysKey(monday, 6);
@@ -687,9 +639,8 @@ Tus células y tu sistema nervioso autónomo están pidiendo tregua. No fuerces 
         ...(droppedDates.length ? [`Sesiones sin fecha válida descartadas: ${droppedDates.join(', ')}.`] : []),
       ];
       const notesLine = allNotes.length ? `\n\nCorrecciones automáticas del sistema: ${allNotes.join(' ')}` : '';
-      const warningLine = structure.issues.length
-        ? `\n\n⚠️ El plan generado no cumple la regla 3 (o 2) + tirada larga: ${structure.issues.join('; ')}. Revísalo o vuelve a generarlo.`
-        : '';
+      // El servidor ya ha comprobado la estructura: si no se cumpliera, el plan no llegaría aquí
+      const warningLine = structure.issues.length ? `\n\n⚠️ Revisa la semana: ${structure.issues.join('; ')}.` : '';
 
       // Add Miguel's summary message to the chat
       const chatMsg: ChatMessage = {
@@ -708,7 +659,11 @@ ${structureLine} Ya puedes ver los entrenamientos en tu calendario.${warningLine
       setChatMessages(updatedChat);
       StorageService.saveChatMessages(updatedChat);
 
-      alert('¡Semana planificada por Miguel con éxito! Revisa tu calendario.');
+      showToast({
+        type: 'success',
+        title: plan.status === 'repaired' ? 'Semana planificada (con ajustes)' : 'Semana planificada',
+        message: plan.status === 'repaired' ? 'El sistema ha corregido detalles del plan; los tienes en el chat.' : 'Revisa tu calendario.',
+      });
     } catch (err: any) {
       // El aviso "Error de API de IA" (toast + banner) lo muestra apiStatus
       console.error('Error al generar la semana:', err);

@@ -135,8 +135,8 @@ export const ACWRVisualization: React.FC<ACWRVisualizationProps> = ({
             <span>Ratio de Carga Aguda:Crónica (ACWR)</span>
           </h3>
           <p className="text-xs text-zinc-400 mt-1 max-w-2xl leading-relaxed">
-            Monitorea el equilibrio entre la fatiga reciente (últimos 7 días) y la preparación muscular acumulada (últimos 28 días) para 
-            <strong> prevenir el sobreentrenamiento</strong> y reducir el riesgo de lesión antes de Transvulcania 73K.
+            Compara tu carga de los últimos 7 días con tu media de los últimos 28. Es un indicador <strong>descriptivo</strong>: ayuda a ver
+            subidas bruscas de carga, pero no predice lesiones por sí solo.
           </p>
         </div>
 
@@ -209,23 +209,19 @@ export const ACWRVisualization: React.FC<ACWRVisualizationProps> = ({
             </div>
 
             <div className="space-y-2">
-              <strong className="text-zinc-100 block">Zonas Clave de Riesgo de Lesión:</strong>
+              <strong className="text-zinc-100 block">Cómo leer el ratio (descriptivo, no predice lesiones):</strong>
               <div className="space-y-1.5 text-[11px]">
                 <div className="flex items-center justify-between bg-sky-500/10 border border-sky-500/20 p-2 rounded-lg text-sky-300">
-                  <span><strong>&lt; 0.80: Infracarga</strong> (Desentrenamiento / Pérdida de adaptaciones)</span>
-                  <span className="font-mono font-bold">Riesgo &lt; 8%</span>
+                  <span><strong>&lt; 0,80: carga aguda baja</strong> (descarga o menos entreno que tu media de 4 semanas)</span>
                 </div>
                 <div className="flex items-center justify-between bg-emerald-500/10 border border-emerald-500/30 p-2 rounded-lg text-emerald-300">
-                  <span><strong>0.80 - 1.30: "The Sweet Spot"</strong> (Máxima adaptación, mínimo sobreentrenamiento)</span>
-                  <span className="font-mono font-bold">Riesgo &lt; 10%</span>
+                  <span><strong>0,80–1,30: carga aguda similar a la habitual</strong></span>
                 </div>
                 <div className="flex items-center justify-between bg-amber-500/10 border border-amber-500/20 p-2 rounded-lg text-amber-300">
-                  <span><strong>1.30 - 1.50: Zona de Alerta</strong> (Incremento acelerado de fatiga)</span>
-                  <span className="font-mono font-bold">Riesgo 15-25%</span>
+                  <span><strong>1,30–1,50: carga aguda elevada</strong> (bastante más que tu media)</span>
                 </div>
                 <div className="flex items-center justify-between bg-rose-500/10 border border-rose-500/20 p-2 rounded-lg text-rose-300">
-                  <span><strong>&gt; 1.50: Zona de Peligro</strong> (Riesgo exponencial de rotura o fatiga crónica)</span>
-                  <span className="font-mono font-bold">Riesgo &gt; 35-50%</span>
+                  <span><strong>&gt; 1,50: carga aguda muy elevada</strong> (más del 50 % sobre tu media)</span>
                 </div>
               </div>
             </div>
@@ -339,7 +335,7 @@ export const ACWRVisualization: React.FC<ACWRVisualizationProps> = ({
               {summary.zoneLabel}
             </span>
             <div className="text-[11px] text-zinc-400 font-medium">
-              Riesgo relativo (orientativo, sin % validado para ti): <strong className={summary.zoneColor}>{summary.injuryRiskPctFormatted}</strong>
+              Lectura: <strong className={summary.zoneColor}>{summary.injuryRiskPctFormatted}</strong>
             </div>
           </div>
         </div>
@@ -437,7 +433,7 @@ export const ACWRVisualization: React.FC<ACWRVisualizationProps> = ({
             <div className="flex items-center gap-2.5 text-zinc-300">
               <ShieldAlert className="w-4 h-4 text-emerald-400 shrink-0" />
               <span>
-                <strong>Regla de Tim Gabbett:</strong> Para maximizar la adaptación sin caer en sobreentrenamiento, mantén el ratio ACWR entre <strong>0.80 y 1.30</strong>.
+                <strong>Referencia (Gabbett):</strong> un ratio entre <strong>0,80 y 1,30</strong> indica que tu carga reciente se parece a la habitual. No es un predictor de lesiones: interprétalo junto con HRV, sueño, sensaciones y dolor.
               </span>
             </div>
             {summary.currentAcwr > 1.30 && onScheduleDeload && (
@@ -472,15 +468,15 @@ export const ACWRVisualization: React.FC<ACWRVisualizationProps> = ({
           <div className="flex flex-wrap items-center gap-3 text-[11px]">
             <div className="flex items-center gap-1.5">
               <div className="w-3 h-3 rounded bg-emerald-500/30 border border-emerald-500/60" />
-              <span className="text-zinc-400">Sweet Spot (0.8 - 1.3)</span>
+              <span className="text-zinc-400">Similar a la habitual (0,8–1,3)</span>
             </div>
             <div className="flex items-center gap-1.5">
               <div className="w-3 h-3 rounded bg-amber-500/20 border border-amber-500/50" />
-              <span className="text-zinc-400">Alerta (1.3 - 1.5)</span>
+              <span className="text-zinc-400">Elevada (1,3–1,5)</span>
             </div>
             <div className="flex items-center gap-1.5">
               <div className="w-3 h-1 bg-rose-500" />
-              <span className="text-rose-400 font-bold">&gt;1.5 Peligro</span>
+              <span className="text-rose-400 font-bold">&gt;1,5 muy elevada</span>
             </div>
           </div>
         </div>

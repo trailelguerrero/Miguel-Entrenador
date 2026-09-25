@@ -710,11 +710,13 @@ export const WeeklyTssVsHrvWidget: React.FC<WeeklyTssVsHrvWidgetProps> = ({
                   <span className={`px-2 py-0.2 rounded text-[10px] font-bold uppercase ${
                     hoveredPoint.status === 'non_functional_overreaching' ? 'bg-rose-500/20 text-rose-400' :
                     hoveredPoint.status === 'functional_overreaching' ? 'bg-amber-500/20 text-amber-400' :
-                    hoveredPoint.status === 'recovery_deload' ? 'bg-cyan-500/20 text-cyan-400' : 'bg-emerald-500/20 text-emerald-400'
+                    hoveredPoint.status === 'recovery_deload' ? 'bg-cyan-500/20 text-cyan-400' :
+                    hoveredPoint.status === 'insufficient_data' ? 'bg-zinc-700/40 text-zinc-300' : 'bg-emerald-500/20 text-emerald-400'
                   }`}>
                     {hoveredPoint.status === 'non_functional_overreaching' ? 'Fatiga acumulada' :
-                     hoveredPoint.status === 'functional_overreaching' ? 'Sobre-esfuerzo FOR' :
-                     hoveredPoint.status === 'recovery_deload' ? 'Descarga / Frescura' : 'Asimilación Óptima'}
+                     hoveredPoint.status === 'functional_overreaching' ? 'Carga alta asumida' :
+                     hoveredPoint.status === 'recovery_deload' ? 'Descarga / recuperación' :
+                     hoveredPoint.status === 'insufficient_data' ? 'Sin datos de HRV' : 'Estable'}
                   </span>
                 </div>
                 <span className="text-zinc-400 text-[11px] block">

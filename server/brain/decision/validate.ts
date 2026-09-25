@@ -9,7 +9,8 @@ import { resolveIntensityPrescription, type IntensityPrescription } from '../../
 import { normalizeZoneSenseTarget, TARGET_COLOR, colorRank } from '../../../src/brain/zonesense.js';
 import type { ReadinessState } from '../../../src/brain/readiness.js';
 import { verifyTodayReadiness } from '../context.js';
-import { analyzeWeekStructure } from '../../../src/utils/weekStructure.js';
+import { analyzeWeekStructure, addDaysKey } from '../../../src/utils/weekStructure.js';
+import { allowedTypes, easySessionText, mentionsIntensity, RUN_TYPES, scaleVolume, toRest } from '../../../src/brain/workoutContract.js';
 
 /** Evidencia nutricional real del atleta (la envía el cliente). */
 export interface NutritionEvidence {
@@ -17,8 +18,10 @@ export interface NutritionEvidence {
   maxCarbsPerHourG?: number | null;
   /** Tasa de sudoración medida (L/h). */
   sweatRateLph?: number | null;
-  /** Perfil de pérdida de sodio declarado. */
+  /** Perfil de pérdida de sodio declarado (cualitativo: NO basta para dar una cifra). */
   sodiumProfile?: string | null;
+  /** Rango de sodio por hora VALIDADO para el atleta (test de sudor). Sin él, sodio = null. */
+  sodiumRangeMgPerHour?: { min: number; max: number } | null;
 }
 
 const VALID_SOURCES: IntensitySource[] = ['zonesense', 'heart_rate_measured', 'rpe', 'terrain', 'unknown'];
@@ -49,13 +52,19 @@ function fixIntensity(w: any, p: IntensityPrescription, notes: string[], label: 
       notes.push(`${label}: tope de FC ${w.targetHrMax} bajado a tu umbral aeróbico medido (${p.aetHr}).`);
       w.targetHrMax = p.aetHr;
     }
+    // Nunca por encima de tu FC máxima medida
+    if (p.maxHr != null && w.targetHrMax != null && w.targetHrMax > p.maxHr) {
+      notes.push(`${label}: tope de FC ${w.targetHrMax} por encima de tu FC máxima medida (${p.maxHr}): se ajusta.`);
+      w.targetHrMax = p.maxHr;
+    }
     if (w.targetHrMin != null && w.targetHrMax != null && w.targetHrMin > w.targetHrMax) w.targetHrMin = null;
   }
 
   let src: IntensitySource | undefined = VALID_SOURCES.includes(w.intensitySource) ? w.intensitySource : undefined;
   if (src === 'heart_rate_measured' && !p.hrAllowed) src = undefined;
-  if (src === 'zonesense' && !target) src = undefined;
-  w.intensitySource = src ?? (target ? 'zonesense' : p.hrAllowed && w.targetHrMax != null ? 'heart_rate_measured' : 'rpe');
+  // ZoneSense solo como fuente si hay objetivo de color Y consta que lleva banda
+  if (src === 'zonesense' && (!target || p.chestStrap !== 'yes')) src = undefined;
+  w.intensitySource = src ?? (target && p.chestStrap === 'yes' ? 'zonesense' : p.hrAllowed && w.targetHrMax != null ? 'heart_rate_measured' : 'rpe');
 }
 
 function fixNutrition(w: any, ev: NutritionEvidence | undefined, notes: string[], label: string) {
@@ -75,10 +84,19 @@ function fixNutrition(w: any, ev: NutritionEvidence | undefined, notes: string[]
   };
   clean('plannedCarbsPerHourG', pos(ev?.maxCarbsPerHourG) ? ev!.maxCarbsPerHourG! : null);
   clean('plannedFluidsPerHourMl', pos(ev?.sweatRateLph) ? Math.round(ev!.sweatRateLph! * 1000) : null);
-  // Sodio: solo con tasa de sudoración medida y perfil de sal declarado; sin tope numérico propio
-  const sodiumOk = pos(ev?.sweatRateLph) && !!ev?.sodiumProfile;
-  if (!sodiumOk && pos(w.plannedSodiumPerHourMg)) notes.push(`${label}: sodio quitado (falta tasa de sudoración o perfil de sal).`);
-  if (!sodiumOk || !pos(w.plannedSodiumPerHourMg)) w.plannedSodiumPerHourMg = null;
+  // Sodio: SOLO dentro de un rango medido para ti. Un perfil cualitativo ("sudador salado")
+  // no genera una cifra: sin rango, sodio = null.
+  const range = ev?.sodiumRangeMgPerHour;
+  const rangeOk = !!range && pos(range.min) && pos(range.max) && range.max >= range.min;
+  if (!pos(w.plannedSodiumPerHourMg)) w.plannedSodiumPerHourMg = null;
+  else if (!rangeOk) {
+    notes.push(`${label}: sodio quitado (no hay un rango de sodio medido para ti).`);
+    w.plannedSodiumPerHourMg = null;
+  } else if (w.plannedSodiumPerHourMg < range!.min || w.plannedSodiumPerHourMg > range!.max) {
+    const clamped = Math.min(range!.max, Math.max(range!.min, w.plannedSodiumPerHourMg));
+    notes.push(`${label}: sodio ${w.plannedSodiumPerHourMg} ajustado a tu rango medido (${range!.min}–${range!.max} mg/h).`);
+    w.plannedSodiumPerHourMg = clamped;
+  }
 }
 
 /** Limpia las sesiones de un plan generado por la IA. */
@@ -92,6 +110,9 @@ export function sanitizePlanWorkouts(
   const notes: string[] = [];
   const out = (Array.isArray(workouts) ? workouts : []).map((raw, i) => {
     const w = { ...raw };
+    for (const k of ['plannedDurationMin', 'plannedDistanceKm', 'plannedElevationGainM', 'targetHrMin', 'targetHrMax']) w[k] = toNumber(w[k]);
+    // Contrato de descanso: sin restos de entreno
+    if (w.type === 'rest') return toRest(w, 'Día de recuperación.');
     const label = w.title || w.date || `sesión ${i + 1}`;
     fixIntensity(w, p, notes, label);
     fixNutrition(w, nutrition, notes, label);
@@ -109,9 +130,11 @@ function toNumber(v: unknown): unknown {
 }
 
 /**
- * Recorta una sesión adaptada a los límites del motor de readiness. Se valida la
- * sesión RESULTANTE (original + cambios de la IA): lo que la IA no devuelve se
- * conserva de la original y también tiene que cumplir los límites.
+ * Recorta una sesión adaptada al CONTRATO DE SESIÓN y a los límites del motor de
+ * readiness (src/brain/workoutContract.ts). Se valida la sesión RESULTANTE (original
+ * + cambios de la IA): lo que la IA no devuelve se conserva de la original y también
+ * tiene que cumplir los límites. No basta con cambiar el tipo o el color: el texto,
+ * la distancia, el desnivel y la nutrición tienen que casar con la sesión permitida.
  */
 export function sanitizeAdaptation(
   adapted: any,
@@ -120,37 +143,78 @@ export function sanitizeAdaptation(
   original?: any,
 ): { adapted: any; corrections: string[] } {
   const base = original && typeof original === 'object' ? original : {};
-  const w = { ...base, ...(adapted && typeof adapted === 'object' ? adapted : {}) };
+  let w: any = { ...base, ...(adapted && typeof adapted === 'object' ? adapted : {}) };
   const corrections: string[] = [];
   const l = state.limits;
-  for (const k of ['plannedDurationMin', 'targetHrMin', 'targetHrMax']) w[k] = toNumber(w[k]);
+  for (const k of ['plannedDurationMin', 'targetHrMin', 'targetHrMax', 'plannedDistanceKm', 'plannedElevationGainM']) w[k] = toNumber(w[k]);
   // Duración no válida de la IA → la de la sesión original (que después se recorta)
   if (!pos(w.plannedDurationMin) && w.plannedDurationMin !== 0 && pos(base.plannedDurationMin)) w.plannedDurationMin = base.plannedDurationMin;
 
-  if (l.mandatoryRest) {
+  const allowed = allowedTypes(state);
+  // 1. Descanso: obligatorio, o el que proponga la IA → contrato de descanso (sin restos de entreno)
+  if (l.mandatoryRest || w.type === 'rest') {
     if (w.type !== 'rest') corrections.push('El motor de readiness exige descanso total: la sesión pasa a descanso.');
-    Object.assign(w, { type: 'rest', plannedDurationMin: 0, targetHrMin: null, targetHrMax: null, zoneSenseTarget: undefined });
-  } else {
-    if (!l.allowIntervals && INTERVAL_TYPES.has(w.type)) {
-      corrections.push(`Sin series hoy (estado ${state.level}): "${w.type}" pasa a rodaje suave.`);
-      w.type = 'easy_run';
-    }
-    if (l.maxDurationMin != null && w.type !== 'rest') {
-      if (!pos(w.plannedDurationMin)) {
-        corrections.push(`Sin duración válida: se fija el máximo de hoy (${l.maxDurationMin} min).`);
-        w.plannedDurationMin = l.maxDurationMin;
-      } else if (w.plannedDurationMin > l.maxDurationMin) {
-        corrections.push(`Duración ${w.plannedDurationMin} min recortada al máximo de hoy (${l.maxDurationMin} min).`);
-        w.plannedDurationMin = l.maxDurationMin;
-      }
-    }
-    const target = normalizeZoneSenseTarget(w.zoneSenseTarget);
-    if (w.type !== 'rest' && (!target || colorRank(TARGET_COLOR[target]) > colorRank(l.maxZoneSense))) {
-      const fallback = state.level === 'red' ? 'Regenerativo (verde, muy suave)' : 'ZoneSense verde (aeróbico)';
-      if (target) corrections.push(`Intensidad "${target}" por encima de lo permitido hoy: pasa a "${fallback}".`);
-      w.zoneSenseTarget = fallback;
+    w = toRest(w, l.mandatoryRest ? `Lo exige el estado de hoy (${state.level}).` : 'Día de recuperación.');
+    return { adapted: w, corrections };
+  }
+
+  // 2. Tipo permitido por la política del nivel
+  let rewrite = false;
+  if (!allowed.includes(w.type)) {
+    const running = RUN_TYPES.includes(w.type);
+    const to = running ? 'easy_run' : 'rest';
+    corrections.push(`"${w.type}" no está permitido hoy (estado ${state.level}): pasa a ${to === 'rest' ? 'descanso' : 'rodaje suave'}.`);
+    if (to === 'rest') return { adapted: toRest(w, `No toca "${w.type}" con el estado de hoy (${state.level}).`), corrections };
+    w.type = 'easy_run';
+    rewrite = true;
+  }
+
+  // 3. Duración máxima (la distancia y el desnivel se recortan en proporción)
+  if (l.maxDurationMin != null) {
+    if (!pos(w.plannedDurationMin)) {
+      corrections.push(`Sin duración válida: se fija el máximo de hoy (${l.maxDurationMin} min).`);
+      w.plannedDurationMin = l.maxDurationMin;
+    } else if (w.plannedDurationMin > l.maxDurationMin) {
+      corrections.push(`Duración ${w.plannedDurationMin} min recortada al máximo de hoy (${l.maxDurationMin} min).`);
+      scaleVolume(w, w.plannedDurationMin, l.maxDurationMin);
+      w.plannedDurationMin = l.maxDurationMin;
     }
   }
+
+  // 4. Intensidad: color máximo del día (en rojo, regenerativo)
+  const target = normalizeZoneSenseTarget(w.zoneSenseTarget);
+  const redOrUnknown = state.level === 'red' || state.level === 'unknown';
+  const fallback = state.level === 'red' ? 'Regenerativo (verde, muy suave)' : 'ZoneSense verde (aeróbico)';
+  if (!target || colorRank(TARGET_COLOR[target]) > colorRank(l.maxZoneSense) || (state.level === 'red' && target !== fallback)) {
+    if (target && target !== fallback) corrections.push(`Intensidad "${target}" por encima de lo permitido hoy: pasa a "${fallback}".`);
+    w.zoneSenseTarget = fallback;
+  }
+
+  // 5. Textos: sin intensidad permitida, un texto de carrera que la describe se reescribe desde el código
+  const texts = [w.warmup, w.mainSet, w.cooldown, w.description];
+  if (!l.allowIntervals && RUN_TYPES.includes(w.type) && texts.some(mentionsIntensity)) {
+    corrections.push('El texto de la sesión describía intensidad que hoy no está permitida: se reescribe.');
+    rewrite = true;
+  }
+  if (rewrite) {
+    const mode = state.level === 'red' ? 'regenerative' : w.type === 'long_mountain_run' ? 'long' : 'easy';
+    Object.assign(w, easySessionText(w.plannedDurationMin, mode), {
+      description: `Sesión ajustada por el motor de readiness (estado ${state.level}).`,
+      strengthExercises: null,
+      terrainRecommendation: mode === 'regenerative' ? 'Terreno llano y blando.' : null,
+      // La nutrición era de la sesión original
+      plannedCarbsPerHourG: null,
+      plannedFluidsPerHourMl: null,
+      plannedSodiumPerHourMg: null,
+    });
+  }
+  // En rojo o sin datos: regenerativo o suave y llano, sin desnivel ni distancia heredados
+  if (redOrUnknown) {
+    if (pos(w.plannedElevationGainM)) corrections.push(`Sin desnivel hoy (estado ${state.level}).`);
+    w.plannedElevationGainM = null;
+    w.plannedDistanceKm = null;
+  }
+
   fixIntensity(w, resolveIntensityPrescription(profile), corrections, w.title || 'Sesión adaptada');
   return { adapted: w, corrections };
 }
@@ -178,4 +242,72 @@ export function applyTodayReadinessToPlan(
   const out = [...workouts];
   out[idx] = adapted;
   return { workouts: out, corrections: corrections.map((c) => `Hoy (${today}): ${c}`) };
+}
+
+export type PlanContractStatus = 'valid' | 'repaired' | 'rejected';
+
+const PLAN_TYPES = new Set(['easy_run', 'long_mountain_run', 'muscular_endurance', 'hill_intervals', 'intensity_run', 'strength_core', 'drift_test', 'cross_training', 'rest']);
+const isRunning = (w: any) => RUN_TYPES.includes(w?.type);
+
+/**
+ * Contrato del PLAN SEMANAL. No se guarda un plan que incumpla la estructura:
+ *   - todas las fechas dentro de la semana (lunes–domingo) y tipos válidos;
+ *   - como mucho una sesión de carrera por día;
+ *   - 2 o 3 sesiones entre semana y UNA tirada larga en sábado o domingo, con
+ *     duración, distancia y desnivel positivo (una tirada larga sin D+ no vale);
+ *   - ninguna tirada larga entre semana.
+ * Lo que se puede arreglar sin inventar (descansos duplicados) se REPARA; el resto
+ * se RECHAZA con los motivos.
+ */
+export function validatePlanContract(workouts: any[], weekMonday: string): { status: PlanContractStatus; workouts: any[]; issues: string[]; repairs: string[] } {
+  const sunday = addDaysKey(weekMonday, 6);
+  const issues: string[] = [];
+  const repairs: string[] = [];
+  let out = Array.isArray(workouts) ? [...workouts] : [];
+  if (!out.length) return { status: 'rejected', workouts: out, issues: ['el plan no trae sesiones'], repairs };
+
+  for (const w of out) {
+    const label = w?.title || w?.date || 'sesión';
+    if (!w?.date || w.date < weekMonday || w.date > sunday) issues.push(`"${label}" tiene una fecha fuera de la semana (${w?.date ?? 'sin fecha'})`);
+    if (!PLAN_TYPES.has(w?.type)) issues.push(`"${label}" tiene un tipo no válido (${w?.type})`);
+    if (w?.type !== 'rest' && !pos(w?.plannedDurationMin)) issues.push(`"${label}" no tiene duración`);
+  }
+
+  // Descansos duplicados el mismo día: se deja uno (reparación)
+  const restDays = new Set<string>();
+  out = out.filter((w) => {
+    if (w?.type !== 'rest') return true;
+    if (restDays.has(w.date)) {
+      repairs.push(`descanso duplicado el ${w.date} eliminado`);
+      return false;
+    }
+    restDays.add(w.date);
+    return true;
+  });
+  // Un descanso y una sesión el mismo día: sobra el descanso
+  const trainingDays = new Set(out.filter((w) => w?.type !== 'rest').map((w) => w.date));
+  out = out.filter((w) => {
+    if (w?.type === 'rest' && trainingDays.has(w.date)) {
+      repairs.push(`descanso del ${w.date} eliminado (ese día hay sesión)`);
+      return false;
+    }
+    return true;
+  });
+
+  // Como mucho una sesión de carrera por día
+  const runsByDay = new Map<string, number>();
+  for (const w of out.filter(isRunning)) runsByDay.set(w.date, (runsByDay.get(w.date) ?? 0) + 1);
+  for (const [d, n] of runsByDay) if (n > 1) issues.push(`${n} sesiones de carrera el ${d}`);
+
+  // Estructura 3 (o 2) + tirada larga
+  const structure = analyzeWeekStructure(out as Workout[], weekMonday);
+  issues.push(...structure.issues);
+  const long = out.find((w) => w.type === 'long_mountain_run' && w.date === structure.longRunDate);
+  if (long) {
+    if (!pos(long.plannedDistanceKm)) issues.push('la tirada larga no tiene distancia');
+    if (!pos(long.plannedElevationGainM)) issues.push('la tirada larga no tiene desnivel positivo');
+  }
+
+  const status: PlanContractStatus = issues.length ? 'rejected' : repairs.length ? 'repaired' : 'valid';
+  return { status, workouts: out, issues, repairs };
 }
