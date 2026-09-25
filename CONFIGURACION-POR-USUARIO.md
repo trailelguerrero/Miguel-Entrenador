@@ -414,7 +414,7 @@ El banner desaparece solo con la siguiente respuesta correcta. También puedes c
 Con Supabase configurado, la app gana dos cosas (sin él, todo funciona igual que antes):
 
 - **Biblioteca de Miguel (RAG).** Subes documentos de referencia (manuales, apuntes, planes de tu entrenador…). Se trocean, se convierten en *embeddings* y se guardan en Supabase (Postgres + pgvector). En cada mensaje del chat se buscan los fragmentos más parecidos a tu pregunta y se le pasan a Miguel, que los cita como `[B1]`, `[B2]`… Debajo de su respuesta ves de qué documento salió. **No es un modelo entrenado**: Miguel solo "sabe" lo que hay en esos fragmentos, y nunca los usa como tus datos fisiológicos (esos siguen viniendo solo de Suunto, tu .md y tus tests).
-- **Conversaciones guardadas.** Cada pregunta y respuesta del chat se guarda en Supabase (tablas `chat_sessions` y `chat_messages`), así no se pierden aunque borres el navegador o cambies de móvil. El chat que ves en la app sigue siendo la copia del navegador; **Reiniciar conversación** empieza una conversación nueva en Supabase.
+- **Conversaciones guardadas, cuando tú quieras.** El chat **no** se conecta a Supabase por su cuenta: solo se guarda al pulsar **Guardar en Supabase** (ver 10.6). Desde cualquier móvil u ordenador puedes abrir **Conversaciones guardadas** y cargar una. Borrar el chat en el móvil (papelera) **nunca** borra nada de Supabase.
 
 ### 10.1 Crear el proyecto y las tablas en Supabase
 
@@ -432,7 +432,7 @@ En Supabase: **Project Settings → API** (o **Data API** / **API Keys**, según
 |---|---|---|
 | `SUPABASE_URL` | **Project URL** (`https://xxxx.supabase.co`) | ✅ Sí |
 | `SUPABASE_SERVICE_ROLE_KEY` | La clave **service_role** (secreta). ⚠️ No la clave `anon`/publishable. | ✅ Sí |
-| `INGEST_SECRET` | Un secreto largo inventado por ti (ver abajo). Es la clave para añadir o borrar documentos. | ✅ Sí, para subir documentos |
+| `INGEST_SECRET` | Un secreto largo inventado por ti (ver abajo). Es la clave de Supabase de la app: sirve para la biblioteca y para guardar/cargar conversaciones. | ✅ Sí |
 | `EMBEDDING_PROVIDER` | `gemini` (por defecto) u `openai` | ❌ No |
 | `GEMINI_EMBEDDING_MODEL` | Modelo de embeddings de Gemini. Por defecto `gemini-embedding-001`. | ❌ No |
 | `OPENAI_API_KEY`, `OPENAI_EMBEDDING_MODEL` | Solo con `EMBEDDING_PROVIDER=openai`. Modelo por defecto `text-embedding-3-small`. | ❌ No |
@@ -454,7 +454,7 @@ Marca **Production**, **Preview** y **Development** y haz **Redeploy** (3.3).
 ### 10.4 Subir documentos
 
 1. **Coach → Biblioteca de Miguel**.
-2. Escribe la clave (`INGEST_SECRET`) y pulsa **Ver documentos**. Solo se recuerda mientras la pestaña esté abierta.
+2. Escribe la clave (`INGEST_SECRET`) y pulsa **Ver documentos**. Marca **Recordar en este dispositivo** para no tener que escribirla cada vez (solo en tu móvil/ordenador personal).
 3. Pon un **título**, opcionalmente la **fuente**, y carga un archivo `.md`/`.txt` o pega el texto. Pulsa **Guardar en la biblioteca**.
    - Máximo 200.000 caracteres por documento: los libros largos, en partes ("Libro X – parte 1", "parte 2"…).
    - Subir otra vez un documento con el **mismo título lo sustituye** (no se duplica).
@@ -474,3 +474,13 @@ curl -X POST https://<tu-app>/api/knowledge/ingest \
 - **Chat (quien redacta las respuestas):** se cambia como siempre con `AI_PROVIDER` (sección 5). No afecta a la biblioteca.
 - **Embeddings (quien convierte los documentos en vectores):** se cambia con `EMBEDDING_PROVIDER` (`gemini` u `openai`) y su modelo. Los vectores de modelos distintos no son comparables: cada fragmento guarda con qué modelo se creó y Miguel solo busca entre los del modelo actual. **Tras cambiar de proveedor o de modelo de embeddings, vuelve a subir los documentos** (la lista de la biblioteca avisa de los que se quedaron con el modelo anterior).
 - Añadir otro proveedor de embeddings es añadir una entrada en `server/rag/embeddings.ts`; la columna de Supabase admite vectores de 1536 dimensiones.
+
+### 10.6 Guardar y cargar conversaciones
+
+Encima del chat de Miguel hay dos botones:
+
+- **Guardar en Supabase (N)**: sube los N mensajes que todavía solo están en este dispositivo. Guardar dos veces no duplica nada: cada mensaje se guarda una sola vez. Mientras no lo pulses, la app no escribe nada en Supabase.
+- **Conversaciones guardadas**: lista las conversaciones de Supabase (título = primera pregunta, nº de mensajes y fecha). Al tocar una, sustituye al chat del dispositivo; lo que escribas después se añade a esa misma conversación cuando pulses **Guardar**. Si tienes mensajes sin guardar, te avisa antes.
+- **Papelera del chat**: borra la conversación **solo de este dispositivo** (avisa si hay mensajes sin guardar). En Supabase no se borra nada; la próxima vez que guardes se crea una conversación nueva. La app no tiene ninguna opción para borrar conversaciones de Supabase: si algún día quieres hacerlo, desde el panel de Supabase (**Table Editor → chat_sessions**, borrar la fila; sus mensajes se borran con ella).
+
+La primera vez te pide la clave (`INGEST_SECRET`), la misma que la biblioteca.
