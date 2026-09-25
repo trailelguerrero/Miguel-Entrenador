@@ -171,19 +171,69 @@ export function checkRaceCoherence(fields: VerifiedRaceInfo['fields'], unverifie
  * toda cifra seguida de km / m / metros / D+ debe coincidir (±1) con un dato verificado.
  */
 /** Cifras del objetivo principal (Transvulcania 2027) que Miguel puede citar al comparar. */
-export const TARGET_RACE_NUMBERS = [73, 4350, 4057, 2426, 2400];
+export const TARGET_RACE = { distanceKm: 73, metres: [4350, 4057, 2426, 2400] };
 
-export function adviceUsesOnlyVerifiedNumbers(advice: string, v: VerifiedRaceInfo, extraAllowed: number[] = TARGET_RACE_NUMBERS): boolean {
-  const allowed = [...extraAllowed, ...RACE_NUMERIC_FIELDS.map((f) => v.fields[f]?.value).filter((x): x is number => typeof x === 'number')];
-  // Cifras de altitud verificadas (texto "200 - 2426 m") también valen
+const thousands = (s: string) => s.normalize('NFKC').replace(/(\d)[.,\s'’](\d{3})(?!\d)/g, '$1$2');
+const FIGURE_RE = /(\d+(?:[.,]\d+)?)\s*(km|kms|kil[oó]metros|m\b|metros|mts|d\+|d-)/gi;
+
+/**
+ * Cifras que el consejo puede citar, por unidad: las verificadas, las de la
+ * Transvulcania y lo que se deriva de ellas al compararlas (diferencias, sumas
+ * y metros de desnivel por km).
+ */
+export function allowedAdviceFigures(v: VerifiedRaceInfo, target = TARGET_RACE): { km: number[]; m: number[] } {
+  const val = (f: RaceField) => (typeof v.fields[f]?.value === 'number' ? (v.fields[f]!.value as number) : null);
+  const dist = val('distanceKm');
+  const km = [target.distanceKm, ...(dist != null ? [dist] : [])];
+  const m = [...target.metres, ...[val('elevationGainM'), val('elevationLossM')].filter((x): x is number => x != null)];
   const alt = v.fields.altitudeRange?.value;
-  if (typeof alt === 'string') for (const m of alt.normalize('NFKC').replace(/(\d)[.,\s'’](\d{3})(?!\d)/g, '$1$2').matchAll(/\d+(?:[.,]\d+)?/g)) allowed.push(Number(m[0].replace(',', '.')));
-  const t = advice.normalize('NFKC').replace(/(\d)[.,\s'’](\d{3})(?!\d)/g, '$1$2');
-  for (const m of t.matchAll(/(\d+(?:[.,]\d+)?)\s*(km|kms|kil[oó]metros|m\b|metros|mts|d\+|d-)/gi)) {
-    const n = Number(m[1].replace(',', '.'));
-    if (!allowed.some((a) => Math.abs(a - n) <= 1)) return false;
+  if (typeof alt === 'string') for (const x of thousands(alt).matchAll(/\d+(?:[.,]\d+)?/g)) m.push(Number(x[0].replace(',', '.')));
+  const derive = (xs: number[]) => {
+    const out = [...xs];
+    for (let i = 0; i < xs.length; i++) for (let j = i + 1; j < xs.length; j++) out.push(Math.abs(xs[i] - xs[j]), xs[i] + xs[j]);
+    return out;
+  };
+  // Desnivel por km ("60 m/km"), de esta carrera y de la Transvulcania
+  const perKm: number[] = [target.metres[0] / target.distanceKm];
+  const gain = val('elevationGainM');
+  if (gain != null && dist) perKm.push(gain / dist);
+  return { km: derive(km), m: [...derive(m), ...perKm] };
+}
+
+/** Una cifra vale si coincide con una permitida (±1 o ±0,5 % por redondeo). */
+const matchesAllowed = (n: number, allowed: number[]) => allowed.some((a) => Math.abs(a - n) <= Math.max(1, a * 0.005));
+
+/** Cifras de km/m de un texto que no se pueden respaldar. */
+export function unverifiedAdviceFigures(text: string, allowed: { km: number[]; m: number[] }): string[] {
+  const bad: string[] = [];
+  for (const x of thousands(text).matchAll(FIGURE_RE)) {
+    const n = Number(x[1].replace(',', '.'));
+    const unit = /^k/i.test(x[2]) ? 'km' : 'm';
+    if (!matchesAllowed(n, allowed[unit])) bad.push(x[0].trim());
   }
-  return true;
+  return bad;
+}
+
+/**
+ * El consejo de Miguel no puede traer cifras de la carrera que no estén verificadas
+ * ni se deriven de ellas. Se quitan SOLO las frases con cifras sin respaldo; si no
+ * queda nada, el consejo es null.
+ */
+export function filterRaceAdvice(advice: string, v: VerifiedRaceInfo, target = TARGET_RACE): { advice: string | null; removed: string[] } {
+  const allowed = allowedAdviceFigures(v, target);
+  const sentences = advice.split(/(?<=[.!?])\s+/).filter((x) => x.trim());
+  const kept: string[] = [];
+  const removed: string[] = [];
+  for (const sentence of sentences) {
+    const bad = unverifiedAdviceFigures(sentence, allowed);
+    if (bad.length) removed.push(...bad);
+    else kept.push(sentence);
+  }
+  return { advice: kept.length ? kept.join(' ') : null, removed };
+}
+
+export function adviceUsesOnlyVerifiedNumbers(advice: string, v: VerifiedRaceInfo, target = TARGET_RACE): boolean {
+  return unverifiedAdviceFigures(advice, allowedAdviceFigures(v, target)).length === 0;
 }
 
 /** Texto con solo los datos verificados, para que Miguel dé su consejo sin inventar. */

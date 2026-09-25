@@ -16,7 +16,7 @@ import {
 import { RACE_EXTRACTION_SYSTEM, RACE_SEARCH_SYSTEM, buildRaceAdvicePrompt, buildRaceExtractionPrompt, buildRaceSearchPrompt } from './brain/prompts/race.js';
 import { resolveReadinessState } from './brain/context.js';
 import { sanitizeAdaptation, sanitizePlanWorkouts } from './brain/decision/validate.js';
-import { adviceUsesOnlyVerifiedNumbers, RACE_NUMERIC_FIELDS, RACE_TEXT_FIELDS, verifyRaceInfo } from './brain/decision/race.js';
+import { filterRaceAdvice, RACE_NUMERIC_FIELDS, RACE_TEXT_FIELDS, verifyRaceInfo } from './brain/decision/race.js';
 import { verifyHistoryNumbers } from './brain/decision/history.js';
 import { buildKnowledgeBlock, buildKnowledgeQuery, buildMemoryBlock, chatTurnsFromBody } from './brain/prompts/knowledge.js';
 import { MemoryMatch, indexConversation, searchConversationMemory } from './rag/conversationMemory.js';
@@ -395,11 +395,17 @@ app.post('/api/race-info', async (req: Request, res: Response) => {
       });
       strategicAdvice = parseModelJson(adviceText).strategicAdvice || null;
     }
-    // Barrera en código: un consejo con cifras que no están verificadas no se muestra
+    // Barrera en código: se quitan las frases con cifras que no están verificadas ni se derivan de ellas
     let message: string | undefined;
-    if (strategicAdvice && !adviceUsesOnlyVerifiedNumbers(strategicAdvice, verified)) {
-      strategicAdvice = null;
-      message = 'El consejo de Miguel citaba cifras que no están verificadas y se ha descartado.';
+    if (strategicAdvice) {
+      const filtered = filterRaceAdvice(strategicAdvice, verified);
+      if (filtered.removed.length) {
+        console.warn(`[race-info] cifras sin respaldo en el consejo: ${filtered.removed.join(', ')}`);
+        message = filtered.advice
+          ? `Se han quitado del consejo frases con cifras sin verificar (${filtered.removed.join(', ')}).`
+          : 'El consejo de Miguel citaba cifras que no están verificadas y se ha descartado.';
+      }
+      strategicAdvice = filtered.advice;
     }
 
     res.json({ verified: true, ...verified, strategicAdvice, message, checkedAt: new Date().toISOString() });

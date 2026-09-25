@@ -38,5 +38,5 @@ export function buildRaceAdvicePrompt(raceName: string, verified: VerifiedRaceIn
   return `Datos VERIFICADOS de la carrera "${raceName}":
 ${describeVerifiedRace(verified)}
 
-En 2-3 frases, como Miguel, di cómo encaja como carrera preparatoria (prioridad B o C) para la Transvulcania 2027. Usa solo los datos verificados; si falta alguno importante, dilo. No escribas ninguna cifra de km o metros que no aparezca arriba (salvo las de la Transvulcania: 73 km, +4.350 m); si hay avisos de coherencia, menciónalos. Responde en JSON: { "strategicAdvice": "texto" }`;
+En 2-3 frases, como Miguel, di cómo encaja como carrera preparatoria (prioridad B o C) para la Transvulcania 2027. Usa solo los datos verificados; si falta alguno importante, dilo. Solo puedes escribir cifras de km o metros que aparezcan arriba, las de la Transvulcania (73 km, +4.350 m, -4.057 m) o diferencias entre ellas; las frases con otras cifras se eliminan. Si hay avisos de coherencia, menciónalos. Responde en JSON: { "strategicAdvice": "texto" }`;
 }
