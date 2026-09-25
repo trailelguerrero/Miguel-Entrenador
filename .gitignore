@@ -1,27 +1,12 @@
-# Dependencias
 node_modules/
-
-# Next.js
-.next/
-out/
-next-env.d.ts
-*.tsbuildinfo
-
-# Builds antiguos
 build/
 dist/
-dev-dist/
 coverage/
-
-# Vercel
 .vercel/
-
-# Entorno: nunca subir secretos
-.env
-.env*
-!.env.local.example
-!legacy/.env.example
-
-# Varios
 .DS_Store
 *.log
+.env*
+!.env.example
+
+# Service worker generado por vite-plugin-pwa en modo dev
+dev-dist/
