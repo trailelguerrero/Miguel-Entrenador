@@ -2,6 +2,7 @@
 // (Workout y DailyCheckIn).
 import type { DailyCheckIn, Workout, WorkoutType } from '../src/types/index.js';
 import { computeReadiness } from '../src/utils/readiness.js';
+import { normalizeSuuntoZoneSense, toStoredBreakdown } from '../src/brain/zonesense.js';
 
 /** Fila de la tool `suunto_list_workouts_summary`. */
 export interface SuuntoWorkoutRow {
@@ -91,20 +92,10 @@ export function mapSuuntoWorkouts(rows: SuuntoWorkoutRow[]): Workout[] {
     const sport = SPORT_NAMES[row.activityId ?? -1] ?? 'Actividad';
     const distanceKm = row.totalDistanceM ? round(row.totalDistanceM / 1000, 2) : undefined;
 
-    const aer = row.timeInAerobicZoneMs ?? 0;
-    const ana = row.timeInAnaerobicZoneMs ?? 0;
-    const vo2 = row.timeInVo2MaxZoneMs ?? 0;
-    const totalZoneMs = aer + ana + vo2;
-    // ZoneSense: "aerobic zone" = por debajo de AeT; "anaerobic zone" = entre
-    // AeT y AnT (transición); "VO2max zone" = por encima de AnT.
-    const zoneSenseBreakdown =
-      totalZoneMs > 0
-        ? {
-            aerobicPct: round((aer / totalZoneMs) * 100),
-            transitionPct: round((ana / totalZoneMs) * 100),
-            anaerobicPct: round((vo2 / totalZoneMs) * 100),
-          }
-        : undefined;
+    // ZoneSense: traducción explícita de los nombres de Suunto a colores
+    // (src/brain/zonesense.ts). La "Anaerobic zone" de Suunto es el AMARILLO.
+    const zs = normalizeSuuntoZoneSense(row);
+    const zoneSenseBreakdown = zs ? toStoredBreakdown(zs) : undefined;
 
     const title = row.description?.trim() || `${sport}${distanceKm ? ` ${distanceKm} km` : ''} (Suunto)`;
 

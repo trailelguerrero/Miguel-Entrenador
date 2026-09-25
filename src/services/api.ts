@@ -12,6 +12,15 @@ import {
 } from '../types';
 
 import { ApiError, apiStatus } from './apiStatus';
+import type { BrainContext, summarizeWeekWorkouts } from '../brain/context';
+import type { ReadinessState } from '../brain/readiness';
+
+/** Evidencia nutricional real del atleta (mismo tipo que server/brain/validate.ts). */
+export interface NutritionEvidence {
+  maxCarbsPerHourG?: number | null;
+  sweatRateLph?: number | null;
+  sodiumProfile?: string | null;
+}
 
 export { ApiError };
 
@@ -70,13 +79,8 @@ async function apiFetch(
   return data;
 }
 
-/** Estado real de carga y recuperación para que Miguel decida 3 o 2 sesiones entre semana. */
-export interface PlanLoadContext {
-  ctl?: number;
-  atl?: number;
-  tsb?: number;
-  recentCheckIns?: Array<{ date: string; hrvRmssd: number; hrvBaseline: number; sleepHours: number; recoveryPct?: number; status: string }>;
-}
+/** Hechos calculados en el cliente para Miguel (ver src/brain/context.ts). */
+export type PlanLoadContext = BrainContext;
 
 export const ApiService = {
   async sendMessage(
@@ -86,7 +90,8 @@ export const ApiService = {
     targetRace?: TargetRace,
     context?: string,
     athleteHistoryDoc?: AthleteHistoryDocument | null,
-    coachMemory?: CoachLearnedMemory | null
+    coachMemory?: CoachLearnedMemory | null,
+    brainContext?: BrainContext
   ): Promise<string> {
     const data = await apiFetch('/api/chat', {
         messages,
@@ -96,6 +101,7 @@ export const ApiService = {
         context,
         athleteHistoryDoc,
         coachMemory,
+        brainContext,
       }, 'ai', 'Error al comunicar con Miguel');
     return data.reply;
   },
@@ -107,8 +113,10 @@ export const ApiService = {
     phaseFocus?: string,
     athleteHistoryDoc?: AthleteHistoryDocument | null,
     coachMemory?: CoachLearnedMemory | null,
-    loadContext?: PlanLoadContext
-  ): Promise<{ weekSummary: string; workouts: Workout[] }> {
+    loadContext?: PlanLoadContext,
+    existingWorkouts?: ReturnType<typeof summarizeWeekWorkouts>,
+    nutritionEvidence?: NutritionEvidence
+  ): Promise<{ weekSummary: string; workouts: Workout[]; validationNotes?: string[]; structureIssues?: string[] }> {
     return await apiFetch('/api/generate-plan', {
         athleteProfile,
         targetRace,
@@ -117,6 +125,8 @@ export const ApiService = {
         athleteHistoryDoc,
         coachMemory,
         loadContext,
+        existingWorkouts,
+        nutritionEvidence,
       }, 'ai', 'Error al generar el plan personalizado');
   },
 
@@ -124,16 +134,19 @@ export const ApiService = {
     originalWorkout: Workout,
     checkIn: DailyCheckIn,
     athleteProfile: AthleteProfile,
-    athleteHistoryDoc?: AthleteHistoryDocument | null
+    athleteHistoryDoc?: AthleteHistoryDocument | null,
+    readinessState?: ReadinessState | null
   ): Promise<{
     miguelMessage: string;
     adaptedWorkout: Partial<Workout>;
+    corrections?: string[];
   }> {
     return await apiFetch('/api/adapt-session', {
         originalWorkout,
         checkIn,
         athleteProfile,
         athleteHistoryDoc,
+        readinessState,
       }, 'ai', 'Error al adaptar la sesión');
   },
 

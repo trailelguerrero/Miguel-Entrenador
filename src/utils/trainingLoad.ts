@@ -15,7 +15,7 @@
  *   (definiciones que Suunto publica para Fitness / Fatigue / Form).
  */
 import { PMCDataPoint, Workout } from '../types';
-import { calculateWorkoutTss } from './pmcCalculations';
+import { calculateWorkoutTss } from './pmcCalculations.js';
 
 export const CTL_DAYS = 42;
 export const ATL_DAYS = 7;
@@ -206,4 +206,33 @@ export function weeklyLoadThresholds(ctl: number | undefined): WeeklyLoadThresho
 /** CTL de cada fecha (todo el historial), para evaluar cada semana con la forma que había entonces. */
 export function buildCtlByDate(workouts: Workout[], antHr?: number): Map<string, number> {
   return new Map(computePmcSeries(workouts, antHr).map((p) => [p.date, p.ctl]));
+}
+
+export interface LoadHistoryInfo {
+  /** Primer día con entreno completado (inicio del cálculo de CTL/ATL). */
+  startDate: string | null;
+  days: number;
+  /** 'stabilized' con ≥ 42 días (una constante de tiempo de CTL); si no, 'warming_up'. */
+  status: 'stabilized' | 'warming_up' | 'none';
+}
+
+/**
+ * Desde cuándo hay historial para CTL/ATL/TSB. CTL y ATL arrancan en 0 ese día,
+ * así que con menos de 42 días el CTL está infravalorado frente al de Suunto,
+ * que puede tener historial anterior.
+ */
+export function getLoadHistoryInfo(workouts: Workout[], antHr?: number): LoadHistoryInfo {
+  const dates = [...buildDailyLoadMap(workouts, antHr).keys()].sort();
+  if (dates.length === 0) return { startDate: null, days: 0, status: 'none' };
+  const start = parseDateKey(dates[0]);
+  const days = Math.round((parseDateKey(localDateKey()).getTime() - start.getTime()) / 86400000) + 1;
+  return { startDate: dates[0], days, status: days >= CTL_DAYS ? 'stabilized' : 'warming_up' };
+}
+
+/** Texto para Miguel: cómo de fiable es el CTL/ATL/TSB actual. */
+export function describeLoadHistory(info: LoadHistoryInfo): string {
+  if (info.status === 'none') return 'Sin entrenos completados: no hay CTL/ATL/TSB.';
+  return `CTL/ATL/TSB calculados con el TSS del historial disponible desde ${info.startDate} (${info.days} días; ${
+    info.status === 'stabilized' ? 'estabilizado' : `en calentamiento: con menos de ${CTL_DAYS} días el CTL está infravalorado`
+  }). Pueden diferir de los de la app de Suunto si allí hay historial anterior.`;
 }

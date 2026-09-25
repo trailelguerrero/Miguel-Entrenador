@@ -4,7 +4,7 @@
  * entre semana por fatiga o por la disponibilidad del atleta.
  */
 import { Workout } from '../types';
-import { localDateKey } from './trainingLoad';
+import { localDateKey } from './trainingLoad.js';
 
 export const MIDWEEK_SESSIONS_DEFAULT = 3;
 export const MIDWEEK_SESSIONS_MIN = 2;
@@ -40,7 +40,7 @@ export function addDaysKey(key: string, days: number): string {
 /** Sesiones del PLAN (no actividades importadas sueltas de Suunto, ni descanso ni fuerza). */
 function isPlannedSession(w: Workout): boolean {
   if (w.type === 'rest' || w.type === 'strength_core') return false;
-  return !w.id.startsWith('suunto-');
+  return !(w.id ?? '').startsWith('suunto-');
 }
 
 export function analyzeWeekStructure(workouts: Workout[], anyDateInWeek: string): WeekStructure {

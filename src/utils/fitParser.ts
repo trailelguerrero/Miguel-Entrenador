@@ -14,7 +14,7 @@ export interface ParsedFitResult {
   maxSpeedKmh?: number;
   calories?: number;
   // % del tiempo por FRECUENCIA CARDÍACA respecto a tus umbrales (no es
-  // ZoneSense: el .FIT no trae DFA a1, así que no se estima).
+  // ZoneSense: el .FIT no trae ZoneSense, así que no se estima).
   hasHeartRate: boolean;
   timeInAerobicPct: number; // FC <= AeT
   timeInTransitionPct: number; // AeT < FC <= AnT

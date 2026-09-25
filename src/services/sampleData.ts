@@ -338,7 +338,7 @@ export const SAMPLE_ECCENTRIC_EXERCISES: EccentricOutdoorExercise[] = [
     sets: 3,
     reps: '12 a 15 por pierna con rodilla ligeramente flexionada (20°)',
     instruction: 'Apoya el metatarso en el borde. Con la rodilla flexionada 20° para aislar el sóleo, baja el talón lentamente durante 3 segundos sintiendo el estiramiento bajo tensión. Pausa 1s abajo y sube en 1s.',
-    biomechanicalPurpose: 'Previene la sobrecarga y rotura fibrilar del sóleo izquierdo que registraste en tu historial durante las subidas pronunciadas.',
+    biomechanicalPurpose: 'Refuerza el sóleo frente a la carga de las subidas pronunciadas.',
     riskWarning: 'Mantén la rodilla flexionada en todo el recorrido. Si estiras la rodilla, trabajas el gastrocnemio y no el sóleo.',
     iconType: 'soleus_drop',
   },

@@ -1,6 +1,6 @@
 # Uphill Coach AI - Entrenador Personal de Trail Running & Ultra Trail
 
-Aplicación completa de entrenamiento de montaña inspirada en el manual de cabecera **"Training for the Uphill Athlete: A Manual for Mountain Runners and Ski Mountaineers"** (Scott Johnston, Steve House y Kilian Jornet), combinada con la tecnología de **Suunto ZoneSense (DFA alpha-1)** y la monitorización de recuperación por **HRV nocturna**.
+Aplicación completa de entrenamiento de montaña inspirada en el manual de cabecera **"Training for the Uphill Athlete: A Manual for Mountain Runners and Ski Mountaineers"** (Scott Johnston, Steve House y Kilian Jornet), combinada con **Suunto ZoneSense** y la monitorización de recuperación por **HRV nocturna**.
 
 ---
 
@@ -8,36 +8,39 @@ Aplicación completa de entrenamiento de montaña inspirada en el manual de cabe
 
 ### 1. Coach Miguel (IA de Alto Rendimiento)
 - **Tono Cercano y Directo**: Un entrenador amigo que te ayuda, escucha tus sensaciones tras cada sesión y dice las cosas claras. Sin rodeos si te pasas de pulsaciones en días suaves o intentas forzar cuando hay fatiga.
-- **Aprendizaje Constante**: Contextualizado con tu perfil fisiológico, historial de entrenamientos, carreras secundarias y métricas matutinas.
+- **Contexto real**: perfil fisiológico, historial de entrenamientos, carreras secundarias y métricas matutinas. Una sola sesión es una observación, no una regla.
 - **Diálogo Interactivo**: Puedes debatir cómo te has sentido en la sesión, analizar por qué se planificó un ejercicio, ajustar ritmos o consultar estrategia técnica para la bajada de 2.400m de Transvulcania.
 
 ### 2. Metodología "Training for the Uphill Athlete"
 - **Erradicación del ADS (Aerobic Deficiency Syndrome)**: Prioridad al volumen estricto por debajo del Umbral Aeróbico (AeT) para maximizar la base mitocondrial y la oxidación lipídica.
-- **Test de Deriva Cardíaca (Heart Rate Drift Test de 60 min)**: Protocolo y calculadora integrados para verificar con precisión milimétrica tu verdadero AeT.
+- **Test de Deriva Cardíaca (Heart Rate Drift Test de 60 min)**: Protocolo y calculadora integrados para estimar tu AeT por FC.
 - **Fuerza Específica Sin Gimnasio**: 7 ejercicios con peso corporal y al aire libre (step-ups en roca, zancadas búlgaras con pausa isométrica, step-downs excéntricos de descenso, circuito de core lumbopélvico y series de Muscular Endurance en cuestas empinadas >25%).
 
 ### 3. Suunto ZoneSense & Recuperación Diaria
-- **Monitorización Celular en Tiempo Real**: Análisis de fluctuación fractal (DFA a1) a partir de la variabilidad cardíaca durante el ejercicio:
-  - `DFA a1 ≥ 0.75`: Aeróbico limpio (Z1-Z2), grasas, lactato basal.
-  - `0.75 > a1 ≥ 0.50`: Transición aeróbica-anaeróbica (Tempo/Z3).
-  - `DFA a1 < 0.50`: Régimen anaeróbico (Z4-Z5), acumulación de lactato.
-- **Check-in Matutino con Alerta de Fatiga**: Registro de HRV nocturna (rMSSD) y calidad de sueño de tu reloj Suunto.
-- **Adaptación en Tiempo Real**: Si el sistema detecta una caída significativa de HRV o falta de sueño, Miguel propone adaptar automáticamente la sesión de hoy a rodaje regenerativo o descanso.
+- **ZoneSense (fuente única: `src/brain/zonesense.ts`)**: Suunto mide la intensidad con DDFA (análisis de fluctuaciones sin tendencia dinámico) sobre los intervalos R-R de la banda de pecho y la muestra en colores:
+  - **Verde**: aeróbico (bajo el umbral aeróbico de ese día).
+  - **Amarillo**: entre umbral aeróbico y anaeróbico.
+  - **Rojo**: sobre el umbral anaeróbico (zona VO2máx).
+  Los colores se miden contra la línea base de cada entreno (primeros ~10 min suaves) y **no equivalen a ninguna FC concreta**; la app nunca los traduce a pulsaciones. Sin banda de pecho, la referencia son las zonas de FC del reloj solo si el umbral está medido; si no, esfuerzo percibido.
+- **Check-in Matutino**: HRV nocturna (rMSSD), sueño y Recovery de Suunto.
+- **Motor de readiness (`src/brain/readiness.ts`)**: el código calcula el estado (verde/ámbar/rojo) con HRV, sueño, dolor, estrés, TSB y carga reciente, y fija los límites de la sesión. Miguel elige y explica la sesión dentro de esos límites; el servidor recorta cualquier propuesta que se salga.
 
 ### 4. Calendario Interactivo & Periodización Transvulcania 2027
 - **Objetivo A**: Transvulcania Ultramarathon 2027 (~73 km, +4.350m D+, -4.057m D-).
-- **Semana de 4 Días**: 3 sesiones entre semana y tirada larga de montaña el fin de semana.
+- **Estructura semanal**: 3 sesiones entre semana (2 si la fatiga o la disponibilidad lo aconsejan) + tirada larga el sábado o el domingo.
 - **Edición Directa**: Puedes escribir, reprogramar, completar o eliminar entrenamientos directamente en el calendario.
 - **Generador de Microciclos con IA**: Miguel planifica semanas completas detallando calentamiento, series principales, terreno recomendado y pautas nutricionales.
 - **Gestor de Carreras Secundarias (B y C)**: Búsqueda con IA de perfiles técnicos y análisis de cómo encajan en el camino a La Palma.
 
 ### 5. Lector de Archivos Reales .FIT de Suunto
-- Arrastra y suelta tus archivos `.fit` directamente. Extrae tiempo, desnivel acumulado (+/-), frecuencia cardíaca media y máxima, y estima el índice DFA a1 y la distribución de zonas. Sin datos ficticios preprogramados.
+- Arrastra y suelta tus archivos `.fit`. Extrae tiempo, desnivel (+/-), FC media y máxima y el tiempo por FC respecto a tus umbrales. El .FIT **no** trae ZoneSense, así que no se estima.
 
 ### 6. Sincronización real con tu cuenta Suunto
 - Botón **Conectar Suunto**: inicias sesión con tu cuenta Suunto una vez y listo (sin claves de desarrollador).
 - **Sincronizar** trae los entrenos de los últimos 365 días (duración, distancia, desnivel, FC, TSS, tiempo en zonas ZoneSense) y, de los últimos 28 días, sueño, HRV y FC mínima de cada noche → check-ins de readiness automáticos.
-- **CTL / ATL / TSB** se calculan con el TSS que da Suunto para cada entreno (nunca se recalcula), desde el primer entreno registrado: CTL = media exponencial de 42 días, ATL = de 7 días, TSB = CTL − ATL. Las sesiones planificadas no completadas no suman carga.
+- **CTL / ATL / TSB** se calculan con el TSS que da Suunto para cada entreno (nunca se recalcula) y con el historial disponible: CTL = media exponencial de 42 días, ATL = de 7 días, TSB = CTL − ATL. Arrancan en 0 el día del primer entreno importado, así que con menos de 42 días de historial el CTL está infravalorado y puede diferir del de la app de Suunto (que puede tener historial anterior). Las sesiones planificadas no completadas no suman carga.
+- **Ventanas de datos** (`src/brain/dataWindows.ts`): entrenos 365 días · sueño/HRV/Recovery 28 días · perfil deducido de 90 días.
+- **Datos de ejemplo** solo con el botón "Cargar Prueba"; sin él, lo que no tiene datos aparece vacío.
 - Funciona a través del servidor MCP de Suunto ya desplegado (`https://mcp-ten-kappa.vercel.app`), el mismo que se puede añadir como connector en claude.ai.
 
 ---
