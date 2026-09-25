@@ -887,7 +887,7 @@ export const HRVLoadOverreachingView: React.FC<HRVLoadOverreachingViewProps> = (
               <span className="text-[10px] font-mono text-emerald-500 font-bold">SUPERCOMPENSACIÓN</span>
             </div>
             <p className="text-[11px] text-zinc-400 leading-relaxed">
-              Carga semanal elevada (&ge; 300 TSS) con sistema nervioso parasimpático en estado óptimo (HRV &ge; {summary.swcLower} ms). Máxima adaptación celular y biogénesis mitocondrial.
+              Carga semanal elevada ({summary.currentLoadThresholds ? <>&gt; {summary.currentLoadThresholds.high} TSS hoy, +10 % sobre tu CTL×7; cada semana se evalúa con su propio CTL</> : 'sin CTL aún'}) con sistema nervioso parasimpático en estado óptimo (HRV &ge; {summary.swcLower} ms). Máxima adaptación celular y biogénesis mitocondrial.
             </p>
             <div className="pt-2 flex flex-wrap gap-2">
               {summary.weeklyQuadrants.filter(w => w.quadrant === 'supercompensation').map(w => (

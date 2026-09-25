@@ -170,3 +170,40 @@ export function countEstimatedWorkouts(workouts: Workout[], antHr?: number, sinc
   }
   return n;
 }
+
+/**
+ * Umbrales de carga semanal RELATIVOS al atleta, que evolucionan con su forma
+ * física: la referencia es su carga crónica (CTL × 7 = TSS/semana que su
+ * cuerpo está habituado a asumir) en la fecha evaluada.
+ * - Carga alta:      > referencia + 10 %
+ * - Carga muy alta:  > referencia + 20 %
+ * - Carga baja:      < referencia − 20 %
+ * Los porcentajes son una elección de diseño de la app (no un estándar publicado).
+ */
+export const LOAD_BANDS = { high: 1.1, veryHigh: 1.2, low: 0.8 } as const;
+
+export interface WeeklyLoadThresholds {
+  ctl: number;
+  chronicWeeklyTss: number; // CTL × 7
+  low: number;
+  high: number;
+  veryHigh: number;
+}
+
+/** null si aún no hay carga crónica (sin historial no se puede decir qué es "alto"). */
+export function weeklyLoadThresholds(ctl: number | undefined): WeeklyLoadThresholds | null {
+  if (!ctl || ctl <= 0) return null;
+  const ref = ctl * 7;
+  return {
+    ctl,
+    chronicWeeklyTss: Math.round(ref),
+    low: Math.round(ref * LOAD_BANDS.low),
+    high: Math.round(ref * LOAD_BANDS.high),
+    veryHigh: Math.round(ref * LOAD_BANDS.veryHigh),
+  };
+}
+
+/** CTL de cada fecha (todo el historial), para evaluar cada semana con la forma que había entonces. */
+export function buildCtlByDate(workouts: Workout[], antHr?: number): Map<string, number> {
+  return new Map(computePmcSeries(workouts, antHr).map((p) => [p.date, p.ctl]));
+}

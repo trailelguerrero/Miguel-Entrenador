@@ -122,6 +122,14 @@ export function calculateHrvPredictiveRegression(
 
   // TSS diario real (solo entrenos completados; TSS de Suunto cuando existe)
   const loadMap = buildDailyLoadMap(workouts, profile.antHr);
+  // TSS de los últimos 7 días (hasta hoy), para dar recomendaciones relativas a TU carga
+  let currentWeeklyTss = 0;
+  for (let i = 0; i < 7; i++) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    currentWeeklyTss += loadMap.get(localDateKey(d))?.tss ?? 0;
+  }
+  currentWeeklyTss = Math.round(currentWeeklyTss);
 
   // Solo las noches con HRV medida. x = posición del día dentro de la ventana
   // de 30 días, para que los huecos sin dato no deformen la pendiente.
@@ -281,7 +289,7 @@ export function calculateHrvPredictiveRegression(
     riskBadgeColor = 'bg-rose-500/20 text-rose-400 border-rose-500/40';
     recommendedAction = 'Reducir volumen un -35% a -40% (Microciclo de Descarga Inmediato)';
     recommendedLoadAdjustmentPct = -35;
-    coachPrescription = `Coach Miguel: "Tu sistema nervioso autónomo está agotando su reserva de adaptación vagal. El modelo proyecta que en ${daysUntilSwcCrossover ?? 3} días el tono parasimpático quedará totalmente suprimido si mantienes la carga. Para Transvulcania, llegar sobreentrenado destruye la capacidad mitocondrial. Reduce el TSS semanal a ~180-220, elimina cualquier sesión de cuestas o intensidades Z3+ y realiza rodajes exclusivamente sub-130 bpm con DFA a1 > 0.85."`;
+    coachPrescription = `Coach Miguel: "Tu sistema nervioso autónomo está agotando su reserva de adaptación vagal. El modelo proyecta que en ${daysUntilSwcCrossover ?? 3} días el tono parasimpático quedará totalmente suprimido si mantienes la carga. Para Transvulcania, llegar sobreentrenado destruye la capacidad mitocondrial. ${currentWeeklyTss > 0 ? `Baja el TSS semanal un 35-40 % (de ${currentWeeklyTss} a unos ${Math.round(currentWeeklyTss * 0.6)}-${Math.round(currentWeeklyTss * 0.65)})` : 'Baja el volumen semanal un 35-40 %'}, elimina cualquier sesión de cuestas o intensidades por encima de AeT y haz solo rodajes ${profile.aetHr ? `claramente por debajo de ${profile.aetHr} bpm` : 'claramente por debajo de tu AeT'}."`;
   } else if (slopeDaily < -0.08 || (projectedHrv7d <= swcLower + 1.5)) {
     fatigueRiskLevel = 'moderate_strain';
     riskTitle = 'Fatiga Acumulada Progresiva: Sobre-esfuerzo Funcional en Límite';

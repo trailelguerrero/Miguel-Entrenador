@@ -21,7 +21,7 @@
  */
 
 import { Workout, DailyCheckIn, AthleteProfile } from '../types';
-import { buildDailyLoadSeries } from './trainingLoad';
+import { buildDailyLoadSeries, buildCtlByDate, weeklyLoadThresholds, WeeklyLoadThresholds } from './trainingLoad';
 
 export type OverreachingType = 
   | 'optimal_adaptation'
@@ -40,6 +40,7 @@ export interface HRVLoadDataPoint {
   swcLower: number;           // Baseline - 0.5 * SD (Lower normal band)
   dailyTss: number;           // TSS on this single day
   weeklyTss: number;          // 7-day rolling sum of TSS
+  loadThresholds: WeeklyLoadThresholds | null; // umbrales relativos a la forma (CTL) de ese día
   weeklyKm: number;           // 7-day rolling sum of km
   weeklyHours: number;        // 7-day rolling sum of training hours
   restingHr: number;          // Nocturnal resting HR (bpm)
@@ -110,6 +111,7 @@ export interface HRVLoadSummary {
   swcLower: number;
   standardDeviation: number;
   currentWeeklyTss: number;
+  currentLoadThresholds: WeeklyLoadThresholds | null; // evolucionan con el CTL del atleta
   previousWeeklyTss: number;  // 7 days ago
   weeklyTssTrendPct: number;
   currentWeeklyKm: number;
@@ -169,6 +171,10 @@ export function calculateHRVLoadCorrelation(
   for (const day of buildDailyLoadSeries(workouts, totalDaysToFetch, profile.antHr)) {
     workoutTssMap.set(day.date, { tss: day.tss, km: day.km, minutes: day.minutes, titles: day.titles });
   }
+
+  // CTL de cada fecha: los umbrales de carga de cada día se calculan con la
+  // forma física que tenía el atleta ESE día (evolucionan con su carga).
+  const ctlByDate = buildCtlByDate(workouts, profile.antHr);
 
   // Generate continuous daily HRV series
   const sortedDates = Array.from(workoutTssMap.keys()).sort();
@@ -245,9 +251,10 @@ export function calculateHRVLoadCorrelation(
     const weeklyHours = Math.round((minSum / 60) * 10) / 10;
 
     const isSuppressed = hrvCount > 0 && hrv7dAvg < swcLower;
-    const isHighLoad = weeklyTss >= 320;
-    const isVeryHighLoad = weeklyTss >= 380;
-    const isLowLoad = weeklyTss < 230;
+    const thr = weeklyLoadThresholds(ctlByDate.get(cur.date));
+    const isHighLoad = !!thr && weeklyTss > thr.high;
+    const isVeryHighLoad = !!thr && weeklyTss > thr.veryHigh;
+    const isLowLoad = !!thr && weeklyTss < thr.low;
 
     let status: OverreachingType = 'optimal_adaptation';
 
@@ -277,6 +284,7 @@ export function calculateHRVLoadCorrelation(
       swcLower,
       dailyTss: cur.dailyTss,
       weeklyTss,
+      loadThresholds: thr,
       weeklyKm,
       weeklyHours,
       restingHr: Number.isNaN(cur.restingHr) ? 0 : cur.restingHr,
@@ -439,7 +447,8 @@ export function calculateHRVLoadCorrelation(
   // High load + Depressed HRV = Severe Overreaching (<35)
   // Low load + Elevated HRV = Deload / Recovery (65-80)
   const hrvScore = Math.max(0, Math.min(100, 50 + (baselineHrv > 0 && latest.hrv7dAvg > 0 ? ((latest.hrv7dAvg - baselineHrv) / baselineHrv) * 120 : 0)));
-  const loadPenalty = latest.weeklyTss > 350 ? ((latest.weeklyTss - 350) / 15) : 0;
+  const latestThr = latest.loadThresholds;
+  const loadPenalty = latestThr && latest.weeklyTss > latestThr.high ? ((latest.weeklyTss - latestThr.high) / 15) : 0;
   const restingHrPenalty = restingHrDelta > 2 ? (restingHrDelta * 3) : 0;
   const rawCouplingIndex = Math.round(hrvScore - (latest.hrv7dAvg < swcLower ? loadPenalty * 1.5 : loadPenalty * 0.5) - restingHrPenalty);
   const fatigueRecoveryIndex = Math.max(12, Math.min(98, rawCouplingIndex));
@@ -474,7 +483,8 @@ export function calculateHRVLoadCorrelation(
       let quadrantLabel: string;
       let badgeColor: string;
 
-      const isHighLoad = weeklyTss >= 300;
+      const qThr = weekSlice[weekSlice.length - 1].loadThresholds;
+      const isHighLoad = !!qThr && weeklyTss > qThr.high;
       const isHighRecovery = avgHrv7d >= baselineHrv * 0.95;
 
       if (isHighLoad && isHighRecovery) {
@@ -549,7 +559,8 @@ export function calculateHRVLoadCorrelation(
       let coachVerdict: string;
       let isOverreaching = false;
 
-      if (weeklyTss >= 320 && avgHrv > 0 && avgHrv < swcLower) {
+      const bThr = weekSlice[weekSlice.length - 1].loadThresholds;
+      if (bThr && weeklyTss > bThr.high && avgHrv > 0 && avgHrv < swcLower) {
         status = 'non_functional_overreaching';
         statusLabel = 'Sobreentrenamiento (NFOR)';
         badgeBg = 'bg-rose-500/20';
@@ -557,14 +568,14 @@ export function calculateHRVLoadCorrelation(
         badgeBorder = 'border-rose-500/40';
         isOverreaching = true;
         coachVerdict = `¡Alarma de sobreentrenamiento! Carga acumulada muy alta (${weeklyTss} TSS) coincidiendo con un desplome del rMSSD medio (${avgHrv} ms, por debajo del umbral de ${swcLower} ms). Bloqueo autonómico parasimpático.`;
-      } else if (weeklyTss >= 350 && avgHrv > 0 && avgHrv < baselineHrv) {
+      } else if (bThr && weeklyTss > bThr.veryHigh && avgHrv > 0 && avgHrv < baselineHrv) {
         status = 'functional_overreaching';
         statusLabel = 'Sobre-esfuerzo Funcional (FOR)';
         badgeBg = 'bg-amber-500/20';
         badgeText = 'text-amber-400';
         badgeBorder = 'border-amber-500/40';
         coachVerdict = `Sobrecarga controlada (${weeklyTss} TSS). Fatiga aguda asumible pero requiere día de descarga en las próximas 48h.`;
-      } else if (weeklyTss < 230 && avgHrv >= baselineHrv * 0.96) {
+      } else if (bThr && weeklyTss < bThr.low && avgHrv >= baselineHrv * 0.96) {
         status = 'deload';
         statusLabel = 'Semana de Descarga / Frescura';
         badgeBg = 'bg-cyan-500/20';
@@ -616,6 +627,7 @@ export function calculateHRVLoadCorrelation(
     swcLower,
     standardDeviation,
     currentWeeklyTss: latest.weeklyTss,
+    currentLoadThresholds: latest.loadThresholds,
     previousWeeklyTss: point7dAgo.weeklyTss,
     weeklyTssTrendPct,
     currentWeeklyKm: latest.weeklyKm,
