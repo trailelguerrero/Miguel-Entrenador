@@ -83,6 +83,9 @@ Si el proyecto `miguel` ya existe (ya está creado: https://miguel-seven-sage.ve
 | `SUUNTO_MCP_URL` | `https://mcp-ten-kappa.vercel.app` | ❌ No. Es el valor por defecto; solo cámbiala si algún día mueves el servidor MCP de Suunto. |
 | `AI_PROVIDER`, `EXPERIENTIAL_*`, `AI_FALLBACK` | Ver la sección 5 | ❌ No. Solo si quieres usar Claude (u otro modelo) en lugar de Gemini. |
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `INGEST_SECRET`, `EMBEDDING_PROVIDER`… | Ver la sección 10 | ❌ No. Solo para la Biblioteca de Miguel y guardar las conversaciones. |
+| `APP_SECRET` | Un secreto largo inventado por ti (40+ caracteres). | ⚠️ Muy recomendable. Sin él (ni `INGEST_SECRET`), cualquiera que conozca la URL puede usar a Miguel y gastar tu cuota de IA. |
+
+> **Clave de la app.** Si hay `APP_SECRET` o `INGEST_SECRET` en Vercel, el chat, los planes, la adaptación, los análisis, las notas, la búsqueda de carreras y el historial .md exigen esa clave. La primera vez la app te la pide y la guarda en el dispositivo (vale cualquiera de las dos). Si ya usas la biblioteca con `INGEST_SECRET`, no necesitas `APP_SECRET`. Sin ninguna de las dos, el indicador de la IA avisa de que está abierta.
 
 > Las variables **no se aplican solas** a lo que ya está desplegado. Después de añadirlas o cambiarlas tienes que redesplegar (paso 3.3).
 
@@ -405,6 +408,7 @@ El banner desaparece solo con la siguiente respuesta correcta. También puedes c
 | "Biblioteca desactivada: falta …" | Faltan variables de Supabase o de embeddings | Sección 10.2 y **Redeploy** |
 | "Parece que falta el esquema: ejecuta scripts/init.sql" | No se ejecutó el SQL en Supabase | Sección 10.1 |
 | "Clave de la biblioteca incorrecta" | La clave escrita no coincide con `INGEST_SECRET` | Copia el mismo valor que pusiste en Vercel |
+| "Falta la clave de la app o no es correcta" (`APP_AUTH`) | Hay `APP_SECRET`/`INGEST_SECRET` en Vercel y el dispositivo no tiene la clave | Escribe el valor de `APP_SECRET` (o `INGEST_SECRET`) cuando la app lo pida |
 | Miguel no cita documentos que sí están en la biblioteca | Se cambió de proveedor/modelo de embeddings, o el umbral es alto | Vuelve a subir los documentos (10.5) o baja `KNOWLEDGE_MATCH_THRESHOLD` |
 
 ---

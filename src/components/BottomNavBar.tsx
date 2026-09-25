@@ -18,7 +18,7 @@ export const BottomNavBar: React.FC<BottomNavBarProps> = ({
   todayCheckIn,
 }) => {
   const getCheckInStatusColor = () => {
-    if (!todayCheckIn) return 'text-zinc-400';
+    if (!todayCheckIn || todayCheckIn.status === 'unknown') return 'text-zinc-400';
     if (todayCheckIn.status === 'optimal') return 'text-emerald-400';
     if (todayCheckIn.status === 'moderate') return 'text-amber-400';
     return 'text-red-400';

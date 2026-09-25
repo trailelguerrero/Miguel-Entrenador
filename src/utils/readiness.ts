@@ -12,6 +12,8 @@ export function computeReadiness(input: {
   hrvBaseline: number;
   sleepHours: number;
   muscleSoreness?: number;
+  /** Estrés vital declarado (1-10): ≥ 8 sube un nivel, igual que en el motor. */
+  stressLevel?: number;
 }): Pick<DailyCheckIn, 'status' | 'coachAdvice' | 'suggestedAction'> & { hrvDropPct: number } {
   const state = evaluateReadiness(input);
   const hrvDropPct = state.hrvDeltaPct ?? 0;
@@ -35,14 +37,20 @@ export function computeReadiness(input: {
       coachAdvice: `Recuperación intermedia (${why}). Puedes entrenar sin series: con banda de pecho, mantén ZoneSense en verde.`,
     };
   }
+  if (state.level === 'unknown') {
+    // Sin datos NO es verde: no se puede valorar la recuperación de hoy
+    return {
+      hrvDropPct,
+      status: 'unknown',
+      suggestedAction: 'maintain',
+      coachAdvice: 'Sin datos de HRV ni de sueño: no se puede valorar la recuperación de hoy.',
+    };
+  }
   return {
     hrvDropPct,
     status: 'optimal',
     suggestedAction: 'maintain',
-    coachAdvice:
-      state.level === 'unknown'
-        ? 'Sin datos de HRV ni de sueño: no se puede valorar la recuperación de hoy.'
-        : 'Recuperación buena: listo para la sesión programada de hoy.',
+    coachAdvice: 'Recuperación buena: listo para la sesión programada de hoy.',
   };
 }
 
@@ -52,7 +60,7 @@ export function computeReadiness(input: {
  */
 export function rebaseSuuntoCheckIn(ci: DailyCheckIn, hrvBaseline: number): DailyCheckIn {
   if (!(hrvBaseline > 0) || ci.source !== 'suunto') return ci;
-  const r = computeReadiness({ hrvRmssd: ci.hrvRmssd, hrvBaseline, sleepHours: ci.sleepHours });
+  const r = computeReadiness({ hrvRmssd: ci.hrvRmssd, hrvBaseline, sleepHours: ci.sleepHours, muscleSoreness: ci.muscleSoreness, stressLevel: ci.stressLevel });
   const balance = ci.coachAdvice.match(/ Recovery Suunto del día: \d+%\./)?.[0] ?? '';
   return {
     ...ci,

@@ -16,6 +16,7 @@ import {
 
 import { ApiError, apiStatus } from './apiStatus';
 import { StorageService } from './storage';
+import { AppSecret } from './appSecret';
 import type { RaceInfoResult } from '../types';
 import type { EvidenceItem } from '../brain/memory';
 import type { BrainContext, summarizeWeekWorkouts } from '../brain/context';
@@ -39,12 +40,14 @@ async function apiFetch(
   kind: 'ai' | 'suunto',
   fallbackMessage: string,
   options: { allowStatus?: number[] } = {},
+  retried = false,
 ): Promise<any> {
   let res: Response;
   try {
+    const secret = AppSecret.get();
     res = await fetch(path, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(secret ? { 'x-app-secret': secret } : {}) },
       body: JSON.stringify(body),
     });
   } catch {
@@ -70,6 +73,17 @@ async function apiFetch(
     throw err;
   }
   apiStatus.reportBackendUp();
+
+  // El servidor exige la clave de la app (APP_SECRET / INGEST_SECRET): se pide una vez y se reintenta
+  if (res.status === 401 && data.code === 'APP_AUTH' && !retried && typeof window !== 'undefined') {
+    const typed = window.prompt(
+      `${AppSecret.get() ? 'La clave de la app no es correcta.' : 'La app está protegida con clave.'}\n\nEscribe la clave de la app (el valor de APP_SECRET o, si no la tienes, INGEST_SECRET en Vercel). Se guardará en este dispositivo.`,
+    );
+    if (typed && typed.trim()) {
+      AppSecret.set(typed.trim(), true);
+      return apiFetch(path, body, kind, fallbackMessage, options, true);
+    }
+  }
 
   if (!res.ok && !options.allowStatus?.includes(res.status)) {
     const err = new ApiError(data.code || `HTTP_${res.status}`, data.error || data.message || fallbackMessage, data.hint);
@@ -318,6 +332,8 @@ export interface HealthStatus {
     fallbackAvailable: boolean;
   };
   knowledge?: KnowledgeStatus;
+  /** false = las rutas de IA están abiertas (no hay APP_SECRET ni INGEST_SECRET en Vercel). */
+  apiProtected?: boolean;
   suuntoMcpUrl: string;
 }
 

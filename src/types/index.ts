@@ -633,7 +633,8 @@ export interface DailyCheckIn {
   readinessScore?: number;
   /** Muestras de Recovery de Suunto de ese día (pocas = día aún incompleto). */
   recoverySamples?: number;
-  status: 'optimal' | 'moderate' | 'fatigued'; // Green, Amber, Red
+  /** Verde, ámbar, rojo o 'unknown' (sin HRV, sueño ni dolor: no se puede valorar). */
+  status: 'optimal' | 'moderate' | 'fatigued' | 'unknown';
   coachAdvice: string;
   suggestedAction?: 'maintain' | 'downgrade_easy' | 'full_rest' | 'swap_with_rest';
   source?: 'suunto'; // presente si el check-in viene de la sincronización con Suunto

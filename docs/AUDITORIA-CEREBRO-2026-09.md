@@ -1,7 +1,7 @@
 # Auditoría del cerebro de Miguel — septiembre 2026
 
 Alcance: `src/brain/`, `server/brain/`, `server/rag/`, `server/app.ts`, `server/ai.ts` y cómo los usa la app (`src/App.tsx`, `src/services/storage.ts`, `src/components/CoachMemoryView.tsx`, `src/components/DailyReadinessModal.tsx`).
-Estado de partida: `npm test` → 64/64 en verde. Los fallos marcados **[REPRODUCIDO]** se han comprobado ejecutando el código con entradas concretas.
+Estado de partida: `npm test` → 64/64 en verde. Tras los arreglos de G1–G3 y M1–M2: 75/75 (tests en `tests/audit2.test.ts` y `tests/apiauth.test.ts`). Los fallos marcados **[REPRODUCIDO]** se han comprobado ejecutando el código con entradas concretas.
 
 ---
 
@@ -68,21 +68,21 @@ la app guarda la sesión adaptada y el mensaje de Miguel en el chat
 
 ### 🔴 Graves
 
-**G1. La adaptación de la sesión puede saltarse los límites del motor [REPRODUCIDO]**
+**G1. La adaptación de la sesión puede saltarse los límites del motor [REPRODUCIDO]** — ✅ ARREGLADO
 `server/brain/decision/validate.ts:117-121` + `src/App.tsx:584`
 `sanitizeAdaptation` solo recorta los campos que la IA *devuelve*. La app luego hace `{ ...todayWorkout, ...adaptedWorkout }`, así que lo que la IA omita se queda con el valor original.
 - Día ÁMBAR, sesión original `hill_intervals`, la IA no devuelve `type` → la sesión guardada sigue siendo **series**, aunque el motor dice "sin series".
 - Día ROJO (máx. 35 min), la IA devuelve `plannedDurationMin: "120"` (texto) → `pos()` lo ignora y se guarda **120 min**.
 Arreglo: validar sobre la sesión original fusionada (no solo sobre la respuesta) y convertir números en texto.
 
-**G2. Endpoints de IA y memoria abiertos a cualquiera**
+**G2. Endpoints de IA y memoria abiertos a cualquiera** — ✅ ARREGLADO
 `server/app.ts:225` (y todas las rutas de IA)
 Solo la biblioteca y las conversaciones piden `x-ingest-secret`. `/api/chat`, `/api/generate-plan`, `/api/analyze-workout`, etc. no piden nada. Quien conozca la URL de Vercel puede:
 - gastar tu cuota de Gemini/Experiential;
 - preguntarle a Miguel por tus **conversaciones guardadas**: `/api/chat` busca en `conversation_memory` y las mete en el prompt, así que las puede repetir (datos de salud: lesiones, HRV, sensaciones).
 Arreglo: exigir el mismo secreto (o uno de app) en todas las rutas `/api/*` salvo `health` y el callback de Suunto, y limitar peticiones por minuto.
 
-**G3. El semáforo del check-in ignora el estrés y la carga, y "sin datos" sale como VERDE [REPRODUCIDO]**
+**G3. El semáforo del check-in ignora el estrés y la carga, y "sin datos" sale como VERDE [REPRODUCIDO]** — ✅ ARREGLADO
 `src/utils/readiness.ts` + `src/components/DailyReadinessModal.tsx:37-42`
 - `computeReadiness` no recibe `stressLevel` ni TSB/TSS. Con estrés 9/10 el check-in guarda `optimal` y el motor (en la adaptación) dice `amber`. El atleta ve verde; Miguel adapta como ámbar.
 - Con nivel `unknown` (sin HRV ni sueño) guarda `status: 'optimal'` y ese "optimal" se manda a Miguel en `recentCheckIns` y en `currentReadiness`.
@@ -90,12 +90,12 @@ Arreglo: pasar estrés (y carga si está) a `computeReadiness`, y añadir un est
 
 ### 🟠 Medios
 
-**M1. Repetir la misma nota crea una regla en un día [REPRODUCIDO]**
+**M1. Repetir la misma nota crea una regla en un día [REPRODUCIDO]** — ✅ ARREGLADO
 `src/components/CoachMemoryView.tsx:67` (`refId: note-${Date.now()}`) + `src/brain/memory.ts:191`
 Cada nota tiene un id nuevo y la protección "mismo día" solo se aplica al chat. Escribir tres veces "me duele el sóleo en bajada" → **regla provisional** con 3 evidencias del mismo día. Contradice "una sola sesión es una observación".
 Arreglo: como mucho una evidencia por aprendizaje, fuente y día (o que las notas cuenten como el chat).
 
-**M2. `"supports": "false"` (texto) cuenta como evidencia A FAVOR [REPRODUCIDO]**
+**M2. `"supports": "false"` (texto) cuenta como evidencia A FAVOR [REPRODUCIDO]** — ✅ ARREGLADO
 `src/brain/memory.ts:145` → `r.supports !== false`. Si el modelo devuelve el booleano como texto, una contradicción suma a favor.
 Arreglo: `supports = r.supports === true || r.supports === 'true'`; si no es ni true ni false, descartar.
 

@@ -135,6 +135,11 @@ export const ApiStatusIndicator: React.FC<Props> = ({ onGoToSuunto, onDisconnect
                 {health.provider === 'experiential' && (health.fallbackAvailable ? ' · Respaldo Gemini activo' : ' · Sin respaldo')}
               </p>
             )}
+            {status.health?.apiProtected === false && (
+              <p className="rounded-xl p-2.5 border border-amber-500/30 bg-amber-500/10 text-amber-200 text-[11px]">
+                La IA de la app está abierta: cualquiera con la URL puede usarla. Pon <strong>APP_SECRET</strong> (o INGEST_SECRET) en Vercel y haz Redeploy.
+              </p>
+            )}
             {aiMessage && aiState !== 'ok' && (
               <div className={`rounded-xl p-2.5 border ${aiState === 'fallback' ? 'border-amber-500/30 bg-amber-500/10 text-amber-200' : 'border-red-500/30 bg-red-500/10 text-red-200'}`}>
                 <p>{aiMessage}</p>

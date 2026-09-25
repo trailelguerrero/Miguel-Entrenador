@@ -53,7 +53,8 @@ export const FartlekGeneratorModal: React.FC<FartlekGeneratorModalProps> = ({
     'mesocycle_2_aerobic_base'
   );
   const [currentHrvStatus, setCurrentHrvStatus] = useState<FartlekGeneratorParams['currentHrvStatus']>(
-    todayCheckIn?.status || 'optimal'
+    // Sin datos de recuperación se parte de "moderada" (prudente), no de óptima
+    !todayCheckIn?.status || todayCheckIn.status === 'unknown' ? (todayCheckIn ? 'moderate' : 'optimal') : todayCheckIn.status
   );
   const [durationMinutes, setDurationMinutes] = useState<FartlekGeneratorParams['durationMinutes']>(60);
   const [focus, setFocus] = useState<FartlekFocus>('ads_reversal_aet_control');

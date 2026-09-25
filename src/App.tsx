@@ -510,9 +510,9 @@ export default function App() {
     setIsCheckInModalOpen(false);
 
     showToast({
-      type: checkIn.status === 'optimal' ? 'success' : checkIn.status === 'moderate' ? 'info' : 'warning',
+      type: checkIn.status === 'optimal' ? 'success' : checkIn.status === 'moderate' || checkIn.status === 'unknown' ? 'info' : 'warning',
       title: 'Check-in Matutino Guardado',
-      message: `Estado: ${checkIn.status === 'optimal' ? 'Recuperación Óptima' : checkIn.status === 'moderate' ? 'Fatiga Moderada' : 'Fatiga Alta'} • HRV rMSSD: ${checkIn.hrvRmssd} ms`,
+      message: `Estado: ${checkIn.status === 'optimal' ? 'Recuperación Óptima' : checkIn.status === 'unknown' ? 'Sin datos para valorar la recuperación' : checkIn.status === 'moderate' ? 'Fatiga Moderada' : 'Fatiga Alta'} • HRV rMSSD: ${checkIn.hrvRmssd} ms`,
     });
 
     // If checkIn has fatigue, notify athlete

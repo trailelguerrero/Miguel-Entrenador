@@ -14,7 +14,8 @@
  *   90 días sin evidencias nuevas  → caducada (no se aplica hasta nueva evidencia;
  *     la nueva evidencia la reactiva con todo su historial)
  *
- * Una misma sesión o nota solo cuenta una vez por aprendizaje (refId).
+ * Una misma sesión o nota solo cuenta una vez por aprendizaje (refId), y lo que
+ * cuenta el atleta (chat o nota) suma como mucho una evidencia por aprendizaje y día.
  */
 import type { CoachLearnedInsight, CoachLearnedMemory, InsightEvidence, InsightStatus, PendingMemoryEvidence } from '../types';
 
@@ -142,7 +143,9 @@ export function sanitizeEvidenceItems(raw: unknown, memory: CoachLearnedMemory |
     const summary = typeof r.summary === 'string' ? r.summary.trim() : '';
     if (!summary) continue;
     const insightId = typeof r.insightId === 'string' && categoryById.has(r.insightId) ? r.insightId : null;
-    const supports = r.supports !== false;
+    // El modelo a veces devuelve el booleano como texto: "false" es EN CONTRA, nunca a favor
+    const supports = r.supports === true || r.supports === 'true' ? true : r.supports === false || r.supports === 'false' ? false : r.supports == null ? true : null;
+    if (supports === null) continue;
     if (insightId) {
       const critical = !supports && r.critical === true && CRITICAL_CATEGORIES.includes(categoryById.get(insightId)!);
       out.push(critical ? { insightId, supports, summary, critical } : { insightId, supports, summary });
@@ -169,6 +172,9 @@ export interface EvidenceContext {
   sourceEvent: string;
 }
 
+/** Fuentes que son lo que cuenta el atleta (no una sesión medida). */
+const SUBJECTIVE_SOURCES: InsightEvidence['source'][] = ['chat', 'athlete_note'];
+
 let idSeq = 0;
 const newId = () => `insight-${Date.now()}-${idSeq++}`;
 
@@ -187,8 +193,19 @@ export function applyEvidence(
     const idx = item.insightId ? insights.findIndex((i) => i.id === item.insightId) : -1;
     if (idx >= 0) {
       const prev = refreshInsight(insights[idx], today);
-      // Lo que se confirma desde el chat suele ser el mismo hecho que ya contó la sesión de ese día
-      const sameDay = ctx.source === 'chat' && (prev.evidence || []).some((e) => e.source !== 'chat' && e.date === ctx.date && e.supports === item.supports && !!e.critical === !!item.critical);
+      // Lo que cuenta el atleta (chat o nota) suele ser el mismo hecho que ya contó ese día
+      // la sesión u otra nota: como mucho UNA evidencia por aprendizaje y día. Repetir la
+      // misma nota tres veces no la convierte en regla.
+      const sameDay =
+        SUBJECTIVE_SOURCES.includes(ctx.source) &&
+        (prev.evidence || []).some(
+          (e) =>
+            e.date === ctx.date &&
+            e.supports === item.supports &&
+            !!e.critical === !!item.critical &&
+            // la misma conversación/nota se sustituye (abajo), no cuenta como repetición
+            !(ctx.refId && e.refId === ctx.refId && e.source === ctx.source),
+        );
       if (sameDay) {
         changes.push(`"${prev.observation}": ya estaba contada una evidencia de ese día (no se suma dos veces)`);
         continue;
