@@ -169,7 +169,6 @@ export function computePmcSeries(workouts: Workout[], antHr?: number, daysToShow
       date,
       dayLabel: dayLabel(date),
       tss: Math.round(tss),
-      mountainTss: Math.round(tss),
       ctl: ctlR,
       atl: round1(atl),
       tsb: round1(ctl - atl),

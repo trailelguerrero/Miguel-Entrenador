@@ -13,7 +13,8 @@ import { join, relative } from 'node:path';
 import type { AthleteProfile, Workout } from '../src/types/index.js';
 import { resolveIntensityPrescription } from '../src/brain/intensity.js';
 import { evaluateReadiness } from '../src/brain/readiness.js';
-import { normalizeSuuntoZoneSense, toStoredBreakdown, normalizeZoneSenseTarget } from '../src/brain/zonesense.js';
+import { normalizeSuuntoZoneSense, toStoredBreakdown } from '../src/brain/zonesense.js';
+import { normalizeZoneSenseTarget } from '../src/legacy/zonesense.js';
 import { getWorkoutLoad, getLoadHistoryInfo, localDateKey, weeklyLoadThresholds } from '../src/utils/trainingLoad.js';
 import { analyzeWeekStructure, mondayOfKey, addDaysKey } from '../src/utils/weekStructure.js';
 import { computeReadiness } from '../src/utils/readiness.js';
@@ -218,8 +219,7 @@ test('Nutrición: sin evidencia del atleta no hay cifras; con evidencia, nunca p
 // ── Barrido del repositorio: ni DFA a1 ni cortes 0,75/0,50 fuera de compatibilidad ──
 const ROOT = join(import.meta.dirname, '..');
 const ALLOWED = new Set([
-  'src/brain/zonesense.ts', // LEGACY_MAP (compatibilidad con sesiones guardadas)
-  'src/types/index.ts', // LegacyZoneSenseTarget
+  'src/legacy/zonesense.ts', // capa de compatibilidad (LEGACY_MAP, LegacyZoneSenseTarget)
   'src/services/sampleData.ts', // datos de ejemplo antiguos (se normalizan al leer)
   'src/services/storage.ts', // migración de memoria/perfil guardados
   'src/components/ZoneSenseSuuntoView.tsx', // explica por qué ZoneSense NO es el DFA a1 clásico

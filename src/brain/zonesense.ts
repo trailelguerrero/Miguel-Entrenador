@@ -11,10 +11,10 @@
  *   - amarillo = entre umbral aeróbico y anaeróbico de ese día
  *   - rojo     = sobre el umbral anaeróbico (zona VO2máx)
  *
- * NO es el DFA a1 clásico con cortes fijos y NO equivale a ninguna frecuencia
+ * NO es el alfa-1 clásico con cortes fijos y NO equivale a ninguna frecuencia
  * cardíaca concreta. Nunca se traduce a pulsaciones.
  */
-import type { LegacyZoneSenseTarget, ZoneSenseTarget } from '../types';
+import type { ZoneSenseTarget } from '../types';
 
 export type ZoneSenseColor = 'green' | 'yellow' | 'red';
 
@@ -35,45 +35,6 @@ export const TARGET_COLOR: Record<ZoneSenseTarget, ZoneSenseColor> = {
 
 const COLOR_RANK: Record<ZoneSenseColor, number> = { green: 0, yellow: 1, red: 2 };
 export const colorRank = (c: ZoneSenseColor) => COLOR_RANK[c];
-
-// Compatibilidad: textos antiguos guardados en sesiones de versiones previas.
-// Es el ÚNICO sitio (junto con el tipo LegacyZoneSenseTarget) donde pueden
-// aparecer; se traducen a color y nunca se muestran.
-const LEGACY_MAP: Record<LegacyZoneSenseTarget, ZoneSenseTarget> = {
-  'DFA a1 > 0.75 (Aeróbico puro)': 'ZoneSense verde (aeróbico)',
-  'DFA a1 0.75 - 0.50 (Transición)': 'ZoneSense amarillo (entre umbrales)',
-  'DFA a1 < 0.50 (Anaeróbico)': 'ZoneSense rojo (sobre umbral anaeróbico)',
-  Regenerativo: 'Regenerativo (verde, muy suave)',
-};
-
-/** Normaliza cualquier objetivo (actual, antiguo o texto libre de la IA) a un objetivo canónico. */
-export function normalizeZoneSenseTarget(t: string | undefined | null): ZoneSenseTarget | undefined {
-  if (!t) return undefined;
-  if ((ZONESENSE_TARGETS as string[]).includes(t)) return t as ZoneSenseTarget;
-  if (t in LEGACY_MAP) return LEGACY_MAP[t as LegacyZoneSenseTarget];
-  const l = t.toLowerCase();
-  if (l.includes('regenerativo')) return 'Regenerativo (verde, muy suave)';
-  if (l.includes('rojo') || l.includes('vo2') || l.includes('sobre umbral anaer')) return 'ZoneSense rojo (sobre umbral anaeróbico)';
-  if (l.includes('amarillo') || l.includes('entre umbrales') || l.includes('transición')) return 'ZoneSense amarillo (entre umbrales)';
-  if (l.includes('verde') || l.includes('aeróbico')) return 'ZoneSense verde (aeróbico)';
-  return undefined;
-}
-
-/** Texto del objetivo de intensidad. Sin pulsaciones: ZoneSense no se corresponde con una FC. */
-export function describeZoneSenseTarget(t: string | undefined | null): string {
-  const n = normalizeZoneSenseTarget(t);
-  if (!n) return t || '';
-  switch (n) {
-    case 'ZoneSense verde (aeróbico)':
-      return 'ZoneSense en verde (aeróbico) toda la sesión';
-    case 'Regenerativo (verde, muy suave)':
-      return 'Regenerativo: verde y muy cómodo, lejos del amarillo';
-    case 'ZoneSense amarillo (entre umbrales)':
-      return 'ZoneSense en amarillo (entre umbral aeróbico y anaeróbico) en los bloques de trabajo';
-    case 'ZoneSense rojo (sobre umbral anaeróbico)':
-      return 'ZoneSense en rojo (sobre el umbral anaeróbico) solo en los bloques de trabajo';
-  }
-}
 
 /** Tiempo en zonas ZoneSense de un entreno, en forma canónica (verde/amarillo/rojo). */
 export interface CanonicalZoneSense {

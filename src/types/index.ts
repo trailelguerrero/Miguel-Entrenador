@@ -1,3 +1,5 @@
+import type { LegacyZoneSenseTarget } from '../legacy/zonesense';
+
 export type WorkoutType = 
   | 'easy_run' 
   | 'long_mountain_run' 
@@ -26,11 +28,6 @@ export type ZoneSenseTarget =
   | 'ZoneSense amarillo (entre umbrales)'
   | 'ZoneSense rojo (sobre umbral anaeróbico)'
   | 'Regenerativo (verde, muy suave)';
-export type LegacyZoneSenseTarget =
-  | 'DFA a1 > 0.75 (Aeróbico puro)'
-  | 'DFA a1 0.75 - 0.50 (Transición)'
-  | 'DFA a1 < 0.50 (Anaeróbico)'
-  | 'Regenerativo';
 
 /** Fuente de la prescripción de intensidad (jerarquía en src/brain/intensity.ts). */
 export type IntensitySource = 'zonesense' | 'heart_rate_measured' | 'rpe' | 'terrain' | 'unknown';
@@ -53,7 +50,7 @@ export interface Workout {
   /** De dónde sale la prescripción de intensidad de esta sesión. */
   intensitySource?: IntensitySource;
   // Objetivo de intensidad en colores de ZoneSense (NO equivalen a pulsaciones).
-  // Se aceptan los textos antiguos "DFA a1 ..." de sesiones ya guardadas.
+  // Se aceptan los textos de versiones antiguas (ver src/legacy/zonesense.ts).
   zoneSenseTarget?: ZoneSenseTarget | LegacyZoneSenseTarget;
   
   description: string;
@@ -234,7 +231,6 @@ export interface PMCDataPoint {
   date: string; // YYYY-MM-DD
   dayLabel: string;
   tss: number; // Standard Training Stress Score (Coggan)
-  mountainTss: number; // Mountain-adjusted TSS factoring eccentric descent
   ctl: number; // Chronic Training Load (Fitness - 42d EWMA)
   atl: number; // Acute Training Load (Fatigue - 7d EWMA)
   tsb: number; // Training Stress Balance (Form = CTL - ATL)
@@ -609,8 +605,8 @@ export interface SuuntoProfileSuggestion {
 // 5. Performance Summary & Mesocycle Progression Types
 export interface WeeklyZoneDistribution {
   zone1Min: number; // Recuperación / Regenerativo (< AeT - 15)
-  zone2Min: number; // Base Aeróbica Sub-AeT (AeT - 15 a AeT, DFA a1 > 0.75)
-  zone3Min: number; // Tempo / Transición (AeT a AnT - 10, DFA a1 0.75 - 0.50)
+  zone2Min: number; // Base Aeróbica Sub-AeT (AeT - 15 a AeT)
+  zone3Min: number; // Tempo / Transición (AeT a AnT - 10)
   zone4Min: number; // Umbral Anaeróbico AnT (AnT - 10 a AnT + 5)
   zone5Min: number; // VO2max / Anaeróbico (> AnT + 5)
   totalDurationMin: number;
@@ -630,7 +626,8 @@ export interface WeeklyPerformanceSummary {
   totalElevationLossM: number;
   completedWorkoutsCount: number;
   plannedWorkoutsCount: number;
-  mountainTss: number;
+  /** TSS de la semana (sin ajuste por desnivel: no hay un factor validado). */
+  weeklyTss: number;
   zoneDistribution: WeeklyZoneDistribution;
   avgHeartRate?: number;
   compliancePct: number;

@@ -271,3 +271,19 @@ test('La descarga aplica el mismo presupuesto que ámbar', () => {
   assert.equal(r.workouts[0].plannedElevationGainM, 750);
   assert.equal(r.workouts[0].plannedElevationLossM, 600);
 });
+
+// ── #16 / #18. Sin "mountainTss" ficticio; el cerebro no importa legado ──
+import { readdirSync } from 'node:fs';
+
+test('mountainTss eliminado (era igual al TSS)', () => {
+  for (const f of ['src/types/index.ts', 'src/utils/pmcCalculations.ts', 'src/utils/trainingLoad.ts', 'src/services/sampleData.ts']) {
+    assert.doesNotMatch(readFileSync(f, 'utf8'), /mountainTss/, f);
+  }
+});
+
+test('Ningún módulo de src/brain importa de src/legacy', () => {
+  for (const f of readdirSync('src/brain').filter((n) => /\.tsx?$/.test(n))) {
+    assert.doesNotMatch(readFileSync(`src/brain/${f}`, 'utf8'), /from ['"][^'"]*legacy/, `src/brain/${f}`);
+  }
+  assert.doesNotMatch(readFileSync('src/brain/zonesense.ts', 'utf8'), /LEGACY_MAP|LegacyZoneSenseTarget|DFA\s\S?a1/);
+});

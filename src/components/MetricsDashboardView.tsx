@@ -93,7 +93,7 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
   // Latest PMC values
   const latestPmc = calculatedPmcSeries.length > 0 
     ? calculatedPmcSeries[calculatedPmcSeries.length - 1] 
-    : { ctl: 0, atl: 0, tsb: 0, tss: 0, mountainTss: 0, rampRate: 0 };
+    : { ctl: 0, atl: 0, tsb: 0, tss: 0, rampRate: 0 };
 
   const tsbDiagnosis = describeTsb(latestPmc.tsb);
   const rampRateDiagnosis = describeRampRate(latestPmc.rampRate || 0);

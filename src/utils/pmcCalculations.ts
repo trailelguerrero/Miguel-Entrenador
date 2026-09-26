@@ -10,7 +10,6 @@
 
 export interface TSSCalculationResult {
   tss: number;
-  mountainTss: number;
   intensityFactor: number;
   method: 'hrTSS' | 'rpeTSS' | 'durationEstimate';
   formulaExplanation: string;
@@ -69,7 +68,6 @@ export function calculateWorkoutTss(
   if (durationMin <= 0) {
     return {
       tss: 0,
-      mountainTss: 0,
       intensityFactor: 0,
       method: 'durationEstimate',
       formulaExplanation: 'Duración cero (descanso)',
@@ -116,12 +114,11 @@ export function calculateWorkoutTss(
     formulaExplanation = `TSS estimado por duración = (${durationMin} min / 60) × (IF base 0.72)² × 100 = ${tss} TSS`;
   }
 
-  // Sin ajuste por desnivel: no hay un factor validado que convierta D- en TSS.
-  const mountainTss = tss;
+  // Sin ajuste por desnivel: no hay un factor validado que convierta D- en TSS
+  // (la carga mecánica del trail se limita aparte, con el presupuesto mecánico).
 
   return {
     tss,
-    mountainTss,
     intensityFactor,
     method,
     formulaExplanation,
