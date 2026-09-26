@@ -234,3 +234,40 @@ test('El contexto para Miguel no usa el semáforo guardado', () => {
   const ctx = buildBrainContext([], { baselineHrv: 0 } as any, [stale], null, '2026-09-21');
   assert.equal(ctx.recentCheckIns[0].status, 'fatigued');
 });
+
+// ── #14. Presupuesto mecánico: el desnivel no escala con el tiempo ───────
+import { sanitizeAdaptation } from '../server/brain/decision/validate.js';
+import { mechanicalBudget } from '../src/brain/workoutContract.js';
+import { buildDeload } from '../src/brain/deload.js';
+
+const LONG = { date: '2026-09-27', title: 'Larga', type: 'long_mountain_run', plannedDurationMin: 180, plannedDistanceKm: 24, plannedElevationGainM: 1500 };
+
+test('ÁMBAR: tirada 180 min / 1500 m → 135 min, D+ 750 m, D− 600 m, sin bajadas técnicas', () => {
+  const amber = evaluateReadiness({ hrvRmssd: 52, hrvBaseline: 60, sleepHours: 8, plannedWorkout: { type: 'long_mountain_run', plannedDurationMin: 180 } });
+  assert.equal(amber.level, 'amber');
+  const { adapted } = sanitizeAdaptation({ ...LONG }, amber, {}, LONG);
+  assert.equal(adapted.plannedDurationMin, 135);
+  assert.equal(adapted.plannedElevationGainM, 750);
+  assert.equal(adapted.plannedElevationLossM, 600);
+  assert.match(adapted.terrainRecommendation, /sin bajadas técnicas/);
+  // Con D− planificado propio se usa ese
+  assert.equal(mechanicalBudget('amber', { plannedElevationGainM: 1500, plannedElevationLossM: 2000 }).maxElevationLossM, 800);
+  // Si la IA ya propone menos, se respeta
+  assert.equal(sanitizeAdaptation({ ...LONG, plannedElevationGainM: 300 }, amber, {}, LONG).adapted.plannedElevationGainM, 300);
+});
+
+test('ROJO / sin datos: 0 m de desnivel y llano', () => {
+  const red = evaluateReadiness({ hrvRmssd: 45, hrvBaseline: 60, sleepHours: 8, plannedWorkout: { type: 'long_mountain_run', plannedDurationMin: 180 } });
+  const { adapted } = sanitizeAdaptation({ ...LONG }, red, {}, LONG);
+  assert.equal(adapted.plannedElevationGainM, null);
+  assert.equal(adapted.plannedElevationLossM, null);
+  assert.match(adapted.terrainRecommendation, /llano/);
+  assert.equal(mechanicalBudget('green', LONG).maxElevationGainM, null);
+});
+
+test('La descarga aplica el mismo presupuesto que ámbar', () => {
+  const r = buildDeload([{ id: 'l', ...LONG, completed: false } as any], '2026-09-21');
+  assert.equal(r.workouts[0].plannedDurationMin, 135);
+  assert.equal(r.workouts[0].plannedElevationGainM, 750);
+  assert.equal(r.workouts[0].plannedElevationLossM, 600);
+});

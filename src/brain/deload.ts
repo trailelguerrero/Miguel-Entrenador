@@ -2,7 +2,8 @@
  * DESCARGA generada por el código (no una plantilla con cifras fijas). Aplica a
  * TUS sesiones la misma política que un día ÁMBAR del motor de readiness:
  *   - sin intensidad: series, carreras con intensidad y test → rodaje suave;
- *   - duración ×0,75 (AMBER_DURATION_FACTOR); distancia y desnivel en proporción;
+ *   - duración ×0,75 (AMBER_DURATION_FACTOR); distancia en proporción;
+ *   - presupuesto mecánico de ámbar: D+ ≤ 50 %, D− ≤ 40 %, sin bajadas técnicas;
  *   - FC por debajo de tu umbral aeróbico (sin umbral, por sensaciones);
  *   - textos escritos por el código.
  * Sin sesiones planificadas, se basa en la duración real de tus rodajes recientes;
@@ -10,7 +11,7 @@
  */
 import type { Workout } from '../types/index.js';
 import { AMBER_DURATION_FACTOR } from './readiness.js';
-import { easySessionText, scaleVolume } from './workoutContract.js';
+import { applyMechanicalBudget, easySessionText, scaleVolume } from './workoutContract.js';
 import { addDaysKey } from '../utils/weekStructure.js';
 
 export const DELOAD_DAYS = 7;
@@ -47,6 +48,8 @@ export function buildDeload(all: Workout[], startKey: string, aetHr?: number | n
       scaleVolume(w as any, from, to);
       w.plannedDurationMin = to;
       if (running) {
+        // Misma política que un día ámbar: D+ ≤ 50 % y D− ≤ 40 %, sin bajadas técnicas
+        applyMechanicalBudget(w as any, 'amber', orig as any);
         Object.assign(w, easySessionText(to, w.type === 'long_mountain_run' ? 'long' : 'easy', aet));
         w.targetHrMin = undefined;
         w.targetHrMax = aet ?? undefined;
@@ -69,7 +72,7 @@ export function buildDeload(all: Workout[], startKey: string, aetHr?: number | n
       workouts,
       replaced: workouts.length,
       basis: 'planned',
-      message: `He convertido tus ${workouts.length} sesiones planificadas del ${startKey} al ${endKey} en descarga: ${Math.round(AMBER_DURATION_FACTOR * 100)} % de duración, sin series y con ${fc}.`,
+      message: `He convertido tus ${workouts.length} sesiones planificadas del ${startKey} al ${endKey} en descarga: ${Math.round(AMBER_DURATION_FACTOR * 100)} % de duración, como mucho la mitad del desnivel positivo y el 40 % del negativo (sin bajadas técnicas), sin series y con ${fc}.`,
     };
   }
 

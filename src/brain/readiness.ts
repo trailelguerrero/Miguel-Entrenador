@@ -235,6 +235,11 @@ export function describeReadiness(state: ReadinessState): string {
     `Estado calculado por el motor de readiness: ${lvl}.`,
     state.reasons.length ? `Motivos: ${state.reasons.join('; ')}.` : 'Sin señales de fatiga.',
     `LÍMITES OBLIGATORIOS: ${l.mandatoryRest ? 'descanso total' : `duración máxima ${l.maxDurationMin ?? 'la planificada'}${l.maxDurationMin != null ? ' min' : ''}, ${l.maxHr != null ? `FC máxima ${l.maxHr} ppm` : state.level === 'green' ? 'sin techo de FC' : 'sin umbral de FC: solo suave, pudiendo hablar'}, ${l.allowIntervals ? 'series permitidas' : 'sin series'}`}.`,
+    !l.mandatoryRest && state.level === 'amber'
+      ? 'DESNIVEL: como mucho el 50 % del D+ y el 40 % del D− planificados, sin bajadas técnicas (el desnivel no se recorta en proporción al tiempo).'
+      : !l.mandatoryRest && (state.level === 'red' || state.level === 'unknown')
+        ? 'DESNIVEL: 0 m, terreno llano.'
+        : '',
     'Los límites son MÁXIMOS: puedes proponer menos (y explicarlo como recomendación), nunca más. El Recovery de Suunto es informativo: si es bajo con límites holgados, puedes aconsejar prudencia, pero no lo presentes como un límite.',
     state.missingData.length ? `Datos que faltan: ${state.missingData.join(', ')}.` : '',
   ]

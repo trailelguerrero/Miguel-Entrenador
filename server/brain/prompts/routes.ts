@@ -201,6 +201,7 @@ Responde ÚNICAMENTE con un JSON válido estructurado así:
       "plannedDurationMin": number,
       "plannedDistanceKm": number (opcional),
       "plannedElevationGainM": number (opcional),
+      "plannedElevationLossM": number (opcional; D− de la ruta, obligatorio en la tirada larga si no es circular),
       "intensitySource": "heart_rate_measured | rpe",
       "targetHrMin": number o null (ppm; null si no hay umbral de FC),
       "targetHrMax": number o null (ppm; OBLIGATORIO si hay umbral de FC: rodajes y tiradas largas ≤ AeT),

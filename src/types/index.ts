@@ -43,6 +43,8 @@ export interface Workout {
   plannedDurationMin: number;
   plannedDistanceKm?: number;
   plannedElevationGainM?: number;
+  /** D− planificado (m). Sin dato, el presupuesto mecánico toma el D+ (ruta circular). */
+  plannedElevationLossM?: number | null;
   
   // Uphill Athlete & ZoneSense targets
   // Topes de FC: SOLO con umbral medido (si no, null). Ver src/brain/intensity.ts

@@ -10,7 +10,7 @@ import { resolveIntensityPrescription, type IntensityPrescription } from '../../
 import type { ReadinessState } from '../../../src/brain/readiness.js';
 import { verifyTodayReadiness } from '../context.js';
 import { analyzeWeekStructure, addDaysKey, DEFAULT_WEEK_POLICY, deriveWeeklyStructurePolicy, type WeeklyStructurePolicy } from '../../../src/utils/weekStructure.js';
-import { allowedTypes, easySessionText, mentionsIntensity, RUN_TYPES, scaleVolume, toRest } from '../../../src/brain/workoutContract.js';
+import { allowedTypes, applyMechanicalBudget, easySessionText, mentionsIntensity, RUN_TYPES, scaleVolume, toRest } from '../../../src/brain/workoutContract.js';
 
 /** Evidencia nutricional real del atleta (la envía el cliente). */
 export interface NutritionEvidence {
@@ -120,7 +120,7 @@ export function sanitizePlanWorkouts(
   const notes: string[] = [];
   const out = (Array.isArray(workouts) ? workouts : []).map((raw, i) => {
     const w = { ...raw };
-    for (const k of ['plannedDurationMin', 'plannedDistanceKm', 'plannedElevationGainM', 'targetHrMin', 'targetHrMax']) w[k] = toNumber(w[k]);
+    for (const k of ['plannedDurationMin', 'plannedDistanceKm', 'plannedElevationGainM', 'plannedElevationLossM', 'targetHrMin', 'targetHrMax']) w[k] = toNumber(w[k]);
     // Contrato de descanso: sin restos de entreno
     if (w.type === 'rest') return toRest(w, 'Día de recuperación.');
     const label = w.title || w.date || `sesión ${i + 1}`;
@@ -130,6 +130,16 @@ export function sanitizePlanWorkouts(
   });
   const structureIssues = weekMonday ? analyzeWeekStructure(out as Workout[], weekMonday, deriveWeeklyStructurePolicy(profile as any)).issues : [];
   return { workouts: out, notes, structureIssues };
+}
+
+/** D+/D− de la sesión ORIGINAL (referencia del % del presupuesto mecánico), si los trae. */
+function pickElevation(base: any): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const k of ['plannedElevationGainM', 'plannedElevationLossM']) {
+    const v = toNumber(base?.[k]);
+    if (typeof v === 'number' && v > 0) out[k] = v;
+  }
+  return out;
 }
 
 /** Número que la IA puede devolver como texto ("90") → número; si no, se deja tal cual. */
@@ -156,7 +166,7 @@ export function sanitizeAdaptation(
   let w: any = { ...base, ...(adapted && typeof adapted === 'object' ? adapted : {}) };
   const corrections: string[] = [];
   const l = state.limits;
-  for (const k of ['plannedDurationMin', 'targetHrMin', 'targetHrMax', 'plannedDistanceKm', 'plannedElevationGainM']) w[k] = toNumber(w[k]);
+  for (const k of ['plannedDurationMin', 'targetHrMin', 'targetHrMax', 'plannedDistanceKm', 'plannedElevationGainM', 'plannedElevationLossM']) w[k] = toNumber(w[k]);
   // Duración no válida de la IA → la de la sesión original (que después se recorta)
   if (!pos(w.plannedDurationMin) && w.plannedDurationMin !== 0 && pos(base.plannedDurationMin)) w.plannedDurationMin = base.plannedDurationMin;
 
@@ -210,12 +220,11 @@ export function sanitizeAdaptation(
       plannedSodiumPerHourMg: null,
     });
   }
-  // En rojo o sin datos: regenerativo o suave y llano, sin desnivel ni distancia heredados
-  if (state.level === 'red' || state.level === 'unknown') {
-    if (pos(w.plannedElevationGainM)) corrections.push(`Sin desnivel hoy (estado ${state.level}).`);
-    w.plannedElevationGainM = null;
-    w.plannedDistanceKm = null;
-  }
+  // Presupuesto mecánico del nivel (el desnivel no se recorta en proporción al tiempo):
+  // ámbar D+ ≤ 50 % y D− ≤ 40 % de lo planificado; rojo / sin datos, llano
+  if (RUN_TYPES.includes(w.type)) corrections.push(...applyMechanicalBudget(w, state.level, { ...w, ...pickElevation(base) }));
+  // En rojo o sin datos: sin distancia heredada
+  if (state.level === 'red' || state.level === 'unknown') w.plannedDistanceKm = null;
 
   // 4. Intensidad en pulsaciones: techo de FC del día (en rojo, AeT − 10)
   fixIntensity(w, resolveIntensityPrescription(profile), corrections, w.title || 'Sesión adaptada', l.maxHr);
