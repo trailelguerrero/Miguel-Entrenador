@@ -1,8 +1,8 @@
 // Cifrado de secretos guardados en Supabase (tokens de Suunto): AES-256-GCM.
 //
-//   TOKEN_ENCRYPTION_KEY (recomendada) → clave de cifrado. Si falta, se deriva de
-//   APP_SECRET/INGEST_SECRET: cambiar esa clave obliga a reconectar Suunto una vez.
-//   Para cerrar las sesiones sin perder Suunto, cambia SESSION_SECRET.
+//   Clave de cifrado: TOKEN_ENCRYPTION_KEY si existe; si no, APP_SECRET; si no,
+//   SUPABASE_SERVICE_ROLE_KEY (secreto que solo tiene el servidor, nunca la base).
+//   Cambiar la clave que se use obliga a reconectar Suunto una vez.
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 import { loginSecrets } from '../auth.js';
 
@@ -14,8 +14,8 @@ export interface SealedBox {
 }
 
 function key(): Buffer {
-  const base = process.env.TOKEN_ENCRYPTION_KEY || loginSecrets()[0];
-  if (!base) throw new Error('Sin clave para cifrar (TOKEN_ENCRYPTION_KEY o APP_SECRET/INGEST_SECRET).');
+  const base = process.env.TOKEN_ENCRYPTION_KEY || loginSecrets()[0] || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!base) throw new Error('Sin clave para cifrar (TOKEN_ENCRYPTION_KEY, APP_SECRET o SUPABASE_SERVICE_ROLE_KEY).');
   return createHash('sha256').update(`miguel-tokens:${base}`).digest();
 }
 

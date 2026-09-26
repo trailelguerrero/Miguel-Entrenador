@@ -3,10 +3,8 @@
 // de Supabase con pgvector.
 //
 //   KNOWLEDGE_MATCH_THRESHOLD → opcional: similitud mínima (0.55)
-//   INGEST_SECRET             → clave para añadir/listar/borrar documentos
 //
 // Sin configurar, la app funciona igual que antes: Miguel no consulta la biblioteca.
-import { timingSafeEqual } from 'node:crypto';
 import { chunkText } from './chunker.js';
 import { embedTexts, embeddingModelId, missingEmbeddingVars } from './embeddings.js';
 import { GUIDE, KnowledgeError, dbError, getSupabase, missingSupabaseVars } from './supabase.js';
@@ -31,7 +29,6 @@ export function knowledgeConfigStatus() {
     chatHistoryEnabled: supabaseMissing.length === 0,
     missing,
     embeddingModel: embeddingModelId(),
-    ingestProtected: !!process.env.INGEST_SECRET,
   };
 }
 
@@ -193,19 +190,3 @@ export async function deleteDocument(title: string): Promise<number> {
   return data?.length ?? 0;
 }
 
-/** Comprueba la cabecera x-ingest-secret (comparación en tiempo constante). */
-export function checkIngestSecret(provided: string | undefined): void {
-  const expected = process.env.INGEST_SECRET;
-  if (!expected) {
-    throw new KnowledgeError(
-      'KB_CONFIG',
-      'Falta la variable de entorno INGEST_SECRET: la biblioteca no admite cambios sin ella.',
-      `Crea un secreto largo, cárgalo en Vercel como INGEST_SECRET y haz Redeploy (sección 10 de ${GUIDE}).`,
-    );
-  }
-  const a = Buffer.from(provided ?? '');
-  const b = Buffer.from(expected);
-  if (a.length !== b.length || !timingSafeEqual(a, b)) {
-    throw new KnowledgeError('KB_AUTH', 'Clave de la biblioteca incorrecta.', 'Usa el mismo valor que INGEST_SECRET en Vercel.', 401);
-  }
-}

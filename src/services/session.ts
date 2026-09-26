@@ -1,4 +1,4 @@
-// Sesión de la app (Fase B). La clave (APP_SECRET o INGEST_SECRET de Vercel) se
+// Sesión de la app. Solo si hay APP_SECRET en Vercel (sin ella la app está abierta). La clave se
 // escribe UNA vez por dispositivo: el servidor responde con una cookie de sesión
 // HttpOnly de 90 días y la clave no se guarda en el navegador.
 const LEGACY_KEY = 'uphill_coach_knowledge_secret';
@@ -31,12 +31,12 @@ async function doLogin(): Promise<boolean> {
   const legacy = takeLegacyKey();
   if (legacy && (await postLogin(legacy).catch(() => false))) return true;
   if (typeof window === 'undefined') return false;
-  let message = 'Escribe la clave de la app (APP_SECRET o INGEST_SECRET en Vercel).\nSolo hace falta una vez en este dispositivo: no se guarda la clave, sino una sesión de 90 días.';
+  let message = 'Escribe la clave de la app (APP_SECRET en Vercel).\nSolo hace falta una vez en este dispositivo: no se guarda la clave, sino una sesión de 90 días.';
   for (let i = 0; i < 3; i++) {
     const typed = window.prompt(message);
     if (!typed || !typed.trim()) return false;
     if (await postLogin(typed.trim()).catch(() => false)) return true;
-    message = 'La clave no es correcta. Vuelve a escribirla (APP_SECRET o INGEST_SECRET en Vercel).';
+    message = 'La clave no es correcta. Vuelve a escribirla (APP_SECRET en Vercel).';
   }
   return false;
 }

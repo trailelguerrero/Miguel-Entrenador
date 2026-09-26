@@ -136,8 +136,13 @@ export const ApiStatusIndicator: React.FC<Props> = ({ onGoToSuunto, onDisconnect
               </p>
             )}
             {status.health?.apiProtected === false && (
+              <p className="rounded-xl p-2.5 border border-zinc-700 bg-zinc-800/50 text-zinc-400 text-[11px]">
+                App sin clave: no compartas la URL. (Si algún día quieres cerrarla, pon <strong>APP_SECRET</strong> en Vercel.)
+              </p>
+            )}
+            {status.health?.dataStore === false && status.health?.dataStoreProblem && (
               <p className="rounded-xl p-2.5 border border-amber-500/30 bg-amber-500/10 text-amber-200 text-[11px]">
-                La IA de la app está abierta: cualquiera con la URL puede usarla. Pon <strong>APP_SECRET</strong> (o INGEST_SECRET) en Vercel y haz Redeploy.
+                Tus datos se guardan solo en este navegador: {status.health.dataStoreProblem}
               </p>
             )}
             {aiMessage && aiState !== 'ok' && (
