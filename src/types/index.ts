@@ -106,6 +106,29 @@ export interface Workout {
   suuntoWorkoutKey?: string;
   /** Añadido a mano en la app de Suunto (sin pulsómetro): su TSS es un valor fijo de Suunto, no medido. */
   suuntoManualEntry?: boolean;
+  /** Deporte de Suunto (activityId) y su nombre: distingue actividades a pie de la bici dentro de 'cross_training'. */
+  suuntoActivityId?: number;
+  /**
+   * Tiempo MEDIDO por zonas de FC (de un .FIT subido al completar), con los umbrales
+   * usados. Si luego cambias tu AeT/AnT, ya no vale y se vuelve a la estimación.
+   */
+  hrZoneSplit?: { belowAetMin: number; aetToAntMin: number; aboveAntMin: number; aetHr: number; antHr: number; source: 'fit' };
+  /**
+   * Tiempo MEDIDO por Suunto en cada zona de FC del reloj (segundos) y los límites
+   * inferiores de esas zonas ese día. Se reparte contra tu AeT/AnT al leer.
+   */
+  suuntoHrZones?: { timesSec: { z1: number; z2: number; z3: number; z4: number; z5: number }; lowerLimits: { z2: number; z3: number; z4: number; z5: number } };
+  /** Minutos subiendo y bajando, medidos por el reloj. */
+  ascentTimeMin?: number;
+  descentTimeMin?: number;
+  /** Sensación anotada por el atleta en Suunto (1-5). No es el RPE 1-10 de la app. */
+  suuntoFeeling?: number;
+  /** Método con el que Suunto calculó el TSS (HR, POWER, PACE, MET, DYNAMIC_DFA…). */
+  suuntoTssMethod?: string;
+  /** Temperatura: sensor del reloj (sube con el calor corporal) y servicio meteorológico (°C). */
+  avgTemperatureC?: number;
+  weatherTemperatureC?: number;
+  suuntoSport?: string;
 }
 
 export interface WorkoutFuelingGuideline {

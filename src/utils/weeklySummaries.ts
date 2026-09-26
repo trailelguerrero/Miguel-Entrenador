@@ -25,8 +25,10 @@ export interface WeekSummary {
   completedCount: number;
   tss: number;
   zoneSense: ZoneSenseMinutes;
-  /** % del tiempo bajo el AeT por FC media (estimación). null sin AeT o sin FC. */
+  /** % del tiempo bajo el AeT por FC (medido con .FIT o estimado con la FC media). null sin AeT o sin FC. */
   aerobicPct: number | null;
+  /** Cómo se obtuvo aerobicPct. */
+  aerobicMethod: 'measured' | 'estimated' | 'mixed' | null;
   hrAerobicMin: number;
   hrTrackedMin: number;
   /** % en verde según ZoneSense (segunda opinión). null si no hay ZoneSense. */
@@ -113,6 +115,7 @@ export function buildWeeklySummaries(workouts: Workout[], weeks = 12, antHr?: nu
       tss: Math.round(tss),
       zoneSense: zs,
       aerobicPct: hr.pct,
+      aerobicMethod: hr.method,
       hrAerobicMin: hr.aerobicMin,
       hrTrackedMin: hr.trackedMin,
       zoneSenseAerobicPct: pct(zs),

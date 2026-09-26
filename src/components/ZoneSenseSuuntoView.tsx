@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { resolveIntensityPrescription } from '../brain/intensity';
 import { 
   Watch, 
   Activity, 
@@ -55,7 +56,7 @@ export const ZoneSenseSuuntoView: React.FC<ZoneSenseSuuntoViewProps> = ({
     setIsParsingFit(true);
     try {
       const buffer = await file.arrayBuffer();
-      const result = await parseFitFile(buffer, file.name, profile.aetHr, profile.antHr);
+      const result = await parseFitFile(buffer, file.name, resolveIntensityPrescription(profile).aetHr, resolveIntensityPrescription(profile).antHr);
       setParsedFitData(result);
       setNotification({ message: `Archivo ${file.name} procesado correctamente. Métricas extraídas con éxito.`, type: 'success' });
     } catch (err: any) {
@@ -334,12 +335,20 @@ export const ZoneSenseSuuntoView: React.FC<ZoneSenseSuuntoViewProps> = ({
                 {/* ZoneSense / Uphill Athlete Metabolic Distribution */}
                 <div className="space-y-3 bg-zinc-900 p-5 rounded-2xl border border-zinc-800">
                   <div className="flex justify-between items-center text-xs">
-                    <span className="font-bold text-zinc-200">Tiempo por FC (AeT {profile.aetHr} bpm / AnT {profile.antHr} bpm):</span>
+                    <span className="font-bold text-zinc-200">Tiempo por FC (AeT {resolveIntensityPrescription(profile).aetHr ?? '—'} / AnT {resolveIntensityPrescription(profile).antHr ?? '—'} ppm):</span>
                     <span className="font-bold text-zinc-400">
                       {parsedFitData.hasHeartRate ? 'Calculado por FC, no ZoneSense' : 'El archivo no trae FC'}
                     </span>
                   </div>
 
+                  {parsedFitData.timeInAerobicPct == null ? (
+                    <p className="text-xs text-zinc-400">
+                      {parsedFitData.hasHeartRate
+                        ? 'Sin umbral aeróbico y anaeróbico medidos (zonas de FC de tu reloj o fijados a mano) no se reparte el tiempo por FC: la app no usa umbrales por defecto.'
+                        : 'Sin FC en el archivo.'}
+                    </p>
+                  ) : (
+                  <>
                   {/* Horizontal Bar */}
                   <div className="h-4 w-full bg-zinc-800 rounded-full overflow-hidden flex">
                     <div
@@ -364,6 +373,8 @@ export const ZoneSenseSuuntoView: React.FC<ZoneSenseSuuntoViewProps> = ({
                     <span className="text-amber-400">AeT–AnT: {parsedFitData.timeInTransitionPct}%</span>
                     <span className="text-red-400">&gt; AnT: {parsedFitData.timeInAnaerobicPct}%</span>
                   </div>
+                  </>
+                  )}
                 </div>
 
               </div>
