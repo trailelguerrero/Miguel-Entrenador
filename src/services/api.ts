@@ -149,7 +149,9 @@ export const ApiService = {
     coachMemory?: CoachLearnedMemory | null,
     loadContext?: PlanLoadContext,
     existingWorkouts?: ReturnType<typeof summarizeWeekWorkouts>,
-    nutritionEvidence?: NutritionEvidence
+    nutritionEvidence?: NutritionEvidence,
+    /** Semana en curso: primer día a planificar (los anteriores no se tocan). */
+    planFromDate?: string
   ): Promise<{ weekSummary: string; workouts: Workout[]; validationNotes?: string[]; structureIssues?: string[]; status?: 'valid' | 'repaired' | 'rejected'; issues?: string[]; error?: string }> {
     return await apiFetch('/api/generate-plan', {
         athleteProfile,
@@ -161,6 +163,7 @@ export const ApiService = {
         loadContext,
         existingWorkouts,
         nutritionEvidence,
+        planFromDate,
       }, 'ai', 'Error al generar el plan personalizado', {
         // Plan rechazado por el contrato: no es un fallo de la IA, lo gestiona App (no se guarda)
         allowStatus: [422],

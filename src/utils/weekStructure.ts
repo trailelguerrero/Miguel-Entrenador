@@ -90,6 +90,34 @@ export function addDaysKey(key: string, days: number): string {
   return localDateKey(d);
 }
 
+export interface PlanningWindow {
+  /** Lunes de la semana a planificar. */
+  monday: string;
+  /** Primer día que se planifica (el lunes, u hoy si la semana ya está en curso). */
+  fromDate: string;
+  sunday: string;
+}
+
+/**
+ * Qué semana planifica el botón (decisión del atleta): de viernes a domingo, la
+ * semana SIGUIENTE entera; de lunes a jueves, los días que quedan de la actual
+ * (desde hoy). Nunca depende del mes que se esté mirando en el calendario.
+ */
+export function planningWindow(today: string = localDateKey()): PlanningWindow {
+  const dow = (parseKey(today).getDay() + 6) % 7; // 0 = lunes … 6 = domingo
+  if (dow >= 4) {
+    const monday = addDaysKey(today, 7 - dow);
+    return { monday, fromDate: monday, sunday: addDaysKey(monday, 6) };
+  }
+  const monday = addDaysKey(today, -dow);
+  return { monday, fromDate: today, sunday: addDaysKey(monday, 6) };
+}
+
+/** "28 sep" (para el texto del botón). */
+export function shortDayMonth(key: string): string {
+  return parseKey(key).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }).replace('.', '');
+}
+
 /** Sesiones del PLAN (no actividades importadas sueltas de Suunto, ni descanso ni fuerza). */
 function isPlannedSession(w: Workout): boolean {
   if (w.type === 'rest' || w.type === 'strength_core') return false;

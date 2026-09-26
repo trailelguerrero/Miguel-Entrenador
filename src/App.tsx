@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { computePmcSeries, getWorkoutLoad } from './utils/trainingLoad';
-import { analyzeWeekStructure, deriveWeeklyStructurePolicy, mondayOfKey, addDaysKey } from './utils/weekStructure';
+import { analyzeWeekStructure, deriveWeeklyStructurePolicy, mondayOfKey, addDaysKey, planningWindow } from './utils/weekStructure';
 import { localDateKey } from './utils/trainingLoad';
 import { buildBrainContext, summarizeWeekWorkouts } from './brain/context';
 import { addPending, isAppliedRule } from './brain/memory';
@@ -661,9 +661,14 @@ Tus células y tu sistema nervioso autónomo están pidiendo tregua. No fuerces 
     setIsTestDataActive(false);
   };
 
-  // Find today's workout
+  // Sesión de hoy: la planificada pendiente si la hay; si no, la primera del día
   const todayStr = localDateKey();
-  const todayWorkout = workouts.find((w) => w.date === todayStr);
+  const todaySessions = workouts.filter((w) => w.date === todayStr && w.type !== 'rest');
+  const todayPending = todaySessions.find((w) => !w.completed);
+  const todayCompleted = todaySessions.find((w) => w.completed);
+  const todayWorkout = todayPending ?? todayCompleted ?? workouts.find((w) => w.date === todayStr);
+  // Hecha = hay un entreno completado hoy y ninguna sesión planificada pendiente
+  const todayDone = !!todayCompleted && !todayPending;
 
   // Hechos calculados para Miguel (carga, historial, readiness de hoy, check-ins)
   const getBrainContext = (plannedToday?: Workout | null) =>
@@ -729,10 +734,11 @@ Tus células y tu sistema nervioso autónomo están pidiendo tregua. No fuerces 
 
   // Generar semana con Miguel: 3 sesiones entre semana (o 2 si Miguel lo
   // decide por fatiga o disponibilidad) + tirada larga en sábado o domingo.
-  const handleGenerateWeekWithMiguel = async (weekStartDateStr: string) => {
+  // La semana la decide planningWindow (vie–dom → la siguiente; lun–jue → desde hoy), no el mes mirado
+  const handleGenerateWeekWithMiguel = async () => {
     setIsGeneratingPlan(true);
     try {
-      const monday = mondayOfKey(weekStartDateStr);
+      const { monday, fromDate } = planningWindow(localDateKey());
       // Evidencia nutricional REAL (si no existe, la IA no puede dar cifras)
       const gut = StorageService.getGutProfile();
       const heat = profile.advancedPhysiologicalProfile?.heatTolerance;
@@ -749,7 +755,8 @@ Tus células y tu sistema nervioso autónomo están pidiendo tregua. No fuerces 
           maxCarbsPerHourG: gut?.currentMaxCarbsPerHour ?? null,
           sweatRateLph: heat?.sweatRateDocumentedLitersPerHour ?? null,
           sodiumProfile: heat?.sodiumLossProfile ?? null,
-        }
+        },
+        fromDate
       );
 
       // Plan rechazado por el contrato (estructura imposible de reparar sin inventar): no se guarda nada
@@ -771,6 +778,8 @@ Tus células y tu sistema nervioso autónomo están pidiendo tregua. No fuerces 
       const droppedDates: string[] = [];
       const newWorkouts: Workout[] = plan.workouts.flatMap((w, index) => {
         let date = w.date;
+        // Días ya pasados de la semana en curso: no se planifican
+        if (date && date >= monday && date < fromDate) return [];
         if (!(date && date >= monday && date <= sunday)) {
           const byPosition = index <= 6 ? addDaysKey(monday, index) : null;
           if (!byPosition || usedDates.has(byPosition)) {
@@ -808,7 +817,7 @@ Tus células y tu sistema nervioso autónomo están pidiendo tregua. No fuerces 
       const chatMsg: ChatMessage = {
         id: `plan-gen-${Date.now()}`,
         role: 'assistant',
-        content: `He preparado el microciclo semanal comenzando el lunes ${monday}.
+        content: `${fromDate > monday ? `He planificado lo que queda de la semana (desde el ${fromDate}).` : `He preparado el microciclo semanal comenzando el lunes ${monday}.`}
 
 ${plan.weekSummary}
 
@@ -1002,6 +1011,8 @@ ${structureLine} Ya puedes ver los entrenamientos en tu calendario.${warningLine
           isAdapting={isAdaptingSession}
           isSetupIncomplete={!profile.setupCompleted}
           onOpenSetupGuide={() => setIsSetupGuideOpen(true)}
+          todayDone={todayDone}
+          todayDoneTitle={todayCompleted?.title}
         />}
 
         {/* Quick Weight & Biomechanics Widget */}
@@ -1101,7 +1112,7 @@ ${structureLine} Ya puedes ver los entrenamientos en tu calendario.${warningLine
             profile={profile}
             onRegeneratePlanWithMemory={() => {
               setActiveTab('calendar');
-              handleGenerateWeekWithMiguel(new Date().toISOString().split('T')[0]);
+              handleGenerateWeekWithMiguel();
             }}
           />
         )}

@@ -127,7 +127,8 @@ ${formatLoadContext(brainContext)}
 
 /** Prompt de /api/generate-plan. */
 export function buildPlanPrompt(body: any): string {
-  const { athleteProfile, targetRace, weekStartDate, phaseFocus, existingWorkouts, athleteHistoryDoc, coachMemory, loadContext, nutritionEvidence } = body || {};
+  const { athleteProfile, targetRace, weekStartDate, planFromDate, phaseFocus, existingWorkouts, athleteHistoryDoc, coachMemory, loadContext, nutritionEvidence } = body || {};
+  const partialWeek = typeof planFromDate === 'string' && typeof weekStartDate === 'string' && planFromDate > weekStartDate;
   const intensity = resolveIntensityPrescription(athleteProfile);
   const weekSessions = Array.isArray(existingWorkouts) && existingWorkouts.length
     ? existingWorkouts
@@ -146,7 +147,11 @@ ${describeMemoryForPrompt(coachMemory, athleteToday(body))}
 
   const weekPolicy = deriveWeeklyStructurePolicy(athleteProfile);
   const prompt = `
-Genera un microciclo semanal de entrenamiento de 7 días (comenzando el lunes ${weekStartDate || 'próximo'}) para preparar su carrera objetivo.
+${
+    partialWeek
+      ? `La semana del lunes ${weekStartDate} YA ESTÁ EN CURSO: planifica SOLO los días desde el ${planFromDate} hasta el domingo (no devuelvas sesiones de días anteriores). Lo ya hecho esa semana (abajo, "hecha") cuenta para la estructura: complétala con lo que falta.`
+      : `Genera un microciclo semanal de entrenamiento de 7 días (comenzando el lunes ${weekStartDate || 'próximo'}) para preparar su carrera objetivo.`
+  }
 [OBJETIVO PRINCIPAL] ${describeTargetRace(targetRace)}
 
 [DIRECTIVA CRÍTICA: CERO PLANES GENÉRICOS O DE PLANTILLA]:
