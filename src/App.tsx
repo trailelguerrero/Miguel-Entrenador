@@ -68,6 +68,14 @@ import { ApiService, isSavableMessage } from './services/api';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<string>('calendar');
+  // Al cambiar de pestaña se vuelve arriba: si no, en el móvil se seguía viendo lo mismo
+  useEffect(() => {
+    try {
+      window.scrollTo({ top: 0 });
+    } catch {
+      // entornos sin scroll (tests)
+    }
+  }, [activeTab]);
   const [isTestDataActive, setIsTestDataActive] = useState<boolean>(StorageService.isTestDataActive());
   
   // Persistent State
@@ -983,8 +991,10 @@ ${structureLine} Ya puedes ver los entrenamientos en tu calendario.${warningLine
         <SuuntoSyncBar config={suuntoConfig} isSyncing={isSyncingSuunto} onSync={() => void handleSyncSuunto()} />
         <ZoneAdviceBanner recommendations={pendingZoneAdvice(profile)} onResolve={handleResolveZoneAdvice} />
 
-        {/* Morning Readiness & Fatigue Warning Banner */}
-        <MorningBanner
+        {/* Aviso de readiness: solo en el Calendario (inicio). En las demás pestañas
+            ocupaba casi toda la pantalla del móvil y parecía que la pestaña no cambiaba;
+            el estado del día sigue visible en el botón de check-in de la cabecera. */}
+        {activeTab === 'calendar' && <MorningBanner
           checkIn={todayCheckIn}
           todayWorkout={todayWorkout}
           onOpenCheckIn={() => setIsCheckInModalOpen(true)}
@@ -992,7 +1002,7 @@ ${structureLine} Ya puedes ver los entrenamientos en tu calendario.${warningLine
           isAdapting={isAdaptingSession}
           isSetupIncomplete={!profile.setupCompleted}
           onOpenSetupGuide={() => setIsSetupGuideOpen(true)}
-        />
+        />}
 
         {/* Quick Weight & Biomechanics Widget */}
         {(activeTab === 'calendar' || activeTab === 'performance') && (
