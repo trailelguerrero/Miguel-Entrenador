@@ -1,5 +1,5 @@
 import { resolveIntensityPrescription } from '../brain/intensity';
-import { hrAerobicShare } from '../utils/trainingLoad';
+import { describeHrShareMethod, hrAerobicShare } from '../utils/trainingLoad';
 import { describeTsb } from '../utils/pmcCalculations';
 import { isAppliedRule } from '../brain/memory';
 import { localDateKey } from '../utils/trainingLoad';
@@ -88,7 +88,8 @@ export const ReportPdfModal: React.FC<ReportPdfModalProps> = ({
     ? Math.round(zsWorkouts.reduce((acc, w) => acc + (w.actualDurationMin || 0) * w.zoneSenseBreakdown!.aerobicPct, 0) / zsMinutes)
     : null;
   // La referencia: FC media frente al umbral aeróbico (estimación)
-  const aerobicPct30d = hrAerobicShare(completedWorkouts, resolveIntensityPrescription(profile).aetHr).pct;
+  const hrShare30d = hrAerobicShare(completedWorkouts, resolveIntensityPrescription(profile).aetHr);
+  const aerobicPct30d = hrShare30d.pct;
 
   // Reglas reales de la memoria de Miguel (no textos fijos)
   const learnedRules = StorageService.getCoachMemory().insights.filter(i => isAppliedRule(i.status)).slice(0, 3).map(i => i.ruleForFuturePlans);
@@ -252,7 +253,7 @@ export const ReportPdfModal: React.FC<ReportPdfModalProps> = ({
                 Últimos 30 días: <strong>{completedWorkouts.length} entrenos completados</strong>, {totalVolumeHours} h, {totalDistanceKm} km y +{totalAscentM} m D+.
                 AeT <strong>{profile.aetHr} bpm</strong> / AnT <strong>{profile.antHr} bpm</strong> (spread de {profile.antHr - profile.aetHr} bpm).
                 {aerobicPct30d !== null
-                  ? <> Según tus pulsaciones (FC media de cada entreno), el <strong>{aerobicPct30d}%</strong> del tiempo fue por debajo de tu umbral aeróbico{zsAerobicPct30d !== null ? <> (ZoneSense, como segunda opinión: {zsAerobicPct30d}% en verde)</> : null}.</>
+                  ? <> Según tus pulsaciones ({describeHrShareMethod(hrShare30d)}), el <strong>{aerobicPct30d}%</strong> del tiempo fue por debajo de tu umbral aeróbico{zsAerobicPct30d !== null ? <> (ZoneSense, como segunda opinión: {zsAerobicPct30d}% en verde)</> : null}.</>
                   : <> No hay entrenos con datos de ZoneSense en este periodo.</>}
                 {' '}Estado de carga actual: CTL {latestPmc.ctl.toFixed(1)}, ATL {latestPmc.atl.toFixed(1)}, TSB {latestPmc.tsb.toFixed(1)}.
               </p>
@@ -267,7 +268,7 @@ export const ReportPdfModal: React.FC<ReportPdfModalProps> = ({
               <p className="text-zinc-300 print:text-zinc-700">
                 ZoneSense (banda de pecho) clasifica la intensidad en verde (aeróbico), amarillo (entre umbrales) y rojo (sobre el umbral anaeróbico)
                 respecto a la línea base de cada entreno; no equivale a pulsaciones fijas.
-                {aerobicPct30d !== null ? <> Últimos 30 días: <strong>{aerobicPct30d}%</strong> del tiempo bajo tu umbral aeróbico (FC media).</> : ' Sin FC o sin umbral aeróbico en los últimos 30 días.'}
+                {aerobicPct30d !== null ? <> Últimos 30 días: <strong>{aerobicPct30d}%</strong> del tiempo bajo tu umbral aeróbico ({hrShare30d.method === 'measured' ? 'medido' : 'estimado'}).</> : ' Sin FC o sin umbral aeróbico en los últimos 30 días.'}
               </p>
               <p className="text-zinc-400 print:text-zinc-600">
                 Tus umbrales de FC (la referencia de intensidad): umbral aeróbico {profile.aetHr || '—'} ppm · umbral anaeróbico {profile.antHr || '—'} ppm · FC máx {profile.maxHr || '—'} ppm.

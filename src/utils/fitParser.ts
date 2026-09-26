@@ -20,6 +20,8 @@ export interface ParsedFitResult {
   timeInAerobicPct: number | null; // FC <= AeT
   timeInTransitionPct: number | null; // AeT < FC <= AnT
   timeInAnaerobicPct: number | null; // FC > AnT
+  /** Minutos MEDIDOS en cada zona de FC (muestras del .FIT); null sin umbrales medidos o sin FC. */
+  hrZoneMinutes: { belowAetMin: number; aetToAntMin: number; aboveAntMin: number } | null;
   recordsSample: Array<{
     timestamp: string;
     heartRate?: number;
@@ -135,6 +137,12 @@ export function parseFitFile(
         const timeInAerobicPct = pct(aerobicCount);
         const timeInTransitionPct = pct(transitionCount);
         const timeInAnaerobicPct = pct(anaerobicCount);
+        // Minutos por zona: fracción de muestras con FC × duración de la sesión
+        const zoneMin = (n: number) => Math.round(((n / totalPointsSafe) * durationSec) / 60);
+        const hrZoneMinutes =
+          zonesOk && totalHrPoints > 0
+            ? { belowAetMin: zoneMin(aerobicCount), aetToAntMin: zoneMin(transitionCount), aboveAntMin: zoneMin(anaerobicCount) }
+            : null;
 
 
         // Sample records for UI display (downsample to ~50-100 points for smooth charts)
@@ -165,6 +173,7 @@ export function parseFitFile(
           timeInAerobicPct,
           timeInTransitionPct,
           timeInAnaerobicPct,
+          hrZoneMinutes,
           recordsSample,
         });
       });

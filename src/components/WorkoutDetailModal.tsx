@@ -187,6 +187,13 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
         // ZoneSense solo si viene de Suunto; el .FIT no trae ZoneSense y la
         // distribución por FC del .FIT no es ZoneSense.
         zoneSenseBreakdown: workout.zoneSenseBreakdown,
+        // Tiempo por zonas de FC MEDIDO en el .FIT (con los umbrales con los que se calculó)
+        hrZoneSplit: (() => {
+          const p = resolveIntensityPrescription(profile);
+          return parsedFit?.hrZoneMinutes && p.aetHr && p.antHr
+            ? { ...parsedFit.hrZoneMinutes, aetHr: p.aetHr, antHr: p.antHr, source: 'fit' as const }
+            : workout.hrZoneSplit;
+        })(),
       };
 
       onSave(completedWorkout);

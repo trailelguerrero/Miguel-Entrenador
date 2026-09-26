@@ -108,6 +108,11 @@ export interface Workout {
   suuntoManualEntry?: boolean;
   /** Deporte de Suunto (activityId) y su nombre: distingue actividades a pie de la bici dentro de 'cross_training'. */
   suuntoActivityId?: number;
+  /**
+   * Tiempo MEDIDO por zonas de FC (de un .FIT subido al completar), con los umbrales
+   * usados. Si luego cambias tu AeT/AnT, ya no vale y se vuelve a la estimación.
+   */
+  hrZoneSplit?: { belowAetMin: number; aetToAntMin: number; aboveAntMin: number; aetHr: number; antHr: number; source: 'fit' };
   suuntoSport?: string;
 }
 

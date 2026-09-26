@@ -64,3 +64,29 @@ test('Parser FIT: sin umbrales por defecto (antes AeT 142 / AnT 166)', () => {
   const src = readFileSync('src/utils/fitParser.ts', 'utf8');
   assert.doesNotMatch(src, /aetHr: number = \d+|antHr: number = \d+/);
 });
+
+// ── #17. Tiempo aeróbico: medido (.FIT) antes que estimado (FC media) ────
+import { hrAerobicShare, describeHrShareMethod } from '../src/utils/trainingLoad.js';
+
+const run = (over: Record<string, unknown>) => ({ id: `r${Math.random()}`, date: '2026-09-20', title: '', type: 'easy_run', completed: true, actualDurationMin: 120, actualAvgHr: 138, ...over }) as any;
+
+test('Con .FIT: usa el tiempo MEDIDO por zonas, no la FC media', () => {
+  // FC media 138 ≤ AeT 140 → la estimación diría 120 min bajo AeT; el .FIT dice 80
+  const w = run({ hrZoneSplit: { belowAetMin: 80, aetToAntMin: 35, aboveAntMin: 5, aetHr: 140, antHr: 165, source: 'fit' } });
+  const s = hrAerobicShare([w], 140);
+  assert.equal(s.method, 'measured');
+  assert.equal(s.aerobicMin, 80);
+  assert.equal(s.pct, 66.7);
+  assert.match(describeHrShareMethod(s), /medido/);
+});
+
+test('Sin .FIT o con otro AeT: estimación por FC media, marcada como tal', () => {
+  const stale = run({ hrZoneSplit: { belowAetMin: 80, aetToAntMin: 35, aboveAntMin: 5, aetHr: 150, antHr: 170, source: 'fit' } });
+  assert.equal(hrAerobicShare([stale], 140).method, 'estimated');
+  const mixed = hrAerobicShare([run({ hrZoneSplit: { belowAetMin: 60, aetToAntMin: 0, aboveAntMin: 0, aetHr: 140, antHr: 165, source: 'fit' } }), run({})], 140);
+  assert.equal(mixed.method, 'mixed');
+  assert.equal(mixed.measuredMin, 60);
+  assert.equal(mixed.estimatedMin, 120);
+  assert.match(describeHrShareMethod(mixed), /60 min medidos/);
+  assert.equal(hrAerobicShare([run({})], null).pct, null);
+});

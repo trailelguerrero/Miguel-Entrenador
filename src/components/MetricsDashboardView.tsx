@@ -1,5 +1,5 @@
 import { resolveIntensityPrescription, measuredAntHr } from '../brain/intensity';
-import { hrAerobicShare } from '../utils/trainingLoad';
+import { describeHrShareMethod, hrAerobicShare } from '../utils/trainingLoad';
 import React, { useState, useMemo } from 'react';
 import { 
   BarChart3, 
@@ -944,7 +944,7 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
 
           <div className="flex items-center space-x-2">
             <span className="px-3 py-1 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-bold">
-              {hrShare.pct !== null ? <>{hrShare.pct}% bajo AeT por FC (Meta &gt;80%)</> : 'Sin FC o sin umbral aeróbico en el periodo'}{zsMinutes > 0 ? <> · ZoneSense: {totalAerobicPct}% verde en {zsWorkouts.length} entrenos</> : null}
+              {hrShare.pct !== null ? <>{hrShare.pct}% bajo AeT por FC{hrShare.method !== 'measured' ? ' (estimado)' : ''} (Meta &gt;80%)</> : 'Sin FC o sin umbral aeróbico en el periodo'}{zsMinutes > 0 ? <> · ZoneSense: {totalAerobicPct}% verde en {zsWorkouts.length} entrenos</> : null}
             </span>
           </div>
         </div>
@@ -998,7 +998,7 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
               Cumplimiento de la Regla de Oro (Training for the Uphill Athlete):
             </span>
             <p className="leading-relaxed">
-              {hrShare.pct !== null ? <>Según tus pulsaciones, el <strong>{hrShare.pct}%</strong> del tiempo fue por debajo de tu umbral aeróbico (estimación con la FC media de cada entreno). La metodología que seguimos pide más del 80 %.</> : <>Sin FC o sin umbral aeróbico no se puede calcular. Configura tus zonas de FC en Suunto o fija tu AeT a mano.</>}
+              {hrShare.pct !== null ? <>Según tus pulsaciones, el <strong>{hrShare.pct}%</strong> del tiempo fue por debajo de tu umbral aeróbico ({describeHrShareMethod(hrShare)}). La metodología que seguimos pide más del 80 %.</> : <>Sin FC o sin umbral aeróbico no se puede calcular. Configura tus zonas de FC en Suunto o fija tu AeT a mano.</>}
             </p>
           </div>
         </div>
