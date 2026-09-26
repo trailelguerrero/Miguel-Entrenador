@@ -40,15 +40,13 @@ test('C2. Rutas públicas: solo salud, login/logout/status y cron', () => {
   for (const p of ['/api/chat', '/api/health/ai-test', '/api/suunto/sync', '/api/suunto/connect', '/api/data', '/api/knowledge/documents', '/api/conversations']) assert.ok(!isPublicRoute(p), p);
 });
 
-test('C2. Sin claves configuradas la API está CERRADA (503), no abierta', async () => {
-  await withEnv({ APP_SECRET: undefined, INGEST_SECRET: undefined, SESSION_SECRET: undefined }, () =>
+test('Sin APP_SECRET la app está abierta (decisión del atleta: un solo usuario, URL privada)', async () => {
+  await withEnv({ APP_SECRET: undefined, INGEST_SECRET: 'ya-no-cuenta', SESSION_SECRET: undefined }, () =>
     withServer(async (base) => {
-      const r = await post(base, '/api/coach-memory/extract-insight');
-      assert.equal(r.status, 503);
-      assert.equal((await r.json()).code, 'AUTH_NOT_CONFIGURED');
-      assert.equal((await fetch(`${base}/api/conversations`)).status, 503);
+      // Llega a la ruta (400: falta el texto de la nota), sin pedir clave
+      assert.equal((await post(base, '/api/coach-memory/extract-insight')).status, 400);
       assert.equal((await (await fetch(`${base}/api/health`)).json()).apiProtected, false);
-      assert.equal((await post(base, '/api/auth/login', {}, { key: 'x' })).status, 503);
+      assert.deepEqual(await (await fetch(`${base}/api/auth/status`)).json(), { configured: false, authenticated: true });
     }),
   );
 });
@@ -76,8 +74,10 @@ test('C2. Con clave: sin sesión 401; login correcto da cookie HttpOnly de 90 d�
       assert.deepEqual(status, { configured: true, authenticated: true });
       // Cookie manipulada → 401
       assert.equal((await post(base, '/api/coach-memory/extract-insight', { cookie: session + 'x' })).status, 401);
-      // Scripts: la cabecera con la clave sigue valiendo
-      assert.equal((await post(base, '/api/coach-memory/extract-insight', { 'x-ingest-secret': 'clave-biblioteca' })).status, 400);
+      // Scripts: la cabecera con APP_SECRET vale; INGEST_SECRET ya no existe para la app
+      assert.equal((await post(base, '/api/coach-memory/extract-insight', { 'x-app-secret': 'clave-app' })).status, 400);
+      assert.equal((await post(base, '/api/coach-memory/extract-insight', { 'x-ingest-secret': 'clave-biblioteca' })).status, 401);
+      assert.equal((await post(base, '/api/auth/login', {}, { key: 'clave-biblioteca' })).status, 401);
       // Logout borra la cookie
       const out = await post(base, '/api/auth/logout', { cookie: session });
       assert.match(out.headers.get('set-cookie') || '', /Max-Age=0/);

@@ -100,11 +100,12 @@ export function registerSuuntoSyncRoutes(app: Express) {
     res.json({ ok: true });
   });
 
-  // Cron de Vercel (vercel.json). Vercel envía "Authorization: Bearer <CRON_SECRET>".
+  // Cron de Vercel (vercel.json). Con CRON_SECRET, Vercel envía "Authorization: Bearer <CRON_SECRET>".
   app.get('/api/cron/suunto-sync', async (req: Request, res: Response) => {
+    // CRON_SECRET es opcional: si existe, se exige (Vercel lo envía solo); sin él, la
+    // ruta solo lanza una sincronización con Suunto.
     const secret = process.env.CRON_SECRET;
-    if (!secret) return res.status(503).json({ code: 'CRON_NOT_CONFIGURED', error: 'Falta CRON_SECRET en Vercel.' });
-    if (!safeEqual(req.get('authorization'), `Bearer ${secret}`)) return res.status(401).json({ code: 'CRON_AUTH', error: 'No autorizado.' });
+    if (secret && !safeEqual(req.get('authorization'), `Bearer ${secret}`)) return res.status(401).json({ code: 'CRON_AUTH', error: 'No autorizado.' });
     if (!(await storeReady().catch(() => false))) return storeMissing(res);
     try {
       const result = await runServerSync(dateKeyInTimezone());

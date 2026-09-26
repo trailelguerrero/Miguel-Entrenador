@@ -82,13 +82,13 @@ Si el proyecto `miguel` ya existe (ya está creado: https://miguel-seven-sage.ve
 | `GEMINI_MODEL` | Nombre de un modelo de Gemini, p. ej. `gemini-3.8-flash`. Ver la sección 4. | ❌ No. Si no la pones, se usa `gemini-3.8-flash`. |
 | `SUUNTO_MCP_URL` | `https://mcp-ten-kappa.vercel.app` | ❌ No. Es el valor por defecto; solo cámbiala si algún día mueves el servidor MCP de Suunto. |
 | `AI_PROVIDER`, `EXPERIENTIAL_*`, `AI_FALLBACK` | Ver la sección 5 | ❌ No. Solo si quieres usar Claude (u otro modelo) en lugar de Gemini. |
-| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `INGEST_SECRET`, `EMBEDDING_PROVIDER`… | Ver la sección 10 | ❌ No. Solo para la Biblioteca de Miguel y guardar las conversaciones. |
-| `APP_SECRET` | Un secreto largo inventado por ti (40+ caracteres). | ✅ Sí (o `INGEST_SECRET`). **Sin ninguna de las dos la API está cerrada** y la app no funciona. |
-| `CRON_SECRET` | Otro secreto largo inventado por ti. | ⚠️ Recomendable. Activa la sincronización diaria con Suunto (sección 11). |
+| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `EMBEDDING_PROVIDER`… | Ver la sección 10 | ⚠️ Recomendable. Guardan tus datos en el servidor, la Biblioteca de Miguel y las conversaciones. |
+| `APP_SECRET` | Un secreto largo inventado por ti (40+ caracteres). | ❌ No. **Sin ella la app no pide ninguna clave** (ver el aviso de abajo). Con ella, la app pide la clave una vez por dispositivo. |
+| `CRON_SECRET` | Otro secreto largo inventado por ti. | ❌ No. La sincronización diaria con Suunto funciona sin ella; con ella, solo Vercel puede lanzarla. |
 | `SESSION_SECRET` | Otro secreto largo. | ❌ No. Firma las sesiones; cambiarlo **cierra la sesión en todos tus dispositivos**. |
-| `TOKEN_ENCRYPTION_KEY` | Otro secreto largo. | ❌ No, pero recomendable. Cifra los tokens de Suunto guardados en Supabase. Sin ella se usa `APP_SECRET`/`INGEST_SECRET` (cambiar esa clave obliga a reconectar Suunto). |
+| `TOKEN_ENCRYPTION_KEY` | Otro secreto largo. | ❌ No, pero recomendable. Cifra los tokens de Suunto guardados en Supabase. Sin ella se usa `APP_SECRET` o, si no hay, `SUPABASE_SERVICE_ROLE_KEY` (cambiar esa clave obliga a reconectar Suunto una vez). |
 
-> **Clave de la app y sesión.** La API está **cerrada por defecto**: todo (IA, tus datos, Suunto, biblioteca) exige sesión. La primera vez en cada dispositivo la app te pide la clave (`APP_SECRET` o `INGEST_SECRET`, vale cualquiera). El servidor responde con una **sesión de 90 días** (cookie HttpOnly): la clave **no se guarda** en el navegador. Para cerrar la sesión en todos los dispositivos, cambia `SESSION_SECRET` (o, si no lo tienes, `APP_SECRET`) y haz **Redeploy**.
+> **Sin clave (por defecto).** La app es de un solo atleta y **no pide ninguna clave**. ⚠️ Eso significa que **cualquiera que conozca la URL** puede ver tus datos (entrenos, sueño, HRV), usar tu conexión con Suunto y gastar tu cuota de IA: no compartas la URL. Si algún día quieres cerrarla, pon `APP_SECRET` en Vercel y haz **Redeploy**: la app pedirá esa clave una vez por dispositivo (sesión de 90 días, cookie HttpOnly; la clave no se guarda en el navegador).
 
 > Las variables **no se aplican solas** a lo que ya está desplegado. Después de añadirlas o cambiarlas tienes que redesplegar (paso 3.3).
 
@@ -410,8 +410,8 @@ El banner desaparece solo con la siguiente respuesta correcta. También puedes c
 | La app muestra datos de ejemplo | Datos de prueba activos | Pulsa **Datos Prueba** en la barra superior para limpiarlos; tus entrenos reales se conservan |
 | "Biblioteca desactivada: falta …" | Faltan variables de Supabase o de embeddings | Sección 10.2 y **Redeploy** |
 | "Parece que falta el esquema: ejecuta scripts/init.sql" | No se ejecutó el SQL en Supabase | Sección 10.1 |
-| La app pide la clave (`AUTH_REQUIRED`) | Este dispositivo no tiene sesión o caducó (90 días) | Escribe el valor de `APP_SECRET` (o `INGEST_SECRET`) |
-| "La app no tiene clave configurada: la API está cerrada" (`AUTH_NOT_CONFIGURED`) | No hay `APP_SECRET` ni `INGEST_SECRET` en Vercel | Añade una (3.2) y haz **Redeploy** |
+| La app pide la clave (`AUTH_REQUIRED`) | Hay `APP_SECRET` en Vercel y este dispositivo no tiene sesión o caducó (90 días) | Escribe el valor de `APP_SECRET`, o bórrala de Vercel si no quieres clave |
+| "Error de Supabase… Invalid path specified in request URL" | `SUPABASE_URL` mal escrita | Debe ser exactamente `https://<tu-ref>.supabase.co` (sin `/rest/v1` ni barra final). La app ya corrige esas formas, pero revísala |
 | "Sin conexión: no se ha guardado" | Cambiaste algo sin conexión o el servidor falló | Vuelve a hacerlo con conexión; al volver, la app recarga lo guardado en el servidor |
 | Miguel no cita documentos que sí están en la biblioteca | Se cambió de proveedor/modelo de embeddings, o el umbral es alto | Vuelve a subir los documentos (10.5) o baja `KNOWLEDGE_MATCH_THRESHOLD` |
 
@@ -439,9 +439,8 @@ En Supabase: **Project Settings → API** (o **Data API** / **API Keys**, según
 
 | Key (nombre exacto) | Value | ¿Obligatoria? |
 |---|---|---|
-| `SUPABASE_URL` | **Project URL** (`https://xxxx.supabase.co`) | ✅ Sí |
+| `SUPABASE_URL` | **Project URL**, exactamente `https://xxxx.supabase.co` (sin `/rest/v1`, sin barra final; no la dirección del panel `supabase.com/dashboard/...`) | ✅ Sí |
 | `SUPABASE_SERVICE_ROLE_KEY` | La clave **service_role** (secreta). ⚠️ No la clave `anon`/publishable. | ✅ Sí |
-| `INGEST_SECRET` | Un secreto largo inventado por ti (ver abajo). Es la clave de Supabase de la app: sirve para la biblioteca y para guardar/cargar conversaciones. | ✅ Sí |
 | `EMBEDDING_PROVIDER` | `gemini` (por defecto) u `openai` | ❌ No |
 | `GEMINI_EMBEDDING_MODEL` | Modelo de embeddings de Gemini. Por defecto `gemini-embedding-001`. | ❌ No |
 | `OPENAI_API_KEY`, `OPENAI_EMBEDDING_MODEL` | Solo con `EMBEDDING_PROVIDER=openai`. Modelo por defecto `text-embedding-3-small`. | ❌ No |
@@ -449,9 +448,7 @@ En Supabase: **Project Settings → API** (o **Data API** / **API Keys**, según
 
 Con Gemini (lo normal) **no hace falta ninguna clave nueva**: los embeddings usan la misma `GEMINI_API_KEY` del chat.
 
-Para inventar un `INGEST_SECRET` seguro, en cualquier ordenador con Node: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`, o usa un generador de contraseñas (40+ caracteres).
-
-> ⚠️ `SUPABASE_SERVICE_ROLE_KEY` e `INGEST_SECRET` son secretos: solo en Vercel, nunca en el código ni en capturas. Si se filtran, rótalos (Supabase → API Keys; `INGEST_SECRET`, cámbialo en Vercel) y haz **Redeploy**.
+> ⚠️ `SUPABASE_SERVICE_ROLE_KEY` es secreta: solo en Vercel, nunca en el código ni en capturas. Si se filtra, rótala (Supabase → API Keys) y haz **Redeploy**. `INGEST_SECRET` ya no se usa: puedes borrarla de Vercel.
 
 Marca **Production**, **Preview** y **Development** y haz **Redeploy** (3.3).
 
@@ -474,7 +471,7 @@ También se puede hacer desde un ordenador con `curl`:
 
 ```bash
 curl -X POST https://<tu-app>/api/knowledge/ingest \
-  -H "Content-Type: application/json" -H "x-ingest-secret: <INGEST_SECRET>" \
+  -H "Content-Type: application/json" \
   --data @sample-ingest.json
 ```
 
@@ -491,8 +488,6 @@ Encima del chat de Miguel hay dos botones:
 - **Guardar en Supabase (N)**: sube los N mensajes que todavía solo están en este dispositivo. Guardar dos veces no duplica nada: cada mensaje se guarda una sola vez. Mientras no lo pulses, la app no escribe nada en Supabase.
 - **Conversaciones guardadas**: lista las conversaciones de Supabase (título = primera pregunta, nº de mensajes y fecha). Al tocar una, sustituye al chat del dispositivo; lo que escribas después se añade a esa misma conversación cuando pulses **Guardar**. Si tienes mensajes sin guardar, te avisa antes.
 - **Papelera del chat**: borra la conversación **solo de este dispositivo** (avisa si hay mensajes sin guardar). En Supabase no se borra nada; la próxima vez que guardes se crea una conversación nueva. La app no tiene ninguna opción para borrar conversaciones de Supabase: si algún día quieres hacerlo, desde el panel de Supabase (**Table Editor → chat_sessions**, borrar la fila; sus mensajes se borran con ella).
-
-La primera vez te pide la clave (`INGEST_SECRET`), la misma que la biblioteca.
 
 Al guardar, además, Miguel indexa los intercambios nuevos para recordarlos en otras conversaciones (10.7). Si eso fallara, los mensajes quedan guardados igual y el aviso lo indica; vuelve a pulsar **Guardar** más tarde y se completa.
 
@@ -524,7 +519,7 @@ Todavía se quedan en el navegador (llegarán en una segunda entrega): gut train
 ### 11.1 Activarlo (una vez)
 
 1. **Supabase → SQL Editor:** vuelve a ejecutar **todo** [`scripts/init.sql`](scripts/init.sql). Crea la tabla nueva `athlete_docs` (no toca lo que ya tienes).
-2. **Vercel → Environment Variables:** añade `CRON_SECRET` (y, si quieres, `TOKEN_ENCRYPTION_KEY` y `SESSION_SECRET`; ver 3.2). **Redeploy.**
+2. **Vercel → Environment Variables:** comprueba `SUPABASE_URL` (formato de 10.2). Opcionales: `CRON_SECRET`, `TOKEN_ENCRYPTION_KEY` (ver 3.2). **Redeploy.**
 3. Abre la app. Te pide la clave (una vez por dispositivo) y aparece el aviso **"Tus datos ahora se guardan en el servidor"**:
    - **Subir mis datos** (en el dispositivo donde tienes tus datos): sube todo, incluida la conexión con Suunto, así que **no hace falta reconectar Suunto**. Si un registro ya existe en el servidor, gana el más reciente; lo que midió Suunto (TSS, FC, HRV…) lo pone siempre Suunto, y tu dolor y estrés se conservan.
    - **Usar solo lo del servidor** (en los demás dispositivos): sustituye lo de ese navegador por lo del servidor.
@@ -532,7 +527,7 @@ Todavía se quedan en el navegador (llegarán en una segunda entrega): gut train
 
 ### 11.2 Sincronización con Suunto
 
-- **Cada mañana** a las 07:00 UTC (9:00 en Madrid en verano, 8:00 en invierno) Vercel llama a `/api/cron/suunto-sync` con `CRON_SECRET`. Sin `CRON_SECRET`, no hay sincronización diaria (el resto funciona).
+- **Cada mañana** a las 07:00 UTC (9:00 en Madrid en verano, 8:00 en invierno) Vercel llama a `/api/cron/suunto-sync` (con `CRON_SECRET` si la has puesto; no hace falta).
 - **Al abrir la app**, si la última sincronización tiene más de 3 horas.
 - **Botón Sincronizar**, cuando quieras.
 

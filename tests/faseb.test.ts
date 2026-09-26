@@ -145,10 +145,12 @@ test('B. El cerebro usa los datos del servidor tras la importación (y los del n
   assert.equal(adapt.body.readinessInputs.weeklyTss, 100);
 });
 
-test('B. Cron de Suunto: sin CRON_SECRET 503; con clave mala 401; sin Suunto conectado se salta', async () => {
+test('B. Cron de Suunto: CRON_SECRET opcional; con él, clave mala 401; sin Suunto conectado se salta', async () => {
   await withServer(async (base) => {
     delete process.env.CRON_SECRET;
-    assert.equal((await fetch(`${base}/api/cron/suunto-sync`)).status, 503);
+    const open = await fetch(`${base}/api/cron/suunto-sync`);
+    assert.equal(open.status, 200);
+    assert.equal((await open.json()).skipped, 'Suunto no conectado');
     process.env.CRON_SECRET = 'cron-123';
     assert.equal((await fetch(`${base}/api/cron/suunto-sync`, { headers: { authorization: 'Bearer mala' } })).status, 401);
     const ok = await fetch(`${base}/api/cron/suunto-sync`, { headers: { authorization: 'Bearer cron-123' } });

@@ -65,10 +65,10 @@ Aplicación completa de entrenamiento de montaña inspirada en el manual de cabe
 👉 **Todo lo que hay que configurar (Vercel, API key de Gemini, Suunto) está paso a paso en [CONFIGURACION-POR-USUARIO.md](./CONFIGURACION-POR-USUARIO.md).**
 
 Resumen:
-- Única variable obligatoria: `GEMINI_API_KEY`. Muy recomendable: `APP_SECRET` (o `INGEST_SECRET`), para que las rutas de IA exijan la clave de la app. Opcional: `GEMINI_MODEL` (por defecto `gemini-3.8-flash`).
+- Única variable obligatoria: `GEMINI_API_KEY`. Opcional: `APP_SECRET` (sin ella la app no pide clave: no compartas la URL). Opcional: `GEMINI_MODEL` (por defecto `gemini-3.8-flash`).
 - Para usar Claude u otros modelos vía Experiential Labs: `AI_PROVIDER=experiential` + `EXPERIENTIAL_API_KEY` (sección 5 de la guía). Si Experiential falla, la app reintenta con Gemini.
 - Suunto no necesita variables: se conecta desde la propia app.
-- Opcional, Biblioteca de Miguel y conversaciones: ejecutar `scripts/init.sql` en Supabase y cargar `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` e `INGEST_SECRET` (sección 10 de la guía). Sin ellas la app funciona igual, sin biblioteca.
+- Opcional, Biblioteca de Miguel y conversaciones: ejecutar `scripts/init.sql` en Supabase y cargar `SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY` (sección 10 de la guía). Sin ellas la app funciona igual, sin biblioteca.
 
 Estructura:
 - `server/app.ts`: todas las rutas `/api/*` (IA + Suunto). No escucha puertos.

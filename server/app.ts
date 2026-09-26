@@ -4,7 +4,7 @@ import { registerSuuntoRoutes } from './suunto-routes.js';
 import { registerSuuntoSyncRoutes } from './suunto-sync.js';
 import { registerDataRoutes } from './data-routes.js';
 import { serverData } from './brain/serverData.js';
-import { storeReady } from './store/docStore.js';
+import { storeProblem, storeReady } from './store/docStore.js';
 import { SESSION_DAYS, createSessionToken, isAuthenticated, loginSecrets, requireSession, secretMatches, sessionCookie } from './auth.js';
 import { sanitizeEvidenceItems } from '../src/brain/memory.js';
 // Cerebro de Miguel en el servidor: prompts (texto), contexto (hechos→texto) y decisión (validación en código)
@@ -48,12 +48,12 @@ const app = express();
 
 app.use(express.json({ limit: '25mb' }));
 
-// Sesión de la app (Fase B): TODA /api/* exige sesión salvo salud, login y cron.
-// Cerrada por defecto: sin APP_SECRET/INGEST_SECRET responde 503.
+// Acceso: sin APP_SECRET la app está abierta (un solo atleta, URL privada); con
+// APP_SECRET, toda /api/* exige sesión salvo salud, login y cron (server/auth.ts).
 app.use(requireSession);
 
 app.post('/api/auth/login', (req: Request, res: Response) => {
-  if (!loginSecrets().length) return res.status(503).json({ error: 'La app no tiene clave configurada.', code: 'AUTH_NOT_CONFIGURED' });
+  if (!loginSecrets().length) return res.json({ ok: true, open: true });
   const key = typeof req.body?.key === 'string' ? req.body.key.trim() : '';
   if (!secretMatches(key)) return res.status(401).json({ error: 'Clave incorrecta.', code: 'AUTH_BAD_KEY' });
   res.setHeader('Set-Cookie', sessionCookie(req, createSessionToken()));
@@ -66,7 +66,8 @@ app.post('/api/auth/logout', (req: Request, res: Response) => {
 });
 
 app.get('/api/auth/status', (req: Request, res: Response) => {
-  res.json({ configured: loginSecrets().length > 0, authenticated: loginSecrets().length > 0 && isAuthenticated(req) });
+  // Sin APP_SECRET la app está abierta: cualquiera cuenta como autenticado
+  res.json({ configured: loginSecrets().length > 0, authenticated: !loginSecrets().length || isAuthenticated(req) });
 });
 
 // Llama a la IA y, si respondió el respaldo (Gemini en vez de Experiential),
@@ -99,10 +100,11 @@ app.get('/api/health', async (_req: Request, res: Response) => {
     ok: true,
     ai: aiConfigStatus(),
     knowledge: knowledgeConfigStatus(),
-    // false = falta la clave: la API está cerrada (503) hasta configurarla
+    // false = sin APP_SECRET: la app está abierta a quien tenga la URL
     apiProtected: loginSecrets().length > 0,
     // true = los datos del atleta viven en Supabase (Fase B)
     dataStore,
+    ...(dataStore ? {} : { dataStoreProblem: storeProblem() }),
     suuntoMcpUrl: process.env.SUUNTO_MCP_URL || 'https://mcp-ten-kappa.vercel.app',
   });
 });
@@ -179,8 +181,7 @@ function sendKnowledgeError(res: Response, route: string, err: unknown) {
   res.status(500).json({ error: 'Error inesperado en la Biblioteca de Miguel.', code: 'KB_UNKNOWN', hint: 'Revisa los logs de Vercel.' });
 }
 
-// Biblioteca de Miguel (RAG). Añadir, listar y borrar documentos exige la
-// cabecera x-ingest-secret = INGEST_SECRET.
+// Biblioteca de Miguel (RAG): añadir, listar, ver y borrar documentos.
 app.post('/api/knowledge/ingest', async (req: Request, res: Response) => {
   try {
     const input = parseIngestInput(req.body);

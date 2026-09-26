@@ -118,24 +118,46 @@ export function storeEnabled(): boolean {
   return !!override || missingSupabaseVars().length === 0;
 }
 
-let readyCache: { ok: boolean; at: number } | null = null;
+let readyCache: { ok: boolean; at: number; problem: string | null } | null = null;
 const READY_TTL_MS = 60_000;
 
 /**
- * ¿Se pueden usar los datos en el servidor? Supabase configurado Y la tabla
- * athlete_docs creada (scripts/init.sql). Mientras falte la tabla, la app sigue en
- * modo local (como antes) en vez de fallar al guardar.
+ * ¿Se pueden usar los datos en el servidor? Supabase configurado, accesible y con la
+ * tabla athlete_docs (scripts/init.sql). Si la sonda falla por lo que sea (URL mal
+ * escrita, clave incorrecta, falta la tabla…), la app sigue en modo local (solo este
+ * navegador) en vez de fallar al guardar o al sincronizar. El motivo: storeProblem().
  */
 export async function storeReady(): Promise<boolean> {
   if (override) return true;
   if (!storeEnabled()) return false;
   if (readyCache && Date.now() - readyCache.at < READY_TTL_MS) return readyCache.ok;
-  const { error } = await getSupabase().from('athlete_docs').select('id').limit(1);
-  // Solo "falta la tabla" desactiva el modo servidor; otros fallos se ven al usarlo
-  const ok = !error || !/athlete_docs|does not exist|schema cache/i.test(error.message);
-  if (!ok) console.warn('[store] falta la tabla athlete_docs: ejecuta scripts/init.sql en Supabase. La app sigue en modo local.');
-  readyCache = { ok, at: Date.now() };
-  return ok;
+  let problem: string | null = null;
+  try {
+    const { error } = await getSupabase().from('athlete_docs').select('id').limit(1);
+    if (error) {
+      problem = /athlete_docs|does not exist|schema cache/i.test(error.message)
+        ? 'Falta la tabla athlete_docs: ejecuta scripts/init.sql en Supabase (SQL Editor).'
+        : /invalid path/i.test(error.message)
+          ? 'SUPABASE_URL no es válida: tiene que ser https://<tu-ref>.supabase.co (sin /rest/v1).'
+          : `Supabase no responde bien: ${error.message.slice(0, 200)}`;
+    }
+  } catch (err) {
+    problem = `Supabase no responde: ${(err as Error).message.slice(0, 200)}`;
+  }
+  if (problem) console.warn(`[store] ${problem} La app sigue en modo local.`);
+  readyCache = { ok: !problem, at: Date.now(), problem };
+  return !problem;
+}
+
+/** Motivo por el que el almacén no está listo (null si lo está o aún no se ha comprobado). */
+export function storeProblem(): string | null {
+  if (!override && !storeEnabled()) return 'Supabase no está configurado (SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY).';
+  return readyCache?.problem ?? null;
+}
+
+/** Solo para tests: olvida la última comprobación. */
+export function resetStoreReadyCache(): void {
+  readyCache = null;
 }
 
 export function docStore(): DocStore {

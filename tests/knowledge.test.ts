@@ -15,10 +15,10 @@ import type { AddressInfo } from 'node:net';
 import { chunkText } from '../server/rag/chunker.js';
 import { buildKnowledgeBlock, buildKnowledgeQuery, buildLibraryIndexBlock, chatTurnsFromBody } from '../server/brain/prompts/knowledge.js';
 import { buildChatConversation } from '../server/brain/prompts/routes.js';
-import { checkIngestSecret, embedQuery, getDocumentContent, ingestDocument, knowledgeConfigStatus, listDocuments, parseIngestInput, searchKnowledge, deleteDocument } from '../server/rag/knowledge.js';
+import { embedQuery, getDocumentContent, ingestDocument, knowledgeConfigStatus, listDocuments, parseIngestInput, searchKnowledge, deleteDocument } from '../server/rag/knowledge.js';
 import { embeddingModelId, missingEmbeddingVars } from '../server/rag/embeddings.js';
 import { getConversation, listConversations, parseIncomingMessages, saveConversation } from '../server/rag/chatStore.js';
-import { KnowledgeError } from '../server/rag/supabase.js';
+import { KnowledgeError, normalizeSupabaseUrl } from '../server/rag/supabase.js';
 import { buildExchanges, exchangeText, indexConversation, searchConversationMemory } from '../server/rag/conversationMemory.js';
 import { buildMemoryBlock } from '../server/brain/prompts/knowledge.js';
 
@@ -80,13 +80,13 @@ test('parseIngestInput valida título, texto y tamaño', () => {
   assert.throws(() => parseIngestInput({ title: 't', text: 'a'.repeat(200_001) }), (e: KnowledgeError) => e.httpStatus === 413);
 });
 
-test('checkIngestSecret: sin INGEST_SECRET no admite cambios; clave incorrecta = 401', () => {
-  resetEnv();
-  assert.throws(() => checkIngestSecret('lo-que-sea'), (e: KnowledgeError) => e.code === 'KB_CONFIG');
-  process.env.INGEST_SECRET = 'secreto-correcto';
-  assert.throws(() => checkIngestSecret(undefined), (e: KnowledgeError) => e.httpStatus === 401);
-  assert.throws(() => checkIngestSecret('secreto-incorrect'), (e: KnowledgeError) => e.httpStatus === 401);
-  assert.doesNotThrow(() => checkIngestSecret('secreto-correcto'));
+test('normalizeSupabaseUrl: acepta /rest/v1, barra final y la URL del panel', () => {
+  assert.equal(normalizeSupabaseUrl('https://abcd1234.supabase.co/rest/v1/'), 'https://abcd1234.supabase.co');
+  assert.equal(normalizeSupabaseUrl('https://abcd1234.supabase.co/'), 'https://abcd1234.supabase.co');
+  assert.equal(normalizeSupabaseUrl(' https://abcd1234.supabase.co '), 'https://abcd1234.supabase.co');
+  assert.equal(normalizeSupabaseUrl('https://supabase.com/dashboard/project/abcd1234/settings/api'), 'https://abcd1234.supabase.co');
+  assert.equal(normalizeSupabaseUrl('http://127.0.0.1:54321/'), 'http://127.0.0.1:54321');
+  assert.equal(normalizeSupabaseUrl(''), undefined);
 });
 
 // ── Proveedor de embeddings intercambiable ─────────────────────────────────
@@ -300,6 +300,15 @@ test('Índice de la biblioteca para Miguel: solo títulos, neutralizados y con t
   assert.doesNotMatch(block, /Doc 55/);
   assert.equal((block.match(/<\/indice_biblioteca>/g) || []).length, 1, 'un título no puede cerrar el bloque');
   assert.equal(buildLibraryIndexBlock([]), '');
+});
+
+test('storeReady: si Supabase falla (aquí, falta la tabla), modo local con el motivo', async () => {
+  useMockServices();
+  const { storeReady, storeProblem, resetStoreReadyCache } = await import('../server/store/docStore.js');
+  resetStoreReadyCache();
+  assert.equal(await storeReady(), false);
+  assert.match(storeProblem() ?? '', /init\.sql/);
+  resetStoreReadyCache();
 });
 
 test('conversaciones: solo se guarda lo nuevo, se listan y se cargan', async () => {

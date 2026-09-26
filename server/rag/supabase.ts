@@ -24,8 +24,28 @@ export class KnowledgeError extends Error {
   }
 }
 
+/**
+ * URL del proyecto tal y como la necesita el cliente: https://<ref>.supabase.co.
+ * Acepta las formas mal copiadas más comunes: con /rest/v1 u otra ruta, con barra
+ * final o la URL del panel (supabase.com/dashboard/project/<ref>). Con ruta, el
+ * gateway de Supabase responde "Invalid path specified in request URL".
+ */
+export function normalizeSupabaseUrl(raw: string | undefined): string | undefined {
+  const v = raw?.trim();
+  if (!v) return undefined;
+  try {
+    const u = new URL(v);
+    const dash = u.hostname.endsWith('supabase.com') ? u.pathname.match(/\/project\/([a-z0-9]+)/i) : null;
+    if (dash) return `https://${dash[1]}.supabase.co`;
+    if (u.hostname.endsWith('.supabase.co')) return u.origin;
+    return v.replace(/\/+$/, '');
+  } catch {
+    return v;
+  }
+}
+
 function supabaseUrl(): string | undefined {
-  return process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  return normalizeSupabaseUrl(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL);
 }
 
 /** Variables de Supabase que faltan (vacío = configurado). */

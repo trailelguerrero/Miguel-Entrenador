@@ -334,8 +334,12 @@ export interface HealthStatus {
     fallbackAvailable: boolean;
   };
   knowledge?: KnowledgeStatus;
-  /** false = las rutas de IA están abiertas (no hay APP_SECRET ni INGEST_SECRET en Vercel). */
+  /** false = sin APP_SECRET: la app está abierta a quien tenga la URL. */
   apiProtected?: boolean;
+  /** true = los datos del atleta viven en Supabase. */
+  dataStore?: boolean;
+  /** Por qué no se usa Supabase para los datos (URL no válida, falta la tabla…). */
+  dataStoreProblem?: string | null;
   suuntoMcpUrl: string;
 }
 
@@ -346,7 +350,6 @@ export interface KnowledgeStatus {
   chatHistoryEnabled: boolean;
   missing: string[];
   embeddingModel: string;
-  ingestProtected: boolean;
 }
 
 export interface KnowledgeDocument {
