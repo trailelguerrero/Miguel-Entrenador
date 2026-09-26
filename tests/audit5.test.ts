@@ -36,8 +36,23 @@ test('#4. ROJO + tirada larga → rodaje regenerativo: sin su distancia, desnive
   assert.equal(adapted.plannedDurationMin, 35);
   assert.equal(adapted.plannedDistanceKm, null);
   assert.equal(adapted.plannedElevationGainM, null);
-  assert.equal(adapted.zoneSenseTarget, 'Regenerativo (verde, muy suave)');
+  assert.equal(adapted.zoneSenseTarget, undefined, 'ZoneSense no se prescribe');
   assert.doesNotMatch(adapted.mainSet, /fuertes|6x5/);
+});
+
+test('FC manda. ROJO con AeT 145: techo de FC 135 (AeT − 10) y texto en pulsaciones', () => {
+  const red = evaluateReadiness({ hrvRmssd: 45, hrvBaseline: 60, sleepHours: 8, aetHr: 145, plannedWorkout: { type: 'long_mountain_run', plannedDurationMin: 180 } });
+  assert.equal(red.limits.maxHr, 135);
+  const { adapted, corrections } = sanitizeAdaptation({ type: 'long_mountain_run', plannedDurationMin: 180, targetHrMax: 150, mainSet: '6x5 min fuertes' }, red, MEASURED);
+  assert.equal(adapted.targetHrMax, 135);
+  assert.match(adapted.mainSet, /135 ppm/);
+  assert.ok(corrections.length > 0);
+  // ÁMBAR: techo = AeT
+  const amber = evaluateReadiness({ hrvRmssd: 50, hrvBaseline: 60, sleepHours: 8, aetHr: 145 });
+  assert.equal(amber.level, 'amber');
+  assert.equal(amber.limits.maxHr, 145);
+  // VERDE: sin techo
+  assert.equal(evaluateReadiness({ hrvRmssd: 62, hrvBaseline: 60, sleepHours: 8, aetHr: 145 }).limits.maxHr, null);
 });
 
 test('#5. ROJO + test de deriva → no se hace (pasa a regenerativo)', () => {
@@ -90,12 +105,12 @@ test('#10. Tope de FC por encima de la FC máxima medida → se ajusta a la FC m
   assert.equal(w.targetHrMax, 186);
 });
 
-test('#11. Banda de pecho desconocida → no se asume ZoneSense', () => {
+test('#11 (FC manda). Con o sin banda, la fuente es la FC si hay AeT; sin AeT, RPE', () => {
   const p = resolveIntensityPrescription(MEASURED);
   assert.equal(p.chestStrap, 'unknown');
   assert.equal(p.primary, 'heart_rate_measured');
   assert.equal(resolveIntensityPrescription({}).primary, 'rpe');
-  assert.equal(resolveIntensityPrescription({ ...MEASURED, hasChestStrap: true }).primary, 'zonesense');
+  assert.equal(resolveIntensityPrescription({ ...MEASURED, hasChestStrap: true }).primary, 'heart_rate_measured');
   const [w] = sanitizePlanWorkouts([{ type: 'easy_run', date: MONDAY, plannedDurationMin: 50, zoneSenseTarget: 'ZoneSense verde (aeróbico)', intensitySource: 'zonesense' }], {}).workouts;
   assert.equal(w.intensitySource, 'rpe');
 });

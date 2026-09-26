@@ -4,7 +4,7 @@ import type { ChatTurn } from '../../ai.js';
 import { MIGUEL_SYSTEM_INSTRUCTION, EVIDENCE_JSON_SPEC } from './system.js';
 import { athleteToday, availabilityLine, describeTargetRace, formatLoadContext, formatWatchZones } from '../context.js';
 import { describeMemoryForPrompt } from '../../../src/brain/memory.js';
-import { describeIntensityPrescription, isFormulaMaxHr, resolveIntensityPrescription } from '../../../src/brain/intensity.js';
+import { aetOrigin, describeIntensityPrescription, isFormulaMaxHr, resolveIntensityPrescription } from '../../../src/brain/intensity.js';
 import { describeReadiness, type ReadinessState } from '../../../src/brain/readiness.js';
 import { describeBreakdown } from '../../../src/brain/zonesense.js';
 import { localDateKey } from '../../../src/utils/trainingLoad.js';
@@ -84,8 +84,8 @@ ${describeMemoryForPrompt(coachMemory, athleteToday(body))}
 - Peso Objetivo de Carrera: ${athleteProfile?.targetRaceWeightKg ? athleteProfile.targetRaceWeightKg + ' kg' : 'Sin dato'}${athleteProfile?.weightKg && athleteProfile?.targetRaceWeightKg ? ` (${tag('derived')} Diferencia hacia meta: ${(Number(athleteProfile.weightKg) - Number(athleteProfile.targetRaceWeightKg)).toFixed(1)} kg)` : ''}
 - FC Reposo: ${athleteProfile?.restingHr ? athleteProfile.restingHr + ' bpm' : 'Pendiente de registrar en Suunto'}
 - FC Máx: ${athleteProfile?.maxHr ? athleteProfile.maxHr + ' bpm' + (isFormulaMaxHr(athleteProfile) ? ` (${tag('estimated')} coincide con 220 − edad: probablemente es la fórmula del reloj, no una medida; sugiérele confirmarla)` : '') : 'Pendiente de registrar en Suunto'}
-- Umbral Aeróbico por FC (zonas del reloj, respaldo sin banda; NO es ZoneSense): ${athleteProfile?.aetHr ? athleteProfile.aetHr + ' bpm' : 'Pendiente de registrar'}
-- Umbral Anaeróbico por FC (zonas del reloj, respaldo sin banda; NO es ZoneSense): ${athleteProfile?.antHr ? athleteProfile.antHr + ' bpm' : 'Pendiente de registrar'}
+- Umbral Aeróbico por FC (${aetOrigin(athleteProfile)}): ${athleteProfile?.aetHr ? athleteProfile.aetHr + ' bpm' : 'Pendiente de registrar'}
+- Umbral Anaeróbico por FC: ${athleteProfile?.antHr ? athleteProfile.antHr + ' bpm' : 'Pendiente de registrar'}
 - Estado ADS (Síndrome Deficiencia Aeróbica): ${athleteProfile?.hasAds ? 'SÍ (necesita volumen estricto Z1/Z2)' : 'NO'}
 - [OBJETIVO PRINCIPAL] ${describeTargetRace(targetRace)}
 - Estructura semanal: 3 sesiones entre semana (o 2 si lo decides por fatiga/disponibilidad) + tirada larga en sábado o domingo.
@@ -94,7 +94,7 @@ ${describeMemoryForPrompt(coachMemory, athleteToday(body))}
 - Origen de Datos: ${athleteProfile?.dataSource || 'Registro / Suunto'}
 - VO2máx (Suunto): ${athleteProfile?.vo2Max ?? 'No disponible'}
 - HRV nocturna de referencia: ${athleteProfile?.baselineHrv ? athleteProfile.baselineHrv + ' ms' : 'Pendiente'}
-- Zonas de FC del reloj (carrera): ${formatWatchZones(athleteProfile?.watchZoneAdvice)}
+- Zonas de FC del reloj (carrera): ${formatWatchZones(athleteProfile?.watchZoneAdvice, athleteProfile?.zoneAdviceState)}
 - Origen de cada dato del perfil (Suunto = calculado de su reloj; Manual = lo ha puesto o corregido el atleta): ${
     athleteProfile?.fieldSources && Object.keys(athleteProfile.fieldSources).length
       ? Object.entries(athleteProfile.fieldSources).map(([k, v]) => `${k}=${v === 'suunto' ? 'Suunto' : 'Manual'}`).join(', ')
@@ -110,7 +110,7 @@ ${athleteHistoryDoc.content}
 ` : '[AVISO]: El atleta aún no ha subido su archivo .md de historial. Si necesitas detalles de su pasado o de tests previos de Suunto, pídeselo abiertamente.'}
 ${memoryContext}
 [INTENSIDAD (jerarquía calculada, no la cambies)]:
-${describeIntensityPrescription(resolveIntensityPrescription(athleteProfile))}
+${describeIntensityPrescription(resolveIntensityPrescription(athleteProfile), athleteProfile)}
 
 [CARGA Y RECUPERACIÓN (hechos calculados por la app, no los recalcules)]:
 ${formatLoadContext(brainContext)}
@@ -168,13 +168,13 @@ ${formatLoadContext(loadContext)}
 ${weekSessions}
 
 [INTENSIDAD]:
-${describeIntensityPrescription(intensity)}
+${describeIntensityPrescription(intensity, athleteProfile)}
 
 [NUTRICIÓN: EVIDENCIA DEL ATLETA]:
 - ${nutritionLine}. Si falta un dato, deja ese campo numérico en null y explícalo en "nutritionAdvice".
 
 [REGLA DE INTEGRIDAD]: Respeta rigurosamente los umbrales medidos:
-- AeT (Umbral Aeróbico): ${athleteProfile?.aetHr ? athleteProfile.aetHr + ' bpm' : 'SIN DATO (no inventes pulsaciones)'} (tope de FC SOLO como respaldo sin banda; con banda de pecho la referencia es ZoneSense en verde)
+- AeT (Umbral Aeróbico): ${athleteProfile?.aetHr ? athleteProfile.aetHr + ' bpm' : 'SIN DATO (no inventes pulsaciones)'} (referencia de intensidad: rodajes y tiradas largas por debajo de él)
 - AnT (Umbral Anaeróbico): ${athleteProfile?.antHr ? athleteProfile.antHr + ' bpm' : 'SIN DATO (no inventes pulsaciones)'}
 - ADS: ${athleteProfile?.hasAds ? 'SÍ (base comprometida, prohibido pasar de AeT en volumen)' : 'NO'}
 - Enfoque del mesociclo actual: ${phaseFocus || 'Base Aeróbica y Fortalecimiento Excéntrico al Aire Libre'}
@@ -199,10 +199,9 @@ Responde ÚNICAMENTE con un JSON válido estructurado así:
       "plannedDurationMin": number,
       "plannedDistanceKm": number (opcional),
       "plannedElevationGainM": number (opcional),
-      "intensitySource": "zonesense | heart_rate_measured | rpe | terrain | unknown",
-      "zoneSenseTarget": "ZoneSense verde (aeróbico) | Regenerativo (verde, muy suave) | ZoneSense amarillo (entre umbrales) | ZoneSense rojo (sobre umbral anaeróbico)",
-      "targetHrMin": number o null (null si no hay umbral de FC medido),
-      "targetHrMax": number o null (null si no hay umbral de FC medido),
+      "intensitySource": "heart_rate_measured | rpe",
+      "targetHrMin": number o null (ppm; null si no hay umbral de FC),
+      "targetHrMax": number o null (ppm; OBLIGATORIO si hay umbral de FC: rodajes y tiradas largas ≤ AeT),
       "description": "Explicación detallada del objetivo metabólico y neuromuscular",
       "personalizedReasoning": "Por qué prescribo esto para ti hoy teniendo en cuenta tus datos específicos y sensaciones previas",
       "learnedAdjustment": "Regla aprendida de su memoria que aplicas aquí, o null si no aplicas ninguna",
@@ -247,7 +246,7 @@ Datos de esta mañana:
 ${describeReadiness(state)}
 
 [INTENSIDAD]:
-${describeIntensityPrescription(resolveIntensityPrescription(athleteProfile))}
+${describeIntensityPrescription(resolveIntensityPrescription(athleteProfile), athleteProfile)}
 ${athleteHistoryDoc?.content ? `
 [HISTORIAL DEL ATLETA (.MD)]:
 """
@@ -263,9 +262,8 @@ Responde en formato JSON:
     "title": "Título",
     "type": "easy_run | rest | strength_core | long_mountain_run | muscular_endurance | hill_intervals",
     "plannedDurationMin": number,
-    "intensitySource": "zonesense | heart_rate_measured | rpe | terrain | unknown",
-    "zoneSenseTarget": "ZoneSense verde (aeróbico) | Regenerativo (verde, muy suave) | ZoneSense amarillo (entre umbrales) | ZoneSense rojo (sobre umbral anaeróbico)",
-    "targetHrMax": number o null (null si no hay umbral de FC medido),
+    "intensitySource": "heart_rate_measured | rpe",
+    "targetHrMax": number o null (ppm, dentro de la FC máxima de hoy; null si no hay umbral de FC),
     "mainSet": "Instrucciones de la sesión",
     "warmup": "Calentamiento",
     "cooldown": "Vuelta a la calma",
@@ -291,7 +289,7 @@ Analiza la sesión de trail recién completada por el atleta y anota en tu cuade
 - Título: ${workout?.title}
 - Tipo: ${workout?.type}
 - Duración prevista: ${workout?.plannedDurationMin} min | D+ previsto: ${workout?.plannedElevationGainM || 0}m
-- Objetivo ZoneSense: ${workout?.zoneSenseTarget}
+- Objetivo de FC: ${workout?.targetHrMin || workout?.targetHrMax ? `${workout?.targetHrMin ? workout.targetHrMin + '–' : '≤ '}${workout?.targetHrMax ?? ''} ppm` : 'sin objetivo de FC'}
 - Razón personalizada: ${workout?.personalizedReasoning || 'N/A'}
 
 [DATOS REALES DEL ENTRENAMIENTO]:
@@ -301,13 +299,14 @@ Analiza la sesión de trail recién completada por el atleta y anota en tu cuade
 - FC Media: ${fitMetrics?.avgHeartRate || workout?.actualAvgHr} bpm | FC Máx: ${fitMetrics?.maxHeartRate || workout?.actualMaxHr} bpm
 - Umbrales del atleta: AeT ${athleteProfile?.aetHr ? athleteProfile.aetHr + ' bpm' : 'sin dato'} / AnT ${athleteProfile?.antHr ? athleteProfile.antHr + ' bpm' : 'sin dato'}
 - TSS (Suunto): ${workout?.actualTss ?? 'sin dato'}
-- Distribución de zonas: ${
-    workout?.zoneSenseBreakdown
-      ? `ZoneSense de Suunto → ${describeBreakdown(workout.zoneSenseBreakdown)}`
-      : fitMetrics?.hasHeartRate
-        ? `por FC del .FIT (NO es ZoneSense) → FC ≤ AeT ${fitMetrics.timeInAerobicPct}%, AeT–AnT ${fitMetrics.timeInTransitionPct}%, FC > AnT ${fitMetrics.timeInAnaerobicPct}%`
-        : 'sin datos de zonas (no las supongas)'
+- Zonas por FC (la referencia): ${
+    fitMetrics?.hasHeartRate
+      ? `del .FIT → FC ≤ AeT ${fitMetrics.timeInAerobicPct}%, AeT–AnT ${fitMetrics.timeInTransitionPct}%, FC > AnT ${fitMetrics.timeInAnaerobicPct}%`
+      : athleteProfile?.aetHr && (fitMetrics?.avgHeartRate || workout?.actualAvgHr)
+        ? `sin tiempo en zonas; FC media ${fitMetrics?.avgHeartRate || workout?.actualAvgHr} ppm ${(fitMetrics?.avgHeartRate || workout?.actualAvgHr) > athleteProfile.aetHr ? 'POR ENCIMA' : 'por debajo'} del AeT (${athleteProfile.aetHr})`
+        : 'sin datos de FC suficientes (no las supongas)'
   }
+- ZoneSense (solo segunda opinión, no manda): ${workout?.zoneSenseBreakdown ? describeBreakdown(workout.zoneSenseBreakdown) : 'sin datos'}
 
 [FEEDBACK DEL ATLETA]:
 - RPE (Esfuerzo percibido 1-10): ${athleteFeedback?.rpe || workout?.athleteRpe ? (athleteFeedback?.rpe || workout?.athleteRpe) + '/10' : 'No indicado'}
@@ -321,7 +320,7 @@ ${athleteHistoryDoc.content}
 
 Como Coach Miguel, realiza una evaluación honesta y sin rodeos. Después anota como EVIDENCIAS lo que esta sesión muestra (hechos con su dato, no reglas). Responde en JSON:
 {
-  "feedback": "Texto de Miguel hablando como entrenador amigo y directo: evalúa cumplimiento de ZoneSense/AeT, avisa si corrió de más en subidas, analiza sensaciones musculares y da pautas de recuperación pensando en su carrera objetivo.",
+  "feedback": "Texto de Miguel hablando como entrenador amigo y directo: evalúa si cumplió las pulsaciones previstas respecto a su AeT (y comenta ZoneSense solo como contraste), avisa si corrió de más en subidas, analiza sensaciones musculares y da pautas de recuperación pensando en su carrera objetivo.",
   ${EVIDENCE_JSON_SPEC}
 }
 `;

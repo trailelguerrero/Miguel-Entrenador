@@ -224,7 +224,7 @@ export const ZoneSenseSuuntoView: React.FC<ZoneSenseSuuntoViewProps> = ({
             </div>
             <div className="p-4 rounded-2xl bg-zinc-950 border border-zinc-800 text-xs text-zinc-300 leading-relaxed space-y-2">
               <p><strong className="text-amber-300">Las zonas de ZoneSense no equivalen a ninguna FC concreta.</strong> Se calculan como un desplazamiento respecto a tu nivel aeróbico de referencia del día (la "línea base" que el reloj toma al empezar suave). La misma FC puede ser verde un día y amarilla otro (fatiga, calor, cafeína, altitud), o verde corriendo y amarilla en bici.</p>
-              <p>Por eso la app nunca traduce los colores de ZoneSense a pulsaciones. Tus <strong>zonas de FC</strong> ({profile.aetHr ? `umbral aeróbico ${profile.aetHr} ppm` : 'sin umbral aeróbico'}{profile.antHr ? `, anaeróbico ${profile.antHr} ppm` : ''}) son otra referencia, útil cuando no llevas banda de pecho.</p>
+              <p>Por eso la app nunca traduce los colores de ZoneSense a pulsaciones. Tus <strong>zonas de FC</strong> ({profile.aetHr ? `umbral aeróbico ${profile.aetHr} ppm` : 'sin umbral aeróbico'}{profile.antHr ? `, anaeróbico ${profile.antHr} ppm` : ''}) son <strong>la referencia de intensidad</strong> (salen de las zonas de FC de tu reloj Suunto o de lo que fijes a mano). ZoneSense es una segunda opinión para analizar tus entrenos después.</p>
             </div>
           </div>
 

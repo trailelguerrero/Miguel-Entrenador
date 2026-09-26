@@ -545,15 +545,27 @@ export interface AthleteProfile {
   suuntoProfileUpdatedAt?: string;
   /** Aviso para cambiar las zonas de FC del reloj (solo con tendencia sostenida). */
   watchZoneAdvice?: WatchZoneAdvice;
+  zoneAdviceState?: Record<string, ZoneAdviceStatus>;
 }
 
 export interface WatchZoneRecommendation {
-  field: 'maxHr' | 'aetHr' | 'antHr';
+  /** 'zones' = configurar las zonas (son las de fábrica): sin cifras. */
+  field: 'maxHr' | 'aetHr' | 'antHr' | 'zones';
   label: string;
-  current: number;
-  suggested: number;
-  direction: 'up' | 'down';
+  current: number | null;
+  suggested: number | null;
+  direction: 'up' | 'down' | 'none';
   evidence: string;
+  /** Qué señal la genera: FC máx. superada, tendencia ZoneSense, test de deriva / AeT manual, zonas de fábrica. */
+  source?: 'maxhr' | 'zonesense' | 'drift' | 'factory';
+}
+
+/** Estado de cada recomendación de zonas (clave `${field}:${suggested}`). */
+export interface ZoneAdviceStatus {
+  status: 'pending' | 'done' | 'ignored';
+  firstSeen: string;
+  /** Cuándo te lo contó Miguel en el chat (no se repite). */
+  announcedAt?: string;
 }
 
 export interface WatchZoneAdvice {

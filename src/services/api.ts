@@ -383,6 +383,10 @@ export const KnowledgeService = {
   async ingest(doc: { title: string; text: string; source?: string }): Promise<{ chunks: number; replaced: number }> {
     return await knowledgeFetch('/api/knowledge/ingest', 'POST', doc);
   },
+  /** Texto de un documento (sus fragmentos en orden). */
+  async content(title: string): Promise<{ title: string; source: string | null; chunks: string[] }> {
+    return await knowledgeFetch(`/api/knowledge/documents/content?title=${encodeURIComponent(title)}`, 'GET');
+  },
   async remove(title: string): Promise<number> {
     return (await knowledgeFetch('/api/knowledge/documents', 'DELETE', { title })).deleted ?? 0;
   },

@@ -13,8 +13,12 @@
  *   - TSS de los últimos 7 días por encima del umbral "muy alta" del atleta
  *     (CTL×7 + 20 %, ver weeklyLoadThresholds)
  *   - Estrés vital declarado ≥ 8
- * Límites por nivel: VERDE sin tope; ÁMBAR ≤ 75 % de lo planificado, verde y sin
- * series; ROJO ≤ 35 min regenerativos (o descanso); SIN DATOS: suave y sin series.
+ * Límites por nivel (TECHO EN PULSACIONES, la FC es la verdad):
+ *   VERDE    sin tope
+ *   ÁMBAR    ≤ 75 % de lo planificado, FC ≤ AeT, sin series
+ *   ROJO     ≤ 35 min regenerativos, FC ≤ AeT − 10 ppm (o descanso)
+ *   SIN DATOS suave: FC ≤ AeT, sin series
+ * Sin AeT no hay techo en ppm (null): se prescribe por sensaciones.
  * Cuando se juntan varios riesgos, los límites se endurecen:
  *   - ROJO de base + cualquier escalador  → descanso obligatorio
  *   - ÁMBAR de base + ≥ 2 escaladores     → ROJO con descanso obligatorio
@@ -22,7 +26,6 @@
  * validado para él. Los límites son MÁXIMOS: Miguel puede proponer menos.
  */
 import type { WeeklyLoadThresholds } from '../utils/trainingLoad.js';
-import { colorRank, type ZoneSenseColor } from './zonesense.js';
 
 export type ReadinessLevel = 'green' | 'amber' | 'red' | 'unknown';
 
@@ -39,6 +42,8 @@ export interface ReadinessInput {
   weeklyTss?: number | null;
   weeklyThresholds?: WeeklyLoadThresholds | null;
   plannedWorkout?: { type?: string; plannedDurationMin?: number } | null;
+  /** Umbral aeróbico por FC (ppm): de él salen los techos de FC. */
+  aetHr?: number | null;
 }
 
 /** Datos crudos del check-in de hoy (sin la carga): el servidor recalcula con ellos. */
@@ -47,8 +52,8 @@ export type TodayReadinessInputs = Omit<ReadinessInput, 'tsb' | 'weeklyTss' | 'w
 export interface ReadinessLimits {
   /** null = sin tope (se mantiene la duración planificada). */
   maxDurationMin: number | null;
-  /** Color máximo de ZoneSense permitido. */
-  maxZoneSense: ZoneSenseColor;
+  /** Techo de FC en ppm. null = sin techo (verde) o sin AeT para calcularlo. */
+  maxHr: number | null;
   allowIntervals: boolean;
   mandatoryRest: boolean;
 }
@@ -68,6 +73,14 @@ export const STRESS_ESCALATION = 8;
 export const RED_MAX_DURATION_MIN = 35;
 /** En ámbar, fracción máxima de la duración planificada (elección de diseño de la app). */
 export const AMBER_DURATION_FACTOR = 0.75;
+/** En rojo, el techo de FC queda este margen por debajo del AeT (regenerativo; decisión del atleta). */
+export const RED_HR_MARGIN = 10;
+
+/** Techo de FC por nivel: verde sin techo, ámbar/sin datos = AeT, rojo = AeT − 10. Sin AeT: null. */
+export function hrCeiling(level: ReadinessLevel, aetHr: number | null | undefined): number | null {
+  if (!(typeof aetHr === 'number' && aetHr > 0) || level === 'green') return null;
+  return level === 'red' ? aetHr - RED_HR_MARGIN : aetHr;
+}
 
 const num = (v: number | null | undefined): v is number => typeof v === 'number' && Number.isFinite(v);
 
@@ -127,6 +140,7 @@ export function evaluateReadiness(input: ReadinessInput): ReadinessState {
 
   // 3. Límites de la sesión
   const planned = input.plannedWorkout?.plannedDurationMin;
+  const maxHr = hrCeiling(level, input.aetHr);
   let limits: ReadinessLimits;
   if (level === 'red') {
     const compounded = (baseRank === 2 && escalators.length >= 1) || (baseRank === 1 && escalators.length >= 2);
@@ -134,7 +148,7 @@ export function evaluateReadiness(input: ReadinessInput): ReadinessState {
     if (compounded) reasons.push('fatiga de base y carga/estrés acumulados a la vez → descanso obligatorio');
     limits = {
       maxDurationMin: mandatoryRest ? 0 : Math.min(planned ?? RED_MAX_DURATION_MIN, RED_MAX_DURATION_MIN),
-      maxZoneSense: 'green',
+      maxHr,
       allowIntervals: false,
       mandatoryRest,
     };
@@ -142,22 +156,21 @@ export function evaluateReadiness(input: ReadinessInput): ReadinessState {
     // Ámbar: como mucho el 75 % de lo planificado (una tirada larga completa no es prudente)
     limits = {
       maxDurationMin: planned != null ? Math.round(planned * AMBER_DURATION_FACTOR) : null,
-      maxZoneSense: 'green',
+      maxHr,
       allowIntervals: false,
       mandatoryRest: false,
     };
   } else if (level === 'unknown') {
     // Sin datos de recuperación no se autoriza intensidad: se puede entrenar suave
-    limits = { maxDurationMin: planned ?? null, maxZoneSense: 'green', allowIntervals: false, mandatoryRest: false };
+    limits = { maxDurationMin: planned ?? null, maxHr, allowIntervals: false, mandatoryRest: false };
   } else {
-    limits = { maxDurationMin: null, maxZoneSense: 'red', allowIntervals: true, mandatoryRest: false };
+    limits = { maxDurationMin: null, maxHr: null, allowIntervals: true, mandatoryRest: false };
   }
 
   return { level, reasons, limits, missingData, hrvDeltaPct };
 }
 
 const LEVEL_RANK: Record<ReadinessLevel, number> = { unknown: 0, green: 0, amber: 1, red: 2 };
-const COLORS: ZoneSenseColor[] = ['green', 'yellow', 'red'];
 
 function isValidState(s: any): s is ReadinessState {
   const l = s?.limits;
@@ -166,7 +179,7 @@ function isValidState(s: any): s is ReadinessState {
     s.level in LEVEL_RANK &&
     !!l &&
     (l.maxDurationMin === null || (typeof l.maxDurationMin === 'number' && Number.isFinite(l.maxDurationMin) && l.maxDurationMin >= 0)) &&
-    COLORS.includes(l.maxZoneSense) &&
+    (l.maxHr === null || (typeof l.maxHr === 'number' && Number.isFinite(l.maxHr) && l.maxHr > 0)) &&
     typeof l.allowIntervals === 'boolean' &&
     typeof l.mandatoryRest === 'boolean'
   );
@@ -184,7 +197,7 @@ export function strictestReadiness(base: ReadinessState, other: unknown): Readin
   const minDuration = a.maxDurationMin == null ? b.maxDurationMin : b.maxDurationMin == null ? a.maxDurationMin : Math.min(a.maxDurationMin, b.maxDurationMin);
   const limits: ReadinessLimits = {
     maxDurationMin: minDuration,
-    maxZoneSense: colorRank(a.maxZoneSense) <= colorRank(b.maxZoneSense) ? a.maxZoneSense : b.maxZoneSense,
+    maxHr: a.maxHr == null ? b.maxHr : b.maxHr == null ? a.maxHr : Math.min(a.maxHr, b.maxHr),
     allowIntervals: a.allowIntervals && b.allowIntervals,
     mandatoryRest: a.mandatoryRest || b.mandatoryRest,
   };
@@ -202,7 +215,7 @@ export function describeReadiness(state: ReadinessState): string {
   return [
     `Estado calculado por el motor de readiness: ${lvl}.`,
     state.reasons.length ? `Motivos: ${state.reasons.join('; ')}.` : 'Sin señales de fatiga.',
-    `LÍMITES OBLIGATORIOS: ${l.mandatoryRest ? 'descanso total' : `duración máxima ${l.maxDurationMin ?? 'la planificada'}${l.maxDurationMin != null ? ' min' : ''}, ZoneSense máximo ${l.maxZoneSense === 'green' ? 'verde' : l.maxZoneSense === 'yellow' ? 'amarillo' : 'rojo'}, ${l.allowIntervals ? 'series permitidas' : 'sin series'}`}.`,
+    `LÍMITES OBLIGATORIOS: ${l.mandatoryRest ? 'descanso total' : `duración máxima ${l.maxDurationMin ?? 'la planificada'}${l.maxDurationMin != null ? ' min' : ''}, ${l.maxHr != null ? `FC máxima ${l.maxHr} ppm` : state.level === 'green' ? 'sin techo de FC' : 'sin umbral de FC: solo suave, pudiendo hablar'}, ${l.allowIntervals ? 'series permitidas' : 'sin series'}`}.`,
     'Los límites son MÁXIMOS: puedes proponer menos (y explicarlo como recomendación), nunca más. El Recovery de Suunto es informativo: si es bajo con límites holgados, puedes aconsejar prudencia, pero no lo presentes como un límite.',
     state.missingData.length ? `Datos que faltan: ${state.missingData.join(', ')}.` : '',
   ]

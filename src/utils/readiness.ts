@@ -26,7 +26,7 @@ export function computeReadiness(input: {
       suggestedAction: state.limits.mandatoryRest ? 'full_rest' : 'downgrade_easy',
       coachAdvice: state.limits.mandatoryRest
         ? `Alerta de fatiga (${why}). Hoy toca descanso total.`
-        : `Alerta de fatiga (${why}). Hoy nada de series ni tirada dura: descanso o como mucho ${state.limits.maxDurationMin}' regenerativos en ZoneSense verde.`,
+        : `Alerta de fatiga (${why}). Hoy nada de series ni tirada dura: descanso o como mucho ${state.limits.maxDurationMin}' regenerativos, con la FC al menos 10 ppm por debajo de tu umbral aeróbico.`,
     };
   }
   if (state.level === 'amber') {
@@ -34,7 +34,7 @@ export function computeReadiness(input: {
       hrvDropPct,
       status: 'moderate',
       suggestedAction: 'maintain',
-      coachAdvice: `Recuperación intermedia (${why}). Puedes entrenar sin series: con banda de pecho, mantén ZoneSense en verde.`,
+      coachAdvice: `Recuperación intermedia (${why}). Puedes entrenar sin series, con la FC por debajo de tu umbral aeróbico.`,
     };
   }
   if (state.level === 'unknown') {

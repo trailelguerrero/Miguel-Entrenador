@@ -23,7 +23,7 @@ import { athleteToday, resolveReadinessState } from './brain/context.js';
 import { applyTodayReadinessToPlan, sanitizeAdaptation, sanitizePlanWorkouts, validatePlanContract } from './brain/decision/validate.js';
 import { filterRaceAdvice, RACE_NUMERIC_FIELDS, RACE_TEXT_FIELDS, targetFigures, verifyRaceInfo } from './brain/decision/race.js';
 import { verifyHistoryNumbers } from './brain/decision/history.js';
-import { RETRIEVED_DATA_RULE, buildKnowledgeBlock, buildKnowledgeQuery, buildMemoryBlock, chatTurnsFromBody, withRetrievedContext } from './brain/prompts/knowledge.js';
+import { RETRIEVED_DATA_RULE, buildKnowledgeBlock, buildLibraryIndexBlock, buildKnowledgeQuery, buildMemoryBlock, chatTurnsFromBody, withRetrievedContext } from './brain/prompts/knowledge.js';
 import { MemoryMatch, indexConversation, searchConversationMemory } from './rag/conversationMemory.js';
 import { KnowledgeError } from './rag/supabase.js';
 import { getConversation, listConversations, parseIncomingMessages, saveConversation } from './rag/chatStore.js';
@@ -33,6 +33,9 @@ import {
   ingestDocument,
   knowledgeConfigStatus,
   listDocuments,
+  listDocumentsCached,
+  clearDocumentIndexCache,
+  getDocumentContent,
   parseIngestInput,
   embedQuery,
   searchKnowledge,
@@ -182,6 +185,7 @@ app.post('/api/knowledge/ingest', async (req: Request, res: Response) => {
   try {
     const input = parseIngestInput(req.body);
     const result = await ingestDocument(input);
+    clearDocumentIndexCache();
     res.json({ ok: true, title: input.title, ...result });
   } catch (err) {
     sendKnowledgeError(res, '/api/knowledge/ingest', err);
@@ -196,11 +200,23 @@ app.get('/api/knowledge/documents', async (req: Request, res: Response) => {
   }
 });
 
+app.get('/api/knowledge/documents/content', async (req: Request, res: Response) => {
+  try {
+    const title = typeof req.query.title === 'string' ? req.query.title.trim() : '';
+    if (!title) throw new KnowledgeError('KB_INPUT', 'Falta el título del documento.', 'Usa ?title=…', 400);
+    res.json(await getDocumentContent(title));
+  } catch (err) {
+    sendKnowledgeError(res, '/api/knowledge/documents/content', err);
+  }
+});
+
 app.delete('/api/knowledge/documents', async (req: Request, res: Response) => {
   try {
     const title = typeof req.body?.title === 'string' ? req.body.title.trim() : '';
     if (!title) throw new KnowledgeError('KB_INPUT', 'Falta el título del documento a borrar.', 'Envía JSON con "title".', 400);
-    res.json({ ok: true, deleted: await deleteDocument(title) });
+    const deleted = await deleteDocument(title);
+    clearDocumentIndexCache();
+    res.json({ ok: true, deleted });
   } catch (err) {
     sendKnowledgeError(res, '/api/knowledge/documents', err);
   }
@@ -254,7 +270,9 @@ app.post('/api/chat', serverData('chat'), async (req: Request, res: Response) =>
     const knowledge = await findContext(buildKnowledgeQuery(chatTurnsFromBody(req.body)), req.body?.sessionId);
 
     // Lo recuperado va en el mensaje del atleta, marcado como dato (no en el system prompt)
-    const retrieved = buildKnowledgeBlock(knowledge.matches) + buildMemoryBlock(knowledge.memories);
+    // Índice de la biblioteca (títulos): Miguel sabe qué documentos tiene
+    const index = knowledgeConfigStatus().enabled ? buildLibraryIndexBlock(await listDocumentsCached().catch(() => [])) : '';
+    const retrieved = buildKnowledgeBlock(knowledge.matches) + index + buildMemoryBlock(knowledge.memories);
     const text = await runAi(res, {
       system: MIGUEL_SYSTEM_INSTRUCTION + (retrieved ? RETRIEVED_DATA_RULE : ''),
       input: withRetrievedContext(conversation, retrieved),

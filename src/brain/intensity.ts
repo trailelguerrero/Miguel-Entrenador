@@ -1,13 +1,17 @@
 /**
- * Jerarquía de prescripción de intensidad (formalizada en datos, no solo en el prompt):
+ * Jerarquía de prescripción de intensidad (formalizada en datos, no solo en el prompt).
+ * LA VERDAD SON LAS PULSACIONES:
  *
- *   1. Con banda de pecho            → ZoneSense (colores) = fuente principal
- *   2. Sin ZoneSense, umbral medido  → zonas de FC del reloj (respaldo)
- *   3. Sin FC fiable                 → esfuerzo percibido (RPE) / test del habla / terreno
- *   4. Sin datos                     → 'unknown': no se inventa nada
+ *   1. Umbral aeróbico por FC (zonas del reloj Suunto o fijado a mano) → prescripción en ppm
+ *   2. Sin umbral                                                      → esfuerzo percibido / test del habla
+ *   3. Sin datos                                                       → 'unknown': no se inventa nada
  *
- * Un umbral de FC solo cuenta como "medido" si es > 0 Y su origen es Suunto o
- * el atleta lo fijó a mano (profile.fieldSources). Nunca valores por defecto.
+ * ZoneSense NO prescribe: es un complemento para analizar entrenos hechos
+ * (segunda opinión frente a la FC). La banda de pecho solo indica si la FC es
+ * precisa (banda) o de muñeca (óptica).
+ *
+ * Un umbral de FC solo cuenta si es > 0 Y su origen es Suunto o el atleta lo fijó
+ * a mano (profile.fieldSources). Nunca valores por defecto.
  */
 import type { AthleteProfile, IntensitySource } from '../types';
 
@@ -46,8 +50,8 @@ function measured(profile: Partial<AthleteProfile> | undefined, field: Measurabl
 }
 
 /**
- * @param hasChestStrap true/false si se sabe; si no se pasa, el del perfil. Sin
- *   dato = DESCONOCIDO: no se asume ZoneSense (necesita banda de pecho).
+ * @param hasChestStrap true/false si se sabe; si no se pasa, el del perfil. Solo
+ *   indica la precisión de la FC; no cambia la fuente de intensidad.
  */
 export function resolveIntensityPrescription(
   profile: Partial<AthleteProfile> | undefined,
@@ -57,33 +61,30 @@ export function resolveIntensityPrescription(
   const antHr = measured(profile, 'antHr');
   const maxHr = measured(profile, 'maxHr');
   const missing: string[] = [];
-  if (aetHr == null) missing.push('umbral aeróbico por FC medido');
-  if (antHr == null) missing.push('umbral anaeróbico por FC medido');
+  if (aetHr == null) missing.push('umbral aeróbico por FC (zonas de FC del reloj Suunto o fijado a mano)');
+  if (antHr == null) missing.push('umbral anaeróbico por FC');
   if (maxHr == null) missing.push(isFormulaMaxHr(profile) ? 'FC máxima medida (la del reloj es 220 − edad)' : 'FC máxima medida');
 
   const hrAllowed = aetHr != null;
-  let primary: IntensitySource;
-  if (hasChestStrap === true) primary = 'zonesense';
-  else if (hrAllowed) primary = 'heart_rate_measured';
-  else primary = 'rpe';
-  if (hasChestStrap === undefined) missing.push('si llevas banda de pecho (sin ella no hay ZoneSense)');
-
+  const primary: IntensitySource = hrAllowed ? 'heart_rate_measured' : 'rpe';
   return { primary, hrAllowed, aetHr, antHr, maxHr, missing, chestStrap: hasChestStrap === undefined ? 'unknown' : hasChestStrap ? 'yes' : 'no' };
 }
 
+/** De dónde sale el umbral aeróbico (para decírselo al atleta). */
+export function aetOrigin(profile: Partial<AthleteProfile> | undefined): string {
+  const src = profile?.fieldSources?.aetHr;
+  return src === 'manual' ? 'fijado por ti' : src === 'suunto' ? 'zonas de FC de tu reloj Suunto' : 'sin origen';
+}
+
 /** Texto para los prompts de Miguel. */
-export function describeIntensityPrescription(p: IntensityPrescription): string {
+export function describeIntensityPrescription(p: IntensityPrescription, profile?: Partial<AthleteProfile>): string {
   const lines = [
-    `Fuente principal de intensidad: ${p.primary === 'zonesense' ? 'ZoneSense (con banda de pecho)' : p.primary === 'heart_rate_measured' ? 'zonas de FC del reloj (umbral medido)' : 'esfuerzo percibido / test del habla / terreno'}.`,
-    p.chestStrap === 'unknown'
-      ? 'Banda de pecho: DESCONOCIDO. No des por hecho que tiene ZoneSense: da el color de ZoneSense solo como opción "si llevas banda" y la referencia principal por la fuente indicada arriba.'
-      : p.chestStrap === 'no'
-        ? 'Banda de pecho: NO. No uses ZoneSense como referencia.'
-        : 'Banda de pecho: SÍ.',
     p.hrAllowed
-      ? `Respaldo por FC permitido (sin banda): [REAL] umbral aeróbico medido ${p.aetHr} ppm${p.antHr ? `, anaeróbico ${p.antHr} ppm` : ''}.`
-      : 'NO hay umbral de FC medido: targetHrMin y targetHrMax deben ser null; no des pulsaciones.',
-  ];
+      ? `Fuente de intensidad: PULSACIONES. [REAL] Umbral aeróbico (AeT) ${p.aetHr} ppm${p.antHr ? `, anaeróbico (AnT) ${p.antHr} ppm` : ''}${profile ? ` (${aetOrigin(profile)})` : ''}. Prescribe SIEMPRE en ppm (targetHrMin/targetHrMax): rodajes y tiradas largas por debajo del AeT; la intensidad, entre AeT y AnT o por encima según la sesión.`
+      : 'Fuente de intensidad: esfuerzo percibido / test del habla. NO hay umbral de FC: targetHrMin y targetHrMax deben ser null; no inventes pulsaciones y di que falta el umbral (zonas de FC del reloj Suunto o fijarlo a mano).',
+    'ZoneSense NO se usa para prescribir: no des objetivos en colores. Solo sirve para contrastar después un entreno hecho.',
+    p.chestStrap === 'yes' ? 'FC medida con banda de pecho (precisa).' : p.chestStrap === 'no' ? 'FC de muñeca (óptica): puede ir con retraso en los cambios de ritmo y en frío.' : '',
+  ].filter(Boolean);
   if (p.missing.length) lines.push(`Datos que faltan: ${p.missing.join(', ')}.`);
   return lines.join('\n');
 }

@@ -110,7 +110,7 @@ export const CoachChat: React.FC<CoachChatProps> = ({
   const quickPrompts = [
     { label: '📊 ¿Cómo va mi balance semanal?', query: 'Miguel, hazme un balance honesto de cómo llevo los entrenamientos y la carga esta semana.' },
     { label: '🫀 ¿Por qué insistir en la Zona 2?', query: `Explícame claro: ¿Por qué insistes tanto en que no supere mi AeT de ${profile.aetHr} bpm en los rodajes si me siento capaz de ir más rápido?` },
-    { label: '⚡ Explicar ZoneSense', query: 'Explícame qué es ZoneSense de Suunto, cómo funciona y cómo usarlo en carrera para no reventar.' },
+    { label: '❤️ Mis pulsaciones', query: 'Explícame mis umbrales de FC (AeT y AnT), de dónde salen y cómo usarlos en entrenos y en carrera para no reventar. ¿Qué aporta ZoneSense como segunda opinión?' },
     { label: '💧 Pauta de hidratación y sudor', query: 'Miguel, analízame mi pauta de hidratación y tasa de sudoración para Transvulcania. ¿Cuántos ml y mg de sodio debo llevar en cada bidón?' },
     { label: '📉 ¿Cuándo necesito microciclo de descarga?', query: 'Miguel, analiza mi tendencia de fatiga acumulada semanal con los datos de HRV de mi Suunto. ¿Cuándo consideras que necesito meter un microciclo de descarga y cómo lo estructuramos?' },
     { label: '🏃 Generar Fartlek según mi estado actual', query: 'Miguel, quiero hacer un fartlek fisiológico pero sin inventar nada: debe respetar mi AeT de 142 bpm, mi HRV actual y la fase de la temporada. ¿Cuál es la mejor estructura para mí?' },

@@ -60,18 +60,22 @@ export function toRest(w: Record<string, any>, reason: string): Record<string, a
  * Palabras que describen intensidad en un texto libre. Si la política no permite
  * intensidad y el texto las contiene, el texto se reescribe desde el código.
  */
-const INTENSITY_TEXT = /\b(series?|intervalos?|repeticiones?|fartlek|tempo|umbral|vo2|fuerte|fuertes|r[aá]pid[oa]s?|a tope|m[aá]ximo|sprints?|cambios? de ritmo|progresiv[oa]s?|amarillo|rojo|z[3-5]\b|zona [3-5])|\d+\s*[x×]\s*\d+/i;
+const INTENSITY_TEXT = /\b(series?|intervalos?|repeticiones?|fartlek|tempo|umbral anaer[oó]bico|por encima (del|de tu) (umbral|aet)|vo2|fuerte|fuertes|r[aá]pid[oa]s?|a tope|m[aá]ximo|sprints?|cambios? de ritmo|progresiv[oa]s?|amarillo|rojo|z[3-5]\b|zona [3-5])|\d+\s*[x×]\s*\d+/i;
 
 export const mentionsIntensity = (text: unknown): boolean => typeof text === 'string' && INTENSITY_TEXT.test(text);
 
 export type EasyMode = 'regenerative' | 'easy' | 'long';
 
-/** Texto de una sesión suave escrito por el código (sin cifras que no procedan de los límites). */
-export function easySessionText(minutes: number, mode: EasyMode): { warmup: string; mainSet: string; cooldown: string } {
+/**
+ * Texto de una sesión suave escrito por el código, en PULSACIONES.
+ * @param maxHr techo de FC de la sesión (AeT, o AeT − 10 en rojo). Sin él, por sensaciones.
+ */
+export function easySessionText(minutes: number, mode: EasyMode, maxHr?: number | null): { warmup: string; mainSet: string; cooldown: string } {
+  const fc = typeof maxHr === 'number' && maxHr > 0 ? `FC por debajo de ${maxHr} ppm` : 'ritmo en el que puedas hablar sin esfuerzo (sin umbral de FC en tu perfil)';
   const mainSet = {
-    regenerative: `${minutes} min de trote regenerativo en terreno llano: ZoneSense en verde y muy cómodo (con banda) o pudiendo hablar sin esfuerzo. Sin cuestas ni cambios de ritmo.`,
-    easy: `${minutes} min de rodaje suave: ZoneSense en verde (con banda) o ritmo en el que puedas hablar. Sin cambios de ritmo.`,
-    long: `${minutes} min de tirada continua y suave en montaña: ZoneSense en verde (con banda) o ritmo en el que puedas hablar; camina las rampas en las que no puedas mantenerlo. Sin cambios de ritmo.`,
+    regenerative: `${minutes} min de trote regenerativo en terreno llano, muy cómodo: ${fc}. Sin cuestas ni cambios de ritmo.`,
+    easy: `${minutes} min de rodaje suave: ${fc}. Sin cambios de ritmo.`,
+    long: `${minutes} min de tirada continua y suave en montaña: ${fc}; camina las rampas en las que no puedas mantenerla. Sin cambios de ritmo.`,
   }[mode];
   return { warmup: '5–10 min caminando o trotando muy suave.', mainSet, cooldown: '5 min caminando.' };
 }

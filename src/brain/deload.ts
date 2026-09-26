@@ -3,7 +3,7 @@
  * TUS sesiones la misma política que un día ÁMBAR del motor de readiness:
  *   - sin intensidad: series, carreras con intensidad y test → rodaje suave;
  *   - duración ×0,75 (AMBER_DURATION_FACTOR); distancia y desnivel en proporción;
- *   - ZoneSense en verde; sin pulsaciones (las pone el servidor solo con umbral medido);
+ *   - FC por debajo de tu umbral aeróbico (sin umbral, por sensaciones);
  *   - textos escritos por el código.
  * Sin sesiones planificadas, se basa en la duración real de tus rodajes recientes;
  * sin historial, no inventa nada.
@@ -30,7 +30,10 @@ export interface DeloadResult {
   message: string;
 }
 
-export function buildDeload(all: Workout[], startKey: string): DeloadResult {
+/** @param aetHr umbral aeróbico por FC (techo de las sesiones de descarga). */
+export function buildDeload(all: Workout[], startKey: string, aetHr?: number | null): DeloadResult {
+  const aet = typeof aetHr === 'number' && aetHr > 0 ? aetHr : null;
+  const fc = aet ? `FC por debajo de ${aet} ppm` : 'ritmo en el que puedas hablar';
   const endKey = addDaysKey(startKey, DELOAD_DAYS - 1);
   const planned = all.filter((w) => !w.completed && !w.suuntoWorkoutKey && w.type !== 'rest' && w.date >= startKey && w.date <= endKey);
 
@@ -44,11 +47,15 @@ export function buildDeload(all: Workout[], startKey: string): DeloadResult {
       scaleVolume(w as any, from, to);
       w.plannedDurationMin = to;
       if (running) {
-        Object.assign(w, easySessionText(to, w.type === 'long_mountain_run' ? 'long' : 'easy'));
-        w.zoneSenseTarget = 'ZoneSense verde (aeróbico)';
+        Object.assign(w, easySessionText(to, w.type === 'long_mountain_run' ? 'long' : 'easy', aet));
+        w.targetHrMin = undefined;
+        w.targetHrMax = aet ?? undefined;
+        w.intensitySource = aet ? 'heart_rate_measured' : 'rpe';
+      } else {
+        w.targetHrMin = undefined;
+        w.targetHrMax = undefined;
       }
-      w.targetHrMin = undefined;
-      w.targetHrMax = undefined;
+      w.zoneSenseTarget = undefined;
       w.title = `Descarga: ${orig.title}`;
       w.description = `Semana de descarga: tu sesión "${orig.title}" al ${Math.round(AMBER_DURATION_FACTOR * 100)} % de duración y sin intensidad.`;
       w.personalizedReasoning = undefined;
@@ -62,7 +69,7 @@ export function buildDeload(all: Workout[], startKey: string): DeloadResult {
       workouts,
       replaced: workouts.length,
       basis: 'planned',
-      message: `He convertido tus ${workouts.length} sesiones planificadas del ${startKey} al ${endKey} en descarga: ${Math.round(AMBER_DURATION_FACTOR * 100)} % de duración, sin series y con ZoneSense en verde.`,
+      message: `He convertido tus ${workouts.length} sesiones planificadas del ${startKey} al ${endKey} en descarga: ${Math.round(AMBER_DURATION_FACTOR * 100)} % de duración, sin series y con ${fc}.`,
     };
   }
 
@@ -87,15 +94,16 @@ export function buildDeload(all: Workout[], startKey: string): DeloadResult {
     title: 'Descarga: rodaje suave',
     type: 'easy_run',
     plannedDurationMin: dur,
-    zoneSenseTarget: 'ZoneSense verde (aeróbico)',
+    targetHrMax: aet ?? undefined,
+    intensitySource: aet ? 'heart_rate_measured' : 'rpe',
     description: `Semana de descarga: ${Math.round(AMBER_DURATION_FACTOR * 100)} % de la duración mediana de tus ${recent.length} rodajes de las últimas 4 semanas.`,
-    ...easySessionText(dur, 'easy'),
+    ...easySessionText(dur, 'easy', aet),
     completed: false,
   }));
   return {
     workouts,
     replaced: 0,
     basis: 'recent_runs',
-    message: `He añadido 3 rodajes suaves de ${dur} min (${Math.round(AMBER_DURATION_FACTOR * 100)} % de la duración mediana de tus rodajes recientes) con ZoneSense en verde.`,
+    message: `He añadido 3 rodajes suaves de ${dur} min (${Math.round(AMBER_DURATION_FACTOR * 100)} % de la duración mediana de tus rodajes recientes) con ${fc}.`,
   };
 }

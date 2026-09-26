@@ -11,15 +11,31 @@
  * - Perfil: Suunto rellena sus campos sin pisar los manuales; aviso de zonas del
  *   reloj; banda de pecho si hubo ZoneSense en los últimos 30 días.
  */
-import type { AthleteProfile, DailyCheckIn, SuuntoProfileSuggestion, WatchZoneAdvice, Workout } from '../types/index.js';
+import type { AthleteProfile, DailyCheckIn, SuuntoProfileSuggestion, WatchZoneAdvice, WatchZoneRecommendation, Workout, ZoneAdviceStatus } from '../types/index.js';
 import { rebaseSuuntoCheckIn } from '../utils/readiness.js';
 import { applySuuntoProfile, type ProfileChange } from '../utils/suuntoProfile.js';
+import { resolveIntensityPrescription } from './intensity.js';
 
 /** Deporte de una sesión, para saber si un entreno de Suunto completa lo planificado. */
 export function sportGroup(type: Workout['type'] | undefined): 'run' | 'strength' | 'other' {
   if (type === 'strength_core') return 'strength';
   if (type === 'easy_run' || type === 'intensity_run' || type === 'long_mountain_run' || type === 'muscular_endurance' || type === 'hill_intervals' || type === 'drift_test') return 'run';
   return 'other';
+}
+
+/**
+ * La FC es la verdad: un rodaje corto importado de Suunto (≤ 90 min, ≤ 500 m D+) con la
+ * FC media POR ENCIMA de tu umbral aeróbico fue una sesión con intensidad. Sin FC o sin
+ * AeT se queda como está. (Estimación con la FC media: Suunto no da el tiempo en cada
+ * zona de FC en el resumen.)
+ */
+export function classifyRunByHr<T extends Pick<Workout, 'type' | 'actualAvgHr'>>(w: T, aetHr: number | null | undefined): T {
+  if (!(typeof aetHr === 'number' && aetHr > 0) || !(typeof w.actualAvgHr === 'number' && w.actualAvgHr > 0)) return w;
+  if (w.type === 'easy_run' || w.type === 'intensity_run') {
+    const type: Workout['type'] = w.actualAvgHr > aetHr ? 'intensity_run' : 'easy_run';
+    return type === w.type ? w : { ...w, type };
+  }
+  return w;
 }
 
 export interface MergeSummary {
@@ -29,8 +45,9 @@ export interface MergeSummary {
 }
 
 /** Workouts: devuelve la lista nueva (no muta la de entrada). */
-export function mergeSuuntoWorkouts(current: Workout[], suuntoWorkouts: Workout[]): { workouts: Workout[]; addedWorkouts: number; completedPlanned: number } {
+export function mergeSuuntoWorkouts(current: Workout[], suuntoIn: Workout[], aetHr?: number | null): { workouts: Workout[]; addedWorkouts: number; completedPlanned: number } {
   const workouts = current.map((w) => ({ ...w }));
+  const suuntoWorkouts = suuntoIn.map((w) => classifyRunByHr(w, aetHr));
   const byKey = new Map(workouts.filter((w) => w.suuntoWorkoutKey).map((w) => [w.suuntoWorkoutKey as string, w]));
   let addedWorkouts = 0;
   let completedPlanned = 0;
@@ -108,6 +125,58 @@ function addDaysKey(key: string, n: number): string {
   return t.toISOString().slice(0, 10);
 }
 
+/** Diferencia mínima (ppm) entre tu AeT fijado y el inicio de Z3 del reloj para recomendar cambiarla. */
+export const DRIFT_MIN_DIFF_BPM = 3;
+
+export const zoneAdviceKey = (r: Pick<WatchZoneRecommendation, 'field' | 'suggested'>) => `${r.field}:${r.suggested ?? '-'}`;
+
+/**
+ * Señal "test de deriva / AeT fijado a mano": si tu AeT es tuyo (manual) y el inicio de
+ * Z3 de tu reloj se separa ≥ 3 ppm, conviene cambiar Z3 en Suunto para que el reloj
+ * te avise a las mismas pulsaciones que usa Miguel.
+ */
+export function driftZoneRecommendation(profile: AthleteProfile, advice: WatchZoneAdvice | undefined): WatchZoneRecommendation | null {
+  const aet = profile.aetHr;
+  const z3 = advice?.watch?.zones?.z3;
+  if (profile.fieldSources?.aetHr !== 'manual' || !(typeof aet === 'number' && aet > 0) || !(typeof z3 === 'number' && z3 > 0)) return null;
+  if (Math.abs(aet - z3) < DRIFT_MIN_DIFF_BPM) return null;
+  return {
+    field: 'aetHr',
+    label: 'Umbral aeróbico (inicio Z3)',
+    current: z3,
+    suggested: aet,
+    direction: aet > z3 ? 'up' : 'down',
+    source: 'drift',
+    evidence: `Tu umbral aeróbico fijado por ti${profile.driftTestResultPct != null ? ` (test de deriva: ${profile.driftTestResultPct} %)` : ''} es ${aet} ppm, pero tu reloj empieza la Z3 en ${z3} ppm. Cambia Z3 a ${aet} para que el reloj te avise a las mismas pulsaciones que usa Miguel.`,
+  };
+}
+
+/**
+ * Estado de las recomendaciones: las nuevas entran como pendientes, las que ya estaban
+ * conservan su estado (hecho / ignorado / ya anunciado) y las que ya no aparecen se quitan.
+ */
+export function updateZoneAdviceState(
+  prev: Record<string, ZoneAdviceStatus> | undefined,
+  recs: WatchZoneRecommendation[],
+  nowIso: string,
+): Record<string, ZoneAdviceStatus> {
+  const out: Record<string, ZoneAdviceStatus> = {};
+  for (const r of recs) {
+    const k = zoneAdviceKey(r);
+    out[k] = prev?.[k] ?? { status: 'pending', firstSeen: nowIso };
+  }
+  return out;
+}
+
+/** Recomendaciones pendientes (y, con onlyUnannounced, las que Miguel aún no te ha contado). */
+export function pendingZoneAdvice(profile: Pick<AthleteProfile, 'watchZoneAdvice' | 'zoneAdviceState'>, onlyUnannounced = false): WatchZoneRecommendation[] {
+  const state = profile.zoneAdviceState || {};
+  return (profile.watchZoneAdvice?.recommendations || []).filter((r) => {
+    const st = state[zoneAdviceKey(r)];
+    return st?.status === 'pending' && (!onlyUnannounced || !st.announcedAt);
+  });
+}
+
 export interface SuuntoPayload {
   workouts: Workout[];
   checkIns: DailyCheckIn[];
@@ -139,15 +208,19 @@ export function mergeSuuntoSyncData(
   }
   let freshZoneAdvice: WatchZoneAdvice['recommendations'] = [];
   if (payload.watchZoneAdvice) {
-    const prev = new Set((profile.watchZoneAdvice?.recommendations || []).map((r) => `${r.field}:${r.suggested}`));
-    freshZoneAdvice = payload.watchZoneAdvice.recommendations.filter((r) => !prev.has(`${r.field}:${r.suggested}`));
-    profile = { ...profile, watchZoneAdvice: payload.watchZoneAdvice };
+    // Señales del servidor (FC máx., tendencia ZoneSense, zonas de fábrica) + tu AeT fijado frente a Z3
+    const drift = driftZoneRecommendation(profile, payload.watchZoneAdvice);
+    const advice: WatchZoneAdvice = { ...payload.watchZoneAdvice, recommendations: [...payload.watchZoneAdvice.recommendations, ...(drift ? [drift] : [])] };
+    profile = { ...profile, watchZoneAdvice: advice, zoneAdviceState: updateZoneAdviceState(profile.zoneAdviceState, advice.recommendations, new Date().toISOString()) };
+    freshZoneAdvice = pendingZoneAdvice(profile, true);
   }
 
-  const w = mergeSuuntoWorkouts(state.workouts, payload.workouts || []);
+  // Umbral aeróbico del perfil ya actualizado (zonas del reloj, o el tuyo si lo fijaste a mano)
+  const aet = resolveIntensityPrescription(profile).aetHr;
+  const w = mergeSuuntoWorkouts(state.workouts, payload.workouts || [], aet);
   const c = mergeSuuntoCheckIns(state.checkIns, payload.checkIns || [], profile.baselineHrv || 0);
 
-  // Banda de pecho: ZoneSense en los últimos 30 días → la llevas (lo manual no se toca)
+  // Banda de pecho (precisión de la FC): ZoneSense en los últimos 30 días → la llevas (lo manual no se toca)
   const since30 = addDaysKey(today, -30);
   const zsRecent = (payload.workouts || []).some((x) => x.date >= since30 && !!x.zoneSenseBreakdown);
   if (zsRecent && profile.hasChestStrapSource !== 'manual' && profile.hasChestStrap !== true) {

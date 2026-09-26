@@ -62,7 +62,7 @@ export const PeriodizationView: React.FC<PeriodizationViewProps> = ({
     {
       title: 'Fase 1: Base Aeróbica Pura & Erradicación de ADS',
       duration: 'Semanas 1 - 16',
-      focus: 'Volumen estricto en ZoneSense verde',
+      focus: 'Volumen estricto por debajo de tu umbral aeróbico (FC)',
       description: 'Construcción masiva de capilares y mitocondrias. Si tienes ADS, toda intensidad anaeróbica queda vetada. Fuerza general de core y piernas con peso corporal.',
       keyWorkouts: ['Rodajes Z1/Z2 de 60-90 min', 'Test de deriva cardíaca mensual', 'Circuito de fuerza Uphill Athlete 2x/sem']
     },

@@ -71,7 +71,8 @@ export function deriveProfileFromSuunto(
     }
   }
 
-  // Umbrales: ZoneSense si Suunto los calculó; si no, tus zonas de FC de Suunto.
+  // Umbrales: las ZONAS DE FC de tu reloj Suunto (la FC es la verdad). El umbral que
+  // detecta ZoneSense es solo una sugerencia: se muestra, nunca se aplica solo.
   const zsAet = recentFirst.find((w) => validHr(w.zoneSenseAerobicThreshold))?.zoneSenseAerobicThreshold;
   const zsAnt = recentFirst.find((w) => validHr(w.zoneSenseAnaerobicThreshold))?.zoneSenseAnaerobicThreshold;
   // Las zonas del reloj son por deporte (en carrera no son las mismas que en
@@ -80,31 +81,26 @@ export function deriveProfileFromSuunto(
     (w) => RUNNING_IDS.has(w.activityId ?? -1) && w.hrZoneLowerLimits && validHr(w.hrZoneLowerLimits.z3),
   )?.hrZoneLowerLimits;
   const runMax = recentFirst.find((w) => RUNNING_IDS.has(w.activityId ?? -1) && validHr(w.userMaxHR))?.userMaxHR ?? values.maxHr;
-  // Zonas de fábrica = % fijo de la FC máx: NO son umbrales medidos. No se usan como
-  // AeT/AnT ni para diagnosticar ADS (con esos % la diferencia siempre sale > 10 %).
+  // Zonas de fábrica = % fijo de la FC máx: NO son umbrales tuyos (como 220 − edad).
+  // No se usan como AeT/AnT ni para diagnosticar ADS.
   const factoryZones = isDefaultSuuntoZones(zones, runMax);
-  if (validHr(zsAet)) {
-    values.aetHr = Math.round(zsAet);
-    evidence.aetHr = 'FC del umbral aeróbico según Suunto ZoneSense.';
-  } else if (factoryZones) {
+  const zsNote = (v: number | null | undefined) => (validHr(v) ? ` ZoneSense sugiere ${Math.round(v)} ppm (solo sugerencia; si quieres usarlo, cámbialo en tu reloj o fíjalo a mano).` : '');
+  if (factoryZones) {
     cleared.push('aetHr');
   } else if (zones && validHr(zones.z3)) {
     values.aetHr = zones.z3;
-    evidence.aetHr = `Inicio de tu Zona 3 de FC para carrera en Suunto (${zones.z3} bpm).`;
+    evidence.aetHr = `Inicio de tu Zona 3 de FC para carrera en tu reloj Suunto (${zones.z3} ppm).${zsNote(zsAet)}`;
   }
-  if (validHr(zsAnt)) {
-    values.antHr = Math.round(zsAnt);
-    evidence.antHr = 'FC del umbral anaeróbico según Suunto ZoneSense.';
-  } else if (factoryZones) {
+  if (factoryZones) {
     cleared.push('antHr');
   } else if (zones && validHr(zones.z5)) {
     values.antHr = zones.z5;
-    evidence.antHr = `Inicio de tu Zona 5 de FC para carrera en Suunto (${zones.z5} bpm).`;
+    evidence.antHr = `Inicio de tu Zona 5 de FC para carrera en tu reloj Suunto (${zones.z5} ppm).${zsNote(zsAnt)}`;
   }
   if (factoryZones) {
-    const why = `Tus zonas de FC de carrera en Suunto son las de fábrica (${Object.values(SUUNTO_DEFAULT_ZONE_PCT).map((x) => `${Math.round(x * 100)} %`).join(', ')} de tu FC máx ${runMax}): no son un umbral medido. Haz el test de deriva de 60 min o usa ZoneSense con banda de pecho.`;
-    if (!values.aetHr) evidence.aetHr = why;
-    if (!values.antHr) evidence.antHr = why;
+    const why = `Tus zonas de FC de carrera en Suunto son las de fábrica (${Object.values(SUUNTO_DEFAULT_ZONE_PCT).map((x) => `${Math.round(x * 100)} %`).join(', ')} de tu FC máx ${runMax}): no son umbrales tuyos. Configura tus zonas de FC en la app de Suunto (o fija el AeT a mano; el test de deriva de 60 min te ayuda a encontrarlo).`;
+    if (!values.aetHr) evidence.aetHr = `${why}${zsNote(zsAet)}`;
+    if (!values.antHr) evidence.antHr = `${why}${zsNote(zsAnt)}`;
   }
   if (factoryZones && !values.aetHr) cleared.push('hasAds');
   if (values.aetHr && values.antHr && values.antHr > values.aetHr) {

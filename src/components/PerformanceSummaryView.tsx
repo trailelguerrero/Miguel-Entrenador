@@ -1,3 +1,4 @@
+import { resolveIntensityPrescription } from '../brain/intensity';
 import React, { useState, useMemo } from 'react';
 import { 
   BarChart3, 
@@ -51,7 +52,7 @@ export const PerformanceSummaryView: React.FC<PerformanceSummaryViewProps> = ({
 }) => {
   // State
   // Semanas y bloques de 4 semanas calculados con los entrenos completados reales
-  const weeklySummaries = useMemo(() => buildWeeklySummaries(workouts, 12, profile.antHr), [workouts, profile.antHr]);
+  const weeklySummaries = useMemo(() => buildWeeklySummaries(workouts, 12, profile.antHr, resolveIntensityPrescription(profile).aetHr), [workouts, profile]);
   const blocks = useMemo(() => buildFourWeekBlocks(weeklySummaries), [weeklySummaries]);
   const [weightHistory, setWeightHistory] = useState<WeightEntry[]>(
     StorageService.getWeightHistory()
@@ -322,7 +323,7 @@ export const PerformanceSummaryView: React.FC<PerformanceSummaryViewProps> = ({
                           <span className="text-zinc-200">{w.distanceKm} km</span>
                           <span className="text-amber-400">+{w.elevationGainM} m D+</span>
                           <span className="text-zinc-400">{w.tss} TSS</span>
-                          <span className="text-emerald-400">{w.aerobicPct !== null ? `${w.aerobicPct}% en verde` : 'sin ZoneSense'}</span>
+                          <span className="text-emerald-400">{w.aerobicPct !== null ? `${w.aerobicPct}% bajo AeT (FC media)` : 'sin FC o sin AeT'}{w.zoneSenseAerobicPct !== null ? ` · ZoneSense ${w.zoneSenseAerobicPct}% verde` : ''}</span>
                           <span className="text-zinc-500">{(w.durationMin / 60).toFixed(1)} h</span>
                         </div>
                       </div>
@@ -460,7 +461,7 @@ export const PerformanceSummaryView: React.FC<PerformanceSummaryViewProps> = ({
                     </div>
                   </div>
                   <div className="bg-zinc-900/50 p-3 rounded-xl border border-zinc-800/60 text-xs flex items-center justify-between">
-                    <span className="text-zinc-400 text-[11px]">En verde (ZoneSense):</span>
+                    <span className="text-zinc-400 text-[11px]">Bajo AeT (FC media, estimación):</span>
                     <span className="text-emerald-400 font-bold text-[11px]">{b.aerobicPct !== null ? `${b.aerobicPct}%` : 'sin datos'}</span>
                   </div>
                   <div className="text-[11px] text-zinc-500">D+ total del bloque: <strong className="text-zinc-300">+{b.totalGainM} m</strong></div>

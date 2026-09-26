@@ -2,7 +2,7 @@
 // (Workout y DailyCheckIn).
 import type { DailyCheckIn, Workout, WorkoutType } from '../src/types/index.js';
 import { computeReadiness } from '../src/utils/readiness.js';
-import { breakdownIsReliable, normalizeSuuntoZoneSense, toStoredBreakdown } from '../src/brain/zonesense.js';
+import { normalizeSuuntoZoneSense, toStoredBreakdown } from '../src/brain/zonesense.js';
 
 /** Fila de la tool `suunto_list_workouts_summary`. */
 export interface SuuntoWorkoutRow {
@@ -81,17 +81,15 @@ function localDate(startTime: number, offsetMin: number): string {
   return new Date(startTime + offsetMin * 60_000).toISOString().slice(0, 10);
 }
 
-/** Más de este % del tiempo medido en amarillo/rojo = no fue un rodaje suave. */
-export const INTENSITY_RUN_PCT = 20;
-
+/**
+ * Tipo por deporte y volumen. Si un rodaje fue con intensidad lo decide la FC frente a
+ * tu umbral aeróbico, en la fusión (src/brain/suuntoMerge.ts classifyRunByHr), que es
+ * donde se conoce tu perfil. ZoneSense no clasifica.
+ */
 function workoutType(row: SuuntoWorkoutRow, durationMin: number): WorkoutType {
   const id = row.activityId ?? -1;
   if (RUNNING_IDS.has(id)) {
     if (durationMin > 90 || (row.totalAscentM ?? 0) > 500) return 'long_mountain_run';
-    // Con ZoneSense fiable se clasifica por lo que pasó de verdad, no solo por la duración
-    const z = normalizeSuuntoZoneSense(row);
-    const b = z ? toStoredBreakdown(z, row.totalTimeSec) : null;
-    if (b && breakdownIsReliable(b) && b.transitionPct + b.anaerobicPct > INTENSITY_RUN_PCT) return 'intensity_run';
     return 'easy_run';
   }
   if (STRENGTH_IDS.has(id)) return 'strength_core';

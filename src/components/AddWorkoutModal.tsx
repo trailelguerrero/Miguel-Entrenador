@@ -17,7 +17,7 @@ export const AddWorkoutModal: React.FC<AddWorkoutModalProps> = ({
   onClose,
   onSave,
   initialDateStr,
-  defaultAetHr = 142,
+  defaultAetHr,
   defaultAntHr,
 }) => {
   if (!isOpen) return null;
@@ -28,9 +28,8 @@ export const AddWorkoutModal: React.FC<AddWorkoutModalProps> = ({
   const [durationMin, setDurationMin] = useState(60);
   const [distanceKm, setDistanceKm] = useState(10);
   const [elevationGainM, setElevationGainM] = useState(300);
-  const [zoneSenseTarget, setZoneSenseTarget] = useState<Workout['zoneSenseTarget']>(
-    'ZoneSense verde (aeróbico)'
-  );
+  // Techo de FC (ppm): por defecto tu umbral aeróbico
+  const [hrMax, setHrMax] = useState<number | ''>(defaultAetHr && defaultAetHr > 0 ? defaultAetHr : '');
   const [mainSet, setMainSet] = useState(
     'Rodaje continuo a ritmo suave, respiración nasal constante. En las subidas camina si tus pulsaciones rozan tu AeT.'
   );
@@ -39,7 +38,7 @@ export const AddWorkoutModal: React.FC<AddWorkoutModalProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    const estAvgHr = Math.round(defaultAetHr * 0.94);
+    const estAvgHr = defaultAetHr ? Math.round(defaultAetHr * 0.94) : undefined;
     const tssResult = calculateWorkoutTss(Number(durationMin), estAvgHr, defaultAntHr || undefined);
 
     const newWorkout: Workout = {
@@ -52,8 +51,8 @@ export const AddWorkoutModal: React.FC<AddWorkoutModalProps> = ({
       plannedElevationGainM: elevationGainM ? Number(elevationGainM) : undefined,
       plannedTss: tssResult.tss,
       intensityFactor: tssResult.intensityFactor,
-      targetHrMax: defaultAetHr,
-      zoneSenseTarget,
+      targetHrMax: hrMax === '' ? undefined : Number(hrMax),
+      intensitySource: hrMax === '' ? 'rpe' : 'heart_rate_measured',
       description: 'Sesión personalizada programada por el atleta.',
       mainSet,
       terrainRecommendation: terrain,
@@ -168,17 +167,15 @@ export const AddWorkoutModal: React.FC<AddWorkoutModalProps> = ({
           </div>
 
           <div>
-            <label className="text-xs text-zinc-400">Objetivo Suunto ZoneSense</label>
-            <select
-              value={zoneSenseTarget}
-              onChange={(e) => setZoneSenseTarget(e.target.value as any)}
+            <label className="text-xs text-zinc-400">Techo de FC (ppm)</label>
+            <input
+              type="number"
+              value={hrMax}
+              placeholder={defaultAetHr ? String(defaultAetHr) : 'Sin umbral de FC: vacío = por sensaciones'}
+              onChange={(e) => setHrMax(e.target.value === '' ? '' : Number(e.target.value))}
               className="w-full mt-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-100"
-            >
-              <option value="ZoneSense verde (aeróbico)">ZoneSense verde (aeróbico)</option>
-              <option value="Regenerativo (verde, muy suave)">Regenerativo (verde, muy suave)</option>
-              <option value="ZoneSense amarillo (entre umbrales)">ZoneSense amarillo (entre umbrales)</option>
-              <option value="ZoneSense rojo (sobre umbral anaeróbico)">ZoneSense rojo (sobre umbral anaeróbico)</option>
-            </select>
+            />
+            <p className="text-[10px] text-zinc-500 mt-1">Por defecto, tu umbral aeróbico (zonas de FC de tu reloj Suunto o fijado a mano).</p>
           </div>
 
           <div>

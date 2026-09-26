@@ -164,6 +164,29 @@ export async function listDocuments(): Promise<KnowledgeDocument[]> {
 }
 
 /** Borra todos los fragmentos de un documento. Devuelve cuántos había. */
+/** Texto de un documento: sus fragmentos en orden (como se guardaron). */
+export async function getDocumentContent(title: string): Promise<{ title: string; source: string | null; chunks: string[] }> {
+  const { data, error } = await getSupabase().from('documents').select('content, metadata').eq('metadata->>title', title).limit(5_000);
+  if (error) throw dbError('leer el documento', error);
+  const rows = (data ?? []) as { content: string; metadata: any }[];
+  if (!rows.length) throw new KnowledgeError('KB_NOT_FOUND', `No hay ningún documento titulado "${title}".`, 'Recarga la lista de documentos.', 404);
+  rows.sort((a, b) => (Number(a.metadata?.chunk_index) || 0) - (Number(b.metadata?.chunk_index) || 0));
+  const source = rows.find((r) => typeof r.metadata?.source === 'string')?.metadata.source ?? null;
+  return { title, source, chunks: rows.map((r) => r.content) };
+}
+
+let indexCache: { at: number; docs: KnowledgeDocument[] } | null = null;
+/** Lista de documentos para el índice de Miguel (caché de 60 s: se consulta en cada mensaje). */
+export async function listDocumentsCached(ttlMs = 60_000): Promise<KnowledgeDocument[]> {
+  if (indexCache && Date.now() - indexCache.at < ttlMs) return indexCache.docs;
+  const docs = await listDocuments();
+  indexCache = { at: Date.now(), docs };
+  return docs;
+}
+export function clearDocumentIndexCache(): void {
+  indexCache = null;
+}
+
 export async function deleteDocument(title: string): Promise<number> {
   const { data, error } = await getSupabase().from('documents').delete().eq('metadata->>title', title).select('id');
   if (error) throw dbError('borrar el documento', error);

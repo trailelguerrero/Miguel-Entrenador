@@ -4,6 +4,7 @@ import { describeDataWindows } from '../../src/brain/dataWindows.js';
 import { describeReadiness, evaluateReadiness, strictestReadiness, type ReadinessState } from '../../src/brain/readiness.js';
 import { describeLoadHistory, weeklyLoadThresholds } from '../../src/utils/trainingLoad.js';
 import { tag } from '../../src/brain/provenance.js';
+import { resolveIntensityPrescription } from '../../src/brain/intensity.js';
 
 /** Disponibilidad: solo la que el atleta declara a mano; lo de Suunto es historial, no disponibilidad. */
 export function availabilityLine(p: any): string {
@@ -15,15 +16,20 @@ export function availabilityLine(p: any): string {
   return 'Disponibilidad no declarada por el atleta.';
 }
 
-/** Zonas del reloj y, SOLO si hay tendencia sostenida, la recomendación de cambio. */
-export function formatWatchZones(a: any): string {
+/** Zonas del reloj y las recomendaciones de cambio, con su estado (pendiente, hecho o ignorado). */
+export function formatWatchZones(a: any, state?: Record<string, { status?: string }>): string {
   if (!a?.watch) return 'sin datos';
   const z = a.watch.zones;
-  const base = `FC máx ${a.watch.maxHr ?? '?'}; inicio Z2 ${z?.z2 ?? '?'}, Z3 ${z?.z3 ?? '?'}, Z4 ${z?.z4 ?? '?'}, Z5 ${z?.z5 ?? '?'}`;
-  const recs = (a.recommendations || []).map((r: any) => `${r.label} ${r.current}→${r.suggested} (${r.evidence})`);
+  const base = `FC máx ${a.watch.maxHr ?? '?'}; inicio Z2 ${z?.z2 ?? '?'}, Z3 ${z?.z3 ?? '?'} (= umbral aeróbico), Z4 ${z?.z4 ?? '?'}, Z5 ${z?.z5 ?? '?'} (= umbral anaeróbico)`;
+  const statusOf = (r: any) => state?.[`${r.field}:${r.suggested ?? '-'}`]?.status ?? 'pending';
+  const recs = (a.recommendations || []).map((r: any) => {
+    const st = statusOf(r);
+    const what = r.field === 'zones' ? r.label : `${r.label} ${r.current}→${r.suggested}`;
+    return `${what} (${r.evidence}) [${st === 'done' ? 'el atleta dice que ya lo cambió: espera a la próxima sincronización' : st === 'ignored' ? 'el atleta lo ignoró: no insistas' : 'PENDIENTE: recuérdaselo si viene al caso'}]`;
+  });
   return recs.length
-    ? `${base}. RECOMENDACIÓN POR TENDENCIA SOSTENIDA: ${recs.join('; ')}. Díselo al atleta.`
-    : `${base}. Sin tendencia sostenida que justifique cambiarlas: no recomiendes cambiar zonas por datos de un solo día.${(a.notes || []).length ? ` Notas: ${a.notes.join(' ')}` : ''}`;
+    ? `${base}. RECOMENDACIONES DE CAMBIO: ${recs.join('; ')}.`
+    : `${base}. Sin señales que justifiquen cambiarlas: no recomiendes cambiar zonas por datos de un solo día.${(a.notes || []).length ? ` Notas: ${a.notes.join(' ')}` : ''}`;
 }
 
 export function formatLoadContext(lc: any): string {
@@ -71,6 +77,7 @@ export function verifyTodayReadiness(lc: any): ReadinessState | null {
     recoveryPct: finite(i.recoveryPct),
     ...loadInputs(lc),
     plannedWorkout: plannedFrom(i.plannedWorkout),
+    aetHr: finite(i.aetHr),
   });
   return strictestReadiness(computed, lc.todayReadiness);
 }
@@ -91,6 +98,7 @@ export function resolveReadinessState(body: any): ReadinessState {
     recoveryPct: checkIn?.readinessScore,
     ...loadInputs(readinessInputs),
     plannedWorkout: plannedFrom(originalWorkout),
+    aetHr: resolveIntensityPrescription(athleteProfile).aetHr,
   });
   return strictestReadiness(computed, readinessState);
 }

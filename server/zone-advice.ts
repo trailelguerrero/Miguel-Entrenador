@@ -90,6 +90,7 @@ export function computeWatchZoneAdvice(rows: SuuntoWorkoutRow[], now = Date.now(
         current: watchMax,
         suggested,
         direction: 'up',
+        source: 'maxhr',
         evidence: `${over.length} carreras en ${weeks.size} semanas distintas de las últimas 12 superaron tu FC máx configurada (${watchMax}): ${over
           .map((w) => `${dateOf(w)} ${w.maxHR}`)
           .join(', ')}. Propuesta: ${suggested} (segundo valor más alto; se descarta el pico mayor por si fue un artefacto).`,
@@ -104,6 +105,15 @@ export function computeWatchZoneAdvice(rows: SuuntoWorkoutRow[], now = Date.now(
   }
 
   if (isDefaultSuuntoZones(zones, watchMax)) {
+    recommendations.push({
+      field: 'zones',
+      label: 'Configura tus zonas de FC de carrera',
+      current: null,
+      suggested: null,
+      direction: 'none',
+      source: 'factory',
+      evidence: `Tus zonas de FC de carrera en el reloj son las de fábrica (un % fijo de tu FC máx ${watchMax ?? '?'}): no son tus umbrales, así que la app no puede usarlas como AeT/AnT. Configúralas con tus umbrales reales (por ejemplo, el AeT de un test de deriva de 60 min).`,
+    });
     notes.push('Las zonas de FC de carrera del reloj son las de fábrica (un % fijo de la FC máx): no son umbrales medidos, así que no des pulsaciones como si lo fueran.');
   }
 
@@ -127,7 +137,8 @@ export function computeWatchZoneAdvice(rows: SuuntoWorkoutRow[], now = Date.now(
         current,
         suggested: t.recent,
         direction: t.recent > current ? 'up' : 'down',
-        evidence: `FC a la que ZoneSense detectó el umbral (varía cada día): mediana ${t.previous} ppm en ${t.nPrev} carreras de hace 5-8 semanas y ${t.recent} ppm en ${t.nRecent} carreras de las últimas 4; tus zonas de FC del reloj tienen ${current}. Afecta solo a las zonas de FC (respaldo sin banda); ZoneSense se ajusta solo.`,
+        source: 'zonesense',
+        evidence: `FC a la que ZoneSense detectó el umbral (varía cada día): mediana ${t.previous} ppm en ${t.nPrev} carreras de hace 5-8 semanas y ${t.recent} ppm en ${t.nRecent} carreras de las últimas 4; tus zonas de FC del reloj tienen ${current}. Es una sugerencia: tus zonas de FC del reloj son tus umbrales en la app; si decides cambiarlas en Suunto, la app las tomará en la siguiente sincronización.`,
       });
     }
   }
