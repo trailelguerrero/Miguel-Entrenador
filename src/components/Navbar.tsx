@@ -107,6 +107,15 @@ export const Navbar: React.FC<NavbarProps> = ({
     ? navItems 
     : navItems.filter(item => item.hub === selectedHub);
 
+  // Una categoría también NAVEGA: si la pestaña abierta no es de esa categoría, se abre la
+  // primera de ella (antes solo filtraba la fila y la pantalla no cambiaba).
+  const selectHub = (hub: typeof selectedHub) => {
+    setSelectedHub(hub);
+    if (hub === 'all') return;
+    const inHub = navItems.filter((item) => item.hub === hub);
+    if (inHub.length && !inHub.some((item) => item.id === activeTab)) setActiveTab(inHub[0].id);
+  };
+
   return (
     <header className="sticky top-0 z-40 bg-zinc-950/95 backdrop-blur-md border-b border-zinc-800">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -226,7 +235,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <Layers className="w-3 h-3 text-zinc-600" /> Hubs:
             </span>
             <button
-              onClick={() => setSelectedHub('all')}
+              onClick={() => selectHub('all')}
               className={`px-2 py-0.5 rounded-md font-semibold whitespace-nowrap transition cursor-pointer ${
                 selectedHub === 'all'
                   ? 'bg-zinc-800 text-amber-400 border border-zinc-700'
@@ -236,7 +245,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               Todas (14)
             </button>
             <button
-              onClick={() => setSelectedHub('training')}
+              onClick={() => selectHub('training')}
               className={`px-2 py-0.5 rounded-md font-semibold whitespace-nowrap transition cursor-pointer ${
                 selectedHub === 'training'
                   ? 'bg-zinc-800 text-amber-400 border border-zinc-700'
@@ -246,7 +255,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               🏃 Carga & Plan
             </button>
             <button
-              onClick={() => setSelectedHub('metrics')}
+              onClick={() => selectHub('metrics')}
               className={`px-2 py-0.5 rounded-md font-semibold whitespace-nowrap transition cursor-pointer ${
                 selectedHub === 'metrics'
                   ? 'bg-zinc-800 text-amber-400 border border-zinc-700'
@@ -256,7 +265,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               📊 Métricas & Fisiología
             </button>
             <button
-              onClick={() => setSelectedHub('strategy')}
+              onClick={() => selectHub('strategy')}
               className={`px-2 py-0.5 rounded-md font-semibold whitespace-nowrap transition cursor-pointer ${
                 selectedHub === 'strategy'
                   ? 'bg-zinc-800 text-amber-400 border border-zinc-700'
@@ -266,7 +275,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               ⛰️ Transvulcania (73K)
             </button>
             <button
-              onClick={() => setSelectedHub('coach')}
+              onClick={() => selectHub('coach')}
               className={`px-2 py-0.5 rounded-md font-semibold whitespace-nowrap transition cursor-pointer ${
                 selectedHub === 'coach'
                   ? 'bg-zinc-800 text-amber-400 border border-zinc-700'
