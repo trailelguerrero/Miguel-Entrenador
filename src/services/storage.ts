@@ -37,7 +37,7 @@ import {
   SAMPLE_ADAPTATION_STAGES
 } from './sampleData';
 import { computePmcSeries, localDateKey } from '../utils/trainingLoad';
-import { rebaseSuuntoCheckIn } from '../utils/readiness';
+import { deriveCheckIn, rebaseSuuntoCheckIn } from '../utils/readiness';
 import { mergeSuuntoCheckIns, mergeSuuntoWorkouts, sportGroup } from '../brain/suuntoMerge';
 import { resolveIntensityPrescription } from '../brain/intensity';
 import { applyEvidence, refreshMemory, type EvidenceContext, type EvidenceItem } from '../brain/memory';
@@ -536,10 +536,14 @@ export const StorageService = {
       const stored = localStorage.getItem(STORAGE_KEYS.DAILY_CHECKINS);
       if (stored !== null) {
         const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) return parsed.map(fixLegacyReadinessScore);
+        // El semáforo se RECALCULA al leer con el motor actual (lo guardado es caché)
+        if (Array.isArray(parsed)) {
+          const baseline = this.getProfile().baselineHrv;
+          return parsed.map((c: DailyCheckIn) => deriveCheckIn(fixLegacyReadinessScore(c), baseline));
+        }
       }
       // Los de ejemplo solo en modo prueba
-      return this.isTestDataActive() ? SAMPLE_DAILY_CHECKINS : [];
+      return this.isTestDataActive() ? SAMPLE_DAILY_CHECKINS.map((c) => deriveCheckIn(c, this.getProfile().baselineHrv)) : [];
     } catch {
       return [];
     }

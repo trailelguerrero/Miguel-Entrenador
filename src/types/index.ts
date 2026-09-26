@@ -664,10 +664,15 @@ export interface DailyCheckIn {
   readinessScore?: number;
   /** Muestras de Recovery de Suunto de ese día (pocas = día aún incompleto). */
   recoverySamples?: number;
-  /** Verde, ámbar, rojo o 'unknown' (sin HRV, sueño ni dolor: no se puede valorar). */
+  /**
+   * DERIVADOS (caché): verde/ámbar/rojo/'unknown', consejo y acción. No son datos:
+   * al leer se recalculan con el motor actual (deriveCheckIn en utils/readiness).
+   */
   status: 'optimal' | 'moderate' | 'fatigued' | 'unknown';
   coachAdvice: string;
   suggestedAction?: 'maintain' | 'downgrade_easy' | 'full_rest' | 'swap_with_rest';
+  /** Versión del motor que calculó los campos derivados (READINESS_ENGINE_VERSION). */
+  derivedEngineVersion?: string;
   source?: 'suunto'; // presente si el check-in viene de la sincronización con Suunto
   /**
    * Minutos que Suunto marcó como "siesta" y terminaron ese día. No se suman a

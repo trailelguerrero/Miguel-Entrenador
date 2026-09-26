@@ -208,3 +208,29 @@ test('Widget HRV semanal: sin predictor de descarga ni datos inventados', () => 
   assert.doesNotMatch(src, /Mesociclo 2|5\.200|DeloadPrediction|Umbral de Descarga|onScheduleDeload|imminent|sobreentrenamiento|mitocondrial|44 ms/);
   assert.doesNotMatch(readFileSync('src/types/index.ts', 'utf8'), /imminent_overtraining|DeloadPrediction/);
 });
+
+// ── #10. El semáforo guardado es caché: se recalcula al leer ─────────────
+import { deriveCheckIn, READINESS_ENGINE_VERSION } from '../src/utils/readiness.js';
+import { buildBrainContext } from '../src/brain/context.js';
+
+test('Check-in con semáforo antiguo guardado → se recalcula con el motor actual', () => {
+  // Guardado como "optimal" por una versión antigua, pero HRV −25 % → rojo hoy
+  const stale = { date: '2026-09-20', restingHr: 50, hrvRmssd: 45, hrvBaseline: 60, sleepHours: 7.5, sleepQuality: 80, status: 'optimal', coachAdvice: 'Tono parasimpático óptimo', suggestedAction: 'maintain' } as any;
+  const d = deriveCheckIn(stale);
+  assert.equal(d.status, 'fatigued');
+  assert.equal(d.derivedEngineVersion, READINESS_ENGINE_VERSION);
+  assert.doesNotMatch(d.coachAdvice, /parasimp/);
+  // Suunto: usa la referencia del perfil y el Recovery del dato crudo (no del texto)
+  const s = deriveCheckIn({ ...stale, source: 'suunto', readinessScore: 55, coachAdvice: 'x' }, 46);
+  assert.equal(s.hrvBaseline, 46);
+  assert.equal(s.status, 'optimal');
+  assert.match(s.coachAdvice, /Recovery Suunto del día: 55%/);
+  // Manual: conserva la referencia que declaró el atleta
+  assert.equal(deriveCheckIn(stale, 46).hrvBaseline, 60);
+});
+
+test('El contexto para Miguel no usa el semáforo guardado', () => {
+  const stale = { date: '2026-09-20', restingHr: 50, hrvRmssd: 45, hrvBaseline: 60, sleepHours: 7.5, sleepQuality: 80, status: 'optimal', coachAdvice: '' } as any;
+  const ctx = buildBrainContext([], { baselineHrv: 0 } as any, [stale], null, '2026-09-21');
+  assert.equal(ctx.recentCheckIns[0].status, 'fatigued');
+});

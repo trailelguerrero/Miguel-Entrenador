@@ -15,6 +15,7 @@ import {
 } from '../utils/trainingLoad.js';
 import { resolveIntensityPrescription } from './intensity.js';
 import { evaluateReadiness, type ReadinessState, type TodayReadinessInputs } from './readiness.js';
+import { deriveCheckIn } from '../utils/readiness.js';
 
 export interface BrainCheckInSummary {
   date: string;
@@ -65,7 +66,8 @@ export function buildBrainContext(
   const latest = series[series.length - 1];
   const week = windowLoad(workouts, addDays(today, -6), today, antHr);
   const weeklyTss = week.tss;
-  const sorted = [...checkIns].sort((a, b) => a.date.localeCompare(b.date));
+  // El semáforo guardado es caché: se recalcula con el motor actual y la referencia del perfil
+  const sorted = [...checkIns].map((c) => deriveCheckIn(c, profile.baselineHrv)).sort((a, b) => a.date.localeCompare(b.date));
   const todayCi = sorted.find((c) => c.date === today) ?? null;
 
   // Sin check-in de hoy también se evalúa: la carga (TSB, TSS de 7 días) puede
