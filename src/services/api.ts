@@ -401,7 +401,8 @@ export const KnowledgeService = {
   async list(): Promise<KnowledgeDocument[]> {
     return (await knowledgeFetch('/api/knowledge/documents', 'GET')).documents ?? [];
   },
-  async ingest(doc: { title: string; text: string; source?: string }): Promise<{ chunks: number; replaced: number }> {
+  /** Guarda un documento. Si el título ya existe falla con KB_TITLE_EXISTS salvo `replace: true`. */
+  async ingest(doc: { title: string; text: string; source?: string; replace?: boolean }): Promise<{ chunks: number; replaced: number }> {
     return await knowledgeFetch('/api/knowledge/ingest', 'POST', doc);
   },
   /** Texto de un documento (sus fragmentos en orden). */

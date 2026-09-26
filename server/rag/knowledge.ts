@@ -71,6 +71,8 @@ export interface IngestInput {
   title: string;
   text: string;
   source?: string;
+  /** true = sustituir el documento que ya tenga ese título. Sin él, un título repetido da KB_TITLE_EXISTS. */
+  replace?: boolean;
 }
 
 /** Valida el cuerpo de una ingesta; lanza KB_INPUT con el motivo. */
@@ -90,17 +92,34 @@ export function parseIngestInput(body: any): IngestInput {
       413,
     );
   }
-  return { title, text, source };
+  return { title, text, source, replace: body?.replace === true };
+}
+
+/** ¿Hay ya un documento con este título? */
+export async function documentExists(title: string): Promise<boolean> {
+  const { data, error } = await getSupabase().from('documents').select('id').eq('metadata->>title', title).limit(1);
+  if (error) throw dbError('comprobar el título', error);
+  return (data?.length ?? 0) > 0;
 }
 
 /**
- * Trocea, vectoriza y guarda un documento. Si ya había uno con el mismo título,
- * lo sustituye (volver a subirlo no duplica fragmentos).
+ * Trocea, vectoriza y guarda un documento. Un título que ya existe NO se sustituye
+ * salvo que se pida (`replace: true`): así un archivo con el mismo nombre de otro
+ * libro no borra el anterior sin avisar. Sustituir no duplica fragmentos.
  */
 export async function ingestDocument(input: IngestInput): Promise<{ chunks: number; replaced: number }> {
   const db = getSupabase();
   const chunks = chunkText(input.text);
   if (chunks.length === 0) return { chunks: 0, replaced: 0 };
+  // Antes de los embeddings: si el título está ocupado no se gasta nada
+  if (!input.replace && (await documentExists(input.title))) {
+    throw new KnowledgeError(
+      'KB_TITLE_EXISTS',
+      `Ya hay un documento titulado "${input.title}" en la biblioteca.`,
+      'Cambia el título (p. ej. pon el libro delante) o confirma que quieres sustituirlo.',
+      409,
+    );
+  }
 
   // Primero los embeddings: si fallan, el documento anterior sigue intacto.
   const embeddings = await embedTexts(chunks, 'document');

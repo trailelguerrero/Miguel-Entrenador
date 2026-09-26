@@ -75,7 +75,7 @@ test('buildKnowledgeBlock: vacío sin fragmentos; con fragmentos, etiquetas [B1]
 
 // ── Validación y clave ─────────────────────────────────────────────────────
 test('parseIngestInput valida título, texto y tamaño', () => {
-  assert.deepEqual(parseIngestInput({ title: ' T ', text: ' x ', source: '' }), { title: 'T', text: 'x', source: undefined });
+  assert.deepEqual(parseIngestInput({ title: ' T ', text: ' x ', source: '' }), { title: 'T', text: 'x', source: undefined, replace: false });
   assert.throws(() => parseIngestInput({ text: 'x' }), (e: KnowledgeError) => e.code === 'KB_INPUT' && e.httpStatus === 400);
   assert.throws(() => parseIngestInput({ title: 't', text: 'a'.repeat(200_001) }), (e: KnowledgeError) => e.httpStatus === 413);
 });
@@ -146,6 +146,7 @@ before(async () => {
     const single = String(req.headers.accept).includes('vnd.pgrst.object');
 
     if (url.pathname === '/v1/embeddings') {
+      embedCalls++;
       if (req.headers.authorization !== 'Bearer test-openai') return send(401, { error: { message: 'bad key' } });
       assert.equal(body.dimensions, 1536);
       return send(200, { data: body.input.map((t: string, index: number) => ({ index, embedding: toyEmbedding(t) })) });
@@ -228,6 +229,8 @@ before(async () => {
   await new Promise<void>((r) => server.listen(0, r));
 });
 
+let embedCalls = 0;
+
 /** Apunta Supabase y los embeddings (proveedor OpenAI) al servidor simulado. */
 function useMockServices() {
   const { port } = server.address() as AddressInfo;
@@ -270,8 +273,16 @@ test('ingesta → búsqueda → sustitución → borrado', async () => {
 
   assert.deepEqual(await search('xyzzy quux'), []);
 
-  // Volver a subir el mismo título sustituye, no duplica.
-  const again = await ingestDocument(doc);
+  // Mismo título sin confirmar: se rechaza ANTES de los embeddings y el original sigue igual
+  const callsBefore = embedCalls;
+  await assert.rejects(ingestDocument({ ...doc, text: 'Otro libro con el mismo nombre de archivo.' }), (e: any) => e.code === 'KB_TITLE_EXISTS' && e.httpStatus === 409);
+  assert.equal(embedCalls, callsBefore);
+  assert.match((await getDocumentContent('Fuerza excéntrica')).chunks[0], /step-downs/);
+  assert.equal(parseIngestInput({ title: 't', text: 'x', replace: true }).replace, true);
+  assert.equal(parseIngestInput({ title: 't', text: 'x', replace: 'true' }).replace, false);
+
+  // Con replace: true se sustituye, no duplica.
+  const again = await ingestDocument({ ...doc, replace: true });
   assert.equal(again.replaced, 1);
   assert.equal((await listDocuments()).length, 1);
 
