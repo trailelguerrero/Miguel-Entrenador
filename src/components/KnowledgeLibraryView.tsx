@@ -68,19 +68,41 @@ export const KnowledgeLibraryView: React.FC = () => {
       setSource(file.name);
       return;
     }
-    // Varios: se suben directamente, cada uno con el nombre del archivo como título
+    // Varios: se suben directamente, cada uno con el nombre del archivo como título.
+    // Un título que ya existe (o repetido en la misma tanda) NO se sustituye sin preguntar.
     await run(async () => {
       const done: string[] = [];
       const failed: string[] = rejected.map((n) => `${n} (no es texto)`);
+      const existing = new Set((await KnowledgeService.list()).map((d) => d.title));
+      const seen = new Set<string>();
+      const batch: { file: File; title: string }[] = [];
       for (const file of ok) {
-        const content = await file.text();
         const docTitle = file.name.replace(/\.[^.]+$/, '');
+        if (seen.has(docTitle)) {
+          failed.push(`${file.name} (nombre repetido en esta subida)`);
+          continue;
+        }
+        seen.add(docTitle);
+        batch.push({ file, title: docTitle });
+      }
+      const clashes = batch.filter((b) => existing.has(b.title)).map((b) => b.title);
+      const replace =
+        clashes.length > 0 &&
+        confirm(
+          `Ya hay en la biblioteca ${clashes.length === 1 ? 'un documento' : `${clashes.length} documentos`} con el mismo nombre:\n\n${clashes.join('\n')}\n\nAceptar = sustituirlos. Cancelar = no subir esos archivos (el resto sí).`,
+        );
+      for (const { file, title: docTitle } of batch) {
+        if (existing.has(docTitle) && !replace) {
+          failed.push(`${file.name} (ya existía: no se ha sustituido)`);
+          continue;
+        }
+        const content = await file.text();
         if (!content.trim() || content.length > MAX_CHARS) {
           failed.push(`${file.name} (${content.trim() ? 'demasiado largo: divídelo' : 'vacío'})`);
           continue;
         }
         try {
-          const r = await KnowledgeService.ingest({ title: docTitle, text: content, source: file.name });
+          const r = await KnowledgeService.ingest({ title: docTitle, text: content, source: file.name, replace: existing.has(docTitle) && replace });
           done.push(`${docTitle} (${r.chunks} fragmentos${r.replaced ? ', sustituye al anterior' : ''})`);
         } catch (err: any) {
           failed.push(`${file.name} (${err.message})`);
@@ -94,9 +116,21 @@ export const KnowledgeLibraryView: React.FC = () => {
 
   const handleIngest = () =>
     run(async () => {
-      const result = await KnowledgeService.ingest({ title: title.trim(), text, source: source.trim() || undefined });
+      const doc = { title: title.trim(), text, source: source.trim() || undefined };
+      let result: { chunks: number; replaced: number };
+      try {
+        result = await KnowledgeService.ingest(doc);
+      } catch (err: any) {
+        if (err?.code !== 'KB_TITLE_EXISTS') throw err;
+        // Título ocupado: solo se sustituye si el atleta lo confirma
+        if (!confirm(`Ya hay un documento "${doc.title}" en la biblioteca. ¿Sustituirlo?\n\nCancelar = no se guarda y puedes cambiar el título.`)) {
+          setError(`No guardado: ya existe "${doc.title}". Cambia el título (p. ej. pon el libro delante) y vuelve a guardar.`);
+          return;
+        }
+        result = await KnowledgeService.ingest({ ...doc, replace: true });
+      }
       setNotice(
-        `"${title.trim()}" guardado en ${result.chunks} fragmento(s)${result.replaced ? ` (sustituye a la versión anterior)` : ''}.`,
+        `"${doc.title}" guardado en ${result.chunks} fragmento(s)${result.replaced ? ` (sustituye a la versión anterior)` : ''}.`,
       );
       setTitle('');
       setSource('');
@@ -180,11 +214,12 @@ export const KnowledgeLibraryView: React.FC = () => {
         </label>
         <p className="text-[11px] text-zinc-500">
           Uno: se carga abajo para revisar el título antes de guardar. Varios: se guardan directamente con el nombre de cada archivo.
+          Pon el libro en el nombre (p. ej. Koop_Cap4_….md): si un nombre ya existe, se te pregunta antes de sustituirlo.
         </p>
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder="Título (si ya existe, se sustituye)"
+          placeholder="Título (si ya existe, te pregunta antes de sustituirlo)"
           maxLength={300}
           className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100"
         />

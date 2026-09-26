@@ -9,7 +9,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 export const GUIDE = 'CONFIGURACION-POR-USUARIO.md';
 
-export type KnowledgeErrorCode = 'KB_CONFIG' | 'KB_AUTH' | 'KB_INPUT' | 'KB_DB' | 'KB_EMBED' | 'KB_NOT_FOUND';
+export type KnowledgeErrorCode = 'KB_CONFIG' | 'KB_AUTH' | 'KB_INPUT' | 'KB_DB' | 'KB_EMBED' | 'KB_NOT_FOUND' | 'KB_TITLE_EXISTS';
 
 /** Error de Supabase/biblioteca con mensaje claro y qué hacer (mismo formato que AiError). */
 export class KnowledgeError extends Error {
