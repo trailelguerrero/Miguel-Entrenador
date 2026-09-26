@@ -157,3 +157,43 @@ test('HRV-carga: estados descriptivos, sin recomendar descarga', () => {
   assert.equal(s.actionableRecommendations, undefined);
   assert.equal(typeof s.loadRecoveryTrendScore, 'number');
 });
+
+// ── #9. Memoria: la negación no apoya lo que niega ───────────────────────
+import { applyEvidence, isNegatedObservation, observationSimilarity, sanitizeEvidenceItems } from '../src/brain/memory.js';
+
+const PAIN = () => ({
+  id: 'p', category: 'biomechanics_injury', observation: 'Me duele el sóleo en bajadas largas', ruleForFuturePlans: '', confidenceScore: 0, learnedFromDate: '2026-09-01', sourceEvent: '',
+  evidence: [
+    { date: '2026-09-01', source: 'workout_analysis', supports: true, summary: 'dolor', refId: 'w1' },
+    { date: '2026-09-08', source: 'workout_analysis', supports: true, summary: 'dolor', refId: 'w2' },
+  ],
+}) as any;
+const CTX = { date: '2026-09-20', source: 'workout_analysis' as const, refId: 'w9', sourceEvent: '' };
+
+test('Polaridad: "no me duele" no es la misma observación que "me duele"', () => {
+  assert.equal(isNegatedObservation('Hoy no me duele el sóleo en bajadas largas'), true);
+  assert.equal(isNegatedObservation('No pude terminar por el dolor de sóleo'), false);
+  assert.equal(observationSimilarity('Me duele el sóleo en bajadas largas', 'Ya no me duele el sóleo en bajadas largas'), 0);
+});
+
+test('"Ya no me duele el sóleo" como hallazgo nuevo → evidencia EN CONTRA del aprendizaje', () => {
+  const memory = { insights: [PAIN()] } as any;
+  const items = sanitizeEvidenceItems([{ insightId: null, supports: true, summary: 'bajada larga sin molestias', category: 'biomechanics_injury', observation: 'Ya no me duele el sóleo en bajadas largas' }], memory);
+  const { memory: next } = applyEvidence(memory, items, CTX);
+  assert.equal(next.insights.length, 1);
+  const ev = next.insights[0].evidence!;
+  assert.equal(ev[ev.length - 1].supports, false);
+  assert.equal(next.insights[0].status, 'observation'); // 2 a favor → hipótesis; 1 en contra baja un nivel
+});
+
+test('La IA marca a favor un resumen que niega el aprendizaje → cuenta en contra', () => {
+  const memory = { insights: [PAIN()] } as any;
+  const items = sanitizeEvidenceItems([{ insightId: 'p', supports: true, summary: 'Hoy no me duele el sóleo en bajadas largas' }], memory);
+  const { memory: next, changes } = applyEvidence(memory, items, CTX);
+  const ev = next.insights[0].evidence!;
+  assert.equal(ev[ev.length - 1].supports, false);
+  assert.ok(changes.some((c) => /lo contrario/.test(c)));
+  // Un apoyo afirmativo sigue sumando a favor
+  const ok = applyEvidence(memory, sanitizeEvidenceItems([{ insightId: 'p', supports: true, summary: 'Otra vez dolor de sóleo al bajar' }], memory), CTX).memory;
+  assert.equal(ok.insights[0].evidence!.at(-1)!.supports, true);
+});

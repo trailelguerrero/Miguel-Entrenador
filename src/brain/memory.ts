@@ -210,8 +210,28 @@ export function contrastingObservations(a: string, b: string): boolean {
   return fa.some((v, i) => v !== fb[i] && (v !== '' || fb[i] !== ''));
 }
 
-/** Parecido entre dos observaciones: palabras clave compartidas / las de la más corta (0 si chocan en lado, pendiente o temperatura). */
-export function observationSimilarity(a: string, b: string): number {
+/**
+ * POLARIDAD: ¿el texto dice que algo NO ocurrió o ya no ocurre? ("ya no me duele",
+ * "sin molestias", "no noté carga", "ha desaparecido"). Se busca la negación
+ * pegada al síntoma, no cualquier "no": "no pude terminar por el dolor" sigue
+ * siendo afirmativo.
+ */
+const NEGATION = new RegExp(
+  [
+    String.raw`\bya no\b`,
+    String.raw`\bno (me |le |se |te |lo |la |he |ha |hubo )?(duel|dolio|dolia|molest|carg|not|aparec|hub|tuv|sent|sint|volvi|repiti)`,
+    String.raw`\bni (rastro|una) (de )?(dolor|molesti|carga)`,
+    String.raw`\bsin (ningun[ao]? )?(dolor|molesti|carga|problema|sintoma|rastro|pinchazo|calambre)`,
+    String.raw`\b(desaparecid|desaparecio|se (me )?ha ido|se (me )?fue|ya esta bien|recuperad[oa] del todo|curad[oa])`,
+  ].join('|'),
+);
+
+export function isNegatedObservation(text: string): boolean {
+  return NEGATION.test(normSummary(text));
+}
+
+/** Palabras clave compartidas / las de la más corta (0 si chocan en lado, pendiente o temperatura). Ignora la polaridad. */
+function topicSimilarity(a: string, b: string): number {
   if (contrastingObservations(a, b)) return 0;
   const wa = words(a);
   const wb = words(b);
@@ -221,8 +241,37 @@ export function observationSimilarity(a: string, b: string): number {
   return shared / Math.min(wa.size, wb.size);
 }
 
+/**
+ * Parecido entre dos observaciones. Si una afirma y la otra niega ("me duele el sóleo"
+ * frente a "ya no me duele el sóleo") NO son la misma observación: 0.
+ */
+export function observationSimilarity(a: string, b: string): number {
+  if (isNegatedObservation(a) !== isNegatedObservation(b)) return 0;
+  return topicSimilarity(a, b);
+}
+
 /** Umbral para considerar que un "hallazgo nuevo" es el mismo que uno existente. */
 export const SAME_INSIGHT_SIMILARITY = 0.6;
+
+/**
+ * Aprendizaje existente sobre el MISMO tema pero con la polaridad contraria (lo
+ * nuevo niega lo que dice el aprendizaje, o al revés). Esa evidencia va EN CONTRA
+ * del existente; nunca a favor ni como observación nueva.
+ */
+export function findOppositeInsight(insights: CoachLearnedInsight[], category: CoachLearnedInsight['category'], observation: string): CoachLearnedInsight | null {
+  const neg = isNegatedObservation(observation);
+  let best: CoachLearnedInsight | null = null;
+  let bestScore = SAME_INSIGHT_SIMILARITY;
+  for (const i of insights) {
+    if (i.category !== category || isNegatedObservation(i.observation) === neg) continue;
+    const score = topicSimilarity(i.observation, observation);
+    if (score >= bestScore) {
+      best = i;
+      bestScore = score;
+    }
+  }
+  return best;
+}
 
 /**
  * Aprendizaje existente de la misma categoría que dice lo mismo que un hallazgo nuevo.
@@ -243,6 +292,11 @@ export function findSimilarInsight(insights: CoachLearnedInsight[], category: Co
   return best;
 }
 
+/** ¿El resumen niega lo que afirma la observación (o al revés) sobre el mismo tema? */
+function contradicts(observation: string, summary: string): boolean {
+  return isNegatedObservation(observation) !== isNegatedObservation(summary) && topicSimilarity(observation, summary) >= SAME_INSIGHT_SIMILARITY;
+}
+
 let idSeq = 0;
 const newId = () => `insight-${Date.now()}-${idSeq++}`;
 
@@ -256,9 +310,25 @@ export function applyEvidence(
   const insights = [...(memory.insights || [])];
   const changes: string[] = [];
   for (const raw of items) {
-    // Hallazgo "nuevo" que ya existe con otras palabras → evidencia del existente
-    const similar = raw.insightId == null && raw.category && raw.observation ? findSimilarInsight(insights, raw.category, raw.observation) : null;
-    const item: EvidenceItem = similar ? { insightId: similar.id, supports: true, summary: raw.summary } : raw;
+    // Hallazgo "nuevo" que ya existe con otras palabras → evidencia del existente;
+    // si dice lo contrario ("ya no me duele" frente a "me duele") → evidencia EN CONTRA
+    const isNew = raw.insightId == null && !!raw.category && !!raw.observation;
+    const similar = isNew ? findSimilarInsight(insights, raw.category!, raw.observation!) : null;
+    const opposite = isNew && !similar ? findOppositeInsight(insights, raw.category!, raw.observation!) : null;
+    let item: EvidenceItem = similar
+      ? { insightId: similar.id, supports: true, summary: raw.summary }
+      : opposite
+        ? { insightId: opposite.id, supports: false, summary: raw.summary }
+        : raw;
+    // La IA marca "a favor" algo que niega el aprendizaje ("ya no me duele el sóleo" como
+    // apoyo de "me duele el sóleo") → no puede apoyarlo: cuenta en contra
+    if (item.insightId && item.supports) {
+      const target = insights.find((i) => i.id === item.insightId);
+      if (target && contradicts(target.observation, item.summary)) {
+        item = { insightId: item.insightId, supports: false, summary: item.summary };
+        changes.push(`"${target.observation}": la evidencia dice lo contrario ("${item.summary}"), se cuenta en contra`);
+      }
+    }
     const ev: InsightEvidence = { date: ctx.date, source: ctx.source, supports: item.supports, summary: item.summary, refId: ctx.refId };
     if (item.critical) ev.critical = true;
     const idx = item.insightId ? insights.findIndex((i) => i.id === item.insightId) : -1;

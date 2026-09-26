@@ -7,7 +7,7 @@ import { MAX_EVIDENCE_PER_EVENT } from '../../../src/brain/memory.js';
 export const EVIDENCE_JSON_SPEC = `"evidence": [
     {
       "insightId": "id de un aprendizaje de la memoria (el que va entre corchetes) si esto lo APOYA o lo CONTRADICE; null si es un hallazgo nuevo",
-      "supports": true o false (false = contradice ese aprendizaje),
+      "supports": true o false (false = contradice ese aprendizaje; si el atleta dice que algo YA NO ocurre —"ya no me duele", "sin molestias"— es false, nunca true),
       "summary": "Qué ocurrió, con el dato que lo respalda (hecho, no regla)",
       "critical": true solo si supports es false y fue una lesión, dolor agudo o síntomas de sobreentrenamiento (anula el aprendizaje); si no, omítelo,
       "category": "solo si insightId es null: physiology_zonesense | fatigue_recovery | biomechanics_injury | nutrition_hydration | terrain_technique",
