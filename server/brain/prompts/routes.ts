@@ -278,6 +278,14 @@ Responde en formato JSON:
   return prompt;
 }
 
+/** Zonas de FC medidas por Suunto en texto: "Z1 (<132) 93 min, Z2 (132–141) 42 min…". */
+function describeSuuntoZones(z: any): string {
+  const l = z.lowerLimits;
+  const t = z.timesSec;
+  const m = (s: number) => Math.round(s / 60);
+  return `Z1 (<${l.z2}) ${m(t.z1)} min, Z2 (${l.z2}–${l.z3 - 1}) ${m(t.z2)} min, Z3 (${l.z3}–${l.z4 - 1}) ${m(t.z3)} min, Z4 (${l.z4}–${l.z5 - 1}) ${m(t.z4)} min, Z5 (≥${l.z5}) ${m(t.z5)} min`;
+}
+
 /** Prompt de /api/analyze-workout: valoración + evidencias (no reglas). */
 export function buildAnalyzePrompt(body: any): string {
   const { workout, fitMetrics, athleteProfile, athleteFeedback, coachMemory, athleteHistoryDoc } = body || {};
@@ -301,15 +309,24 @@ Analiza la sesión de trail recién completada por el atleta y anota en tu cuade
 - Desnivel: +${fitMetrics?.totalAscentM || workout?.actualElevationGainM || 0}m D+ / -${fitMetrics?.totalDescentM || 0}m D-
 - FC Media: ${fitMetrics?.avgHeartRate || workout?.actualAvgHr} bpm | FC Máx: ${fitMetrics?.maxHeartRate || workout?.actualMaxHr} bpm
 - Umbrales del atleta: AeT ${athleteProfile?.aetHr ? athleteProfile.aetHr + ' bpm' : 'sin dato'} / AnT ${athleteProfile?.antHr ? athleteProfile.antHr + ' bpm' : 'sin dato'}
-- TSS (Suunto): ${workout?.actualTss ?? 'sin dato'}
+- TSS (Suunto): ${workout?.actualTss ?? 'sin dato'}${workout?.suuntoTssMethod ? ` (método de Suunto: ${workout.suuntoTssMethod})` : ''}
 - Zonas por FC (la referencia): ${
-    fitMetrics?.hasHeartRate
+    fitMetrics?.hasHeartRate && fitMetrics.timeInAerobicPct != null
       ? `del .FIT → FC ≤ AeT ${fitMetrics.timeInAerobicPct}%, AeT–AnT ${fitMetrics.timeInTransitionPct}%, FC > AnT ${fitMetrics.timeInAnaerobicPct}%`
+      : workout?.suuntoHrZones
+        ? `${tag('real')} tiempo MEDIDO por Suunto en cada zona de FC del reloj: ${describeSuuntoZones(workout.suuntoHrZones)}`
       : athleteProfile?.aetHr && (fitMetrics?.avgHeartRate || workout?.actualAvgHr)
         ? `sin tiempo en zonas; FC media ${fitMetrics?.avgHeartRate || workout?.actualAvgHr} ppm ${(fitMetrics?.avgHeartRate || workout?.actualAvgHr) > athleteProfile.aetHr ? 'POR ENCIMA' : 'por debajo'} del AeT (${athleteProfile.aetHr})`
         : 'sin datos de FC suficientes (no las supongas)'
   }
-- ZoneSense (solo segunda opinión, no manda): ${workout?.zoneSenseBreakdown ? describeBreakdown(workout.zoneSenseBreakdown) : 'sin datos'}
+${workout?.ascentTimeMin != null || workout?.descentTimeMin != null ? `- ${tag('real')} Tiempo subiendo ${workout?.ascentTimeMin ?? '?'} min y bajando ${workout?.descentTimeMin ?? '?'} min (reloj)
+` : ''}${
+  workout?.weatherTemperatureC != null || workout?.avgTemperatureC != null
+    ? `- ${tag('real')} Temperatura: ${workout?.weatherTemperatureC != null ? `${workout.weatherTemperatureC} °C según el tiempo` : ''}${workout?.weatherTemperatureC != null && workout?.avgTemperatureC != null ? '; ' : ''}${workout?.avgTemperatureC != null ? `${workout.avgTemperatureC} °C en el sensor del reloj (sube con el calor corporal)` : ''}
+`
+    : ''
+}${workout?.suuntoFeeling ? `- ${tag('real')} Sensación anotada en Suunto: ${workout.suuntoFeeling}/5
+` : ''}- ZoneSense (solo segunda opinión, no manda): ${workout?.zoneSenseBreakdown ? describeBreakdown(workout.zoneSenseBreakdown) : 'sin datos'}
 
 [FEEDBACK DEL ATLETA]:
 - RPE (Esfuerzo percibido 1-10): ${athleteFeedback?.rpe || workout?.athleteRpe ? (athleteFeedback?.rpe || workout?.athleteRpe) + '/10' : 'No indicado'}

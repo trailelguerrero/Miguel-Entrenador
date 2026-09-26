@@ -425,11 +425,43 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                 <div>
                   <span className="text-[10px] text-zinc-500 uppercase tracking-wider block font-semibold">RPE Atleta</span>
                   <div className="flex items-baseline gap-1 mt-0.5">
-                    <span className="text-xl font-black text-emerald-400 font-mono">{workout.athleteRpe || 5}</span>
+                    <span className="text-xl font-black text-emerald-400 font-mono">{workout.athleteRpe || '—'}</span>
                     <span className="text-[10px] text-zinc-500">/ 10</span>
                   </div>
                 </div>
               </div>
+              {/* Datos medidos por Suunto (tiempo por zonas de FC, subida/bajada, sensación, temperatura) */}
+              {(workout.suuntoHrZones || workout.ascentTimeMin != null || workout.descentTimeMin != null || workout.suuntoFeeling || workout.weatherTemperatureC != null) && (
+                <div className="pt-2 mt-1 border-t border-zinc-800/80 space-y-1.5 text-[11px] text-zinc-400">
+                  {workout.suuntoHrZones && (() => {
+                    const z = workout.suuntoHrZones!;
+                    const m = (sec: number) => Math.round(sec / 60);
+                    const zones = [
+                      { k: 'Z1', range: `<${z.lowerLimits.z2}`, min: m(z.timesSec.z1) },
+                      { k: 'Z2', range: `${z.lowerLimits.z2}–${z.lowerLimits.z3 - 1}`, min: m(z.timesSec.z2) },
+                      { k: 'Z3', range: `${z.lowerLimits.z3}–${z.lowerLimits.z4 - 1}`, min: m(z.timesSec.z3) },
+                      { k: 'Z4', range: `${z.lowerLimits.z4}–${z.lowerLimits.z5 - 1}`, min: m(z.timesSec.z4) },
+                      { k: 'Z5', range: `≥${z.lowerLimits.z5}`, min: m(z.timesSec.z5) },
+                    ];
+                    return (
+                      <div>
+                        <span className="font-semibold text-zinc-300">Tiempo por zonas de FC (medido por Suunto): </span>
+                        <span className="font-mono">{zones.map((x) => `${x.k} ${x.range}: ${x.min}′`).join(' · ')}</span>
+                      </div>
+                    );
+                  })()}
+                  {(workout.ascentTimeMin != null || workout.descentTimeMin != null) && (
+                    <div><span className="font-semibold text-zinc-300">Subiendo / bajando: </span><span className="font-mono">{workout.ascentTimeMin ?? '—'}′ / {workout.descentTimeMin ?? '—'}′</span></div>
+                  )}
+                  {(workout.suuntoFeeling || workout.weatherTemperatureC != null) && (
+                    <div>
+                      {workout.suuntoFeeling ? <span>Sensación en Suunto: <span className="font-mono text-zinc-300">{workout.suuntoFeeling}/5</span></span> : null}
+                      {workout.suuntoFeeling && workout.weatherTemperatureC != null ? ' · ' : null}
+                      {workout.weatherTemperatureC != null ? <span>Temperatura: <span className="font-mono text-zinc-300">{workout.weatherTemperatureC} °C</span></span> : null}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 

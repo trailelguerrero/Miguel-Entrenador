@@ -30,6 +30,26 @@ export interface SuuntoWorkoutRow {
   vo2Max?: number | null;
   /** Actividad añadida a mano en la app de Suunto (sin reloj ni FC). */
   isManuallyAdded?: boolean | null;
+  // MCP ≥ "HR zone times": datos medidos que antes se descartaban
+  hrZoneTimesSec?: { z1: number | null; z2: number | null; z3: number | null; z4: number | null; z5: number | null } | null;
+  ascentTimeSec?: number | null;
+  descentTimeSec?: number | null;
+  feeling?: number | null;
+  tssMethod?: string | null;
+  avgTemperatureC?: number | null;
+  weatherTemperatureC?: number | null;
+}
+
+/** Zonas de FC medidas por Suunto: solo si están los 5 tiempos y los 4 límites. */
+export function suuntoHrZonesOf(row: SuuntoWorkoutRow): Workout['suuntoHrZones'] {
+  const t = row.hrZoneTimesSec;
+  const l = row.hrZoneLowerLimits;
+  const ok = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v >= 0;
+  if (!t || !l || ![t.z1, t.z2, t.z3, t.z4, t.z5].every(ok) || ![l.z2, l.z3, l.z4, l.z5].every((v) => ok(v) && v > 0)) return undefined;
+  return {
+    timesSec: { z1: t.z1!, z2: t.z2!, z3: t.z3!, z4: t.z4!, z5: t.z5! },
+    lowerLimits: { z2: l.z2!, z3: l.z3!, z4: l.z4!, z5: l.z5! },
+  };
 }
 
 /** Fila de la tool `suunto_get_sleep`. */
@@ -124,6 +144,13 @@ export function mapSuuntoWorkouts(rows: SuuntoWorkoutRow[]): Workout[] {
       ...(row.isManuallyAdded ? { suuntoManualEntry: true } : {}),
       ...(row.activityId != null ? { suuntoActivityId: row.activityId } : {}),
       suuntoSport: sport,
+      ...(suuntoHrZonesOf(row) ? { suuntoHrZones: suuntoHrZonesOf(row) } : {}),
+      ...(typeof row.ascentTimeSec === 'number' ? { ascentTimeMin: round(row.ascentTimeSec / 60) } : {}),
+      ...(typeof row.descentTimeSec === 'number' ? { descentTimeMin: round(row.descentTimeSec / 60) } : {}),
+      ...(typeof row.feeling === 'number' && row.feeling >= 1 ? { suuntoFeeling: row.feeling } : {}),
+      ...(row.tssMethod ? { suuntoTssMethod: row.tssMethod } : {}),
+      ...(typeof row.avgTemperatureC === 'number' ? { avgTemperatureC: row.avgTemperatureC } : {}),
+      ...(typeof row.weatherTemperatureC === 'number' ? { weatherTemperatureC: row.weatherTemperatureC } : {}),
       mainSet: '',
       completed: true,
       actualDurationMin: durationMin,

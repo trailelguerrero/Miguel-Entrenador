@@ -69,6 +69,13 @@ export function mergeSuuntoWorkouts(current: Workout[], suuntoIn: Workout[], aet
     suuntoManualEntry: sw.suuntoManualEntry,
     suuntoActivityId: sw.suuntoActivityId,
     suuntoSport: sw.suuntoSport,
+    suuntoHrZones: sw.suuntoHrZones,
+    ascentTimeMin: sw.ascentTimeMin,
+    descentTimeMin: sw.descentTimeMin,
+    suuntoFeeling: sw.suuntoFeeling,
+    suuntoTssMethod: sw.suuntoTssMethod,
+    avgTemperatureC: sw.avgTemperatureC,
+    weatherTemperatureC: sw.weatherTemperatureC,
   });
 
   for (const sw of suuntoWorkouts) {

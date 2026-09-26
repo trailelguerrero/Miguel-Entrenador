@@ -90,3 +90,48 @@ test('Sin .FIT o con otro AeT: estimación por FC media, marcada como tal', () =
   assert.match(describeHrShareMethod(mixed), /60 min medidos/);
   assert.equal(hrAerobicShare([run({})], null).pct, null);
 });
+
+// ── Zonas de FC medidas por Suunto (MCP ≥ "HR zone times") ───────────────
+import { suuntoZoneSplit } from '../src/utils/trainingLoad.js';
+import { buildAnalyzePrompt } from '../server/brain/prompts/routes.js';
+
+const ROW = {
+  workoutKey: 'z', activityId: 22, startTime: Date.parse('2026-09-24T08:00:00Z'), timeOffsetInMinutes: 120, totalTimeSec: 8418, totalAscentM: 820, totalDescentM: 807, avgHR: 124,
+  hrZoneLowerLimits: { z2: 132, z3: 142, z4: 151, z5: 160 },
+  hrZoneTimesSec: { z1: 5577, z2: 2521, z3: 319, z4: 0, z5: 0 },
+  ascentTimeSec: 3895, descentTimeSec: 4087, feeling: 3, tssMethod: 'DYNAMIC_DFA', avgTemperatureC: 26.4, weatherTemperatureC: 23.3,
+} as any;
+
+test('La sync guarda zonas de FC, subida/bajada, sensación, método de TSS y temperatura', () => {
+  const [w] = mapSuuntoWorkouts([ROW]);
+  assert.deepEqual(w.suuntoHrZones, { timesSec: { z1: 5577, z2: 2521, z3: 319, z4: 0, z5: 0 }, lowerLimits: { z2: 132, z3: 142, z4: 151, z5: 160 } });
+  assert.equal(w.ascentTimeMin, 65);
+  assert.equal(w.descentTimeMin, 68);
+  assert.equal(w.suuntoFeeling, 3);
+  assert.equal(w.suuntoTssMethod, 'DYNAMIC_DFA');
+  assert.equal(w.weatherTemperatureC, 23.3);
+  // Sin los campos nuevos (MCP antiguo) no se inventa nada
+  const [old] = mapSuuntoWorkouts([{ ...ROW, hrZoneTimesSec: undefined, ascentTimeSec: undefined, feeling: undefined }]);
+  assert.equal(old.suuntoHrZones, undefined);
+  assert.equal(old.ascentTimeMin, undefined);
+});
+
+test('AeT = límite de una zona → tiempo bajo AeT MEDIDO (Z1+Z2); si no coincide, se estima', () => {
+  const [w] = mapSuuntoWorkouts([ROW]);
+  const sz = suuntoZoneSplit(w, 142)!;
+  assert.equal(Math.round(sz.belowAetMin), 135);
+  const s = hrAerobicShare([w], 142);
+  assert.equal(s.method, 'measured');
+  assert.equal(s.pct, 96.2);
+  assert.equal(suuntoZoneSplit(w, 145), null);
+  assert.equal(hrAerobicShare([w], 145).method, 'estimated');
+});
+
+test('El análisis de la sesión recibe las zonas medidas y lo demás, etiquetado como real', () => {
+  const [w] = mapSuuntoWorkouts([ROW]);
+  const p = buildAnalyzePrompt({ workout: w, athleteProfile: { aetHr: 142, antHr: 160 } });
+  assert.match(p, /\[REAL\] tiempo MEDIDO por Suunto en cada zona de FC del reloj: Z1 \(<132\) 93 min, Z2 \(132–141\) 42 min/);
+  assert.match(p, /Tiempo subiendo 65 min y bajando 68 min/);
+  assert.match(p, /Sensación anotada en Suunto: 3\/5/);
+  assert.match(p, /método de Suunto: DYNAMIC_DFA/);
+});

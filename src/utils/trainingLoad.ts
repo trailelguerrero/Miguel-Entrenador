@@ -294,8 +294,9 @@ export interface HrAerobicShare {
  * % del tiempo por debajo del umbral aeróbico según la FC (la verdad es la FC).
  * Jerarquía por entreno:
  *   1. Tiempo por zonas MEDIDO en su .FIT (hrZoneSplit), si se calculó con tu AeT actual.
- *   2. ESTIMACIÓN con la FC media: el entreno cuenta entero como "bajo AeT" si su FC
- *      media ≤ AeT (Suunto no da el tiempo por zona de FC en el resumen).
+ *   2. Tiempo por zonas MEDIDO por Suunto (suuntoHrZones), si tu AeT es el límite de una zona.
+ *   3. ESTIMACIÓN con la FC media: el entreno cuenta entero como "bajo AeT" si su FC
+ *      media ≤ AeT.
  * `method` dice si el total es medido, estimado o mixto. null si no hay AeT o datos.
  */
 export function hrAerobicShare(workouts: Workout[], aetHr: number | null | undefined): HrAerobicShare {
@@ -315,6 +316,12 @@ export function hrAerobicShare(workouts: Workout[], aetHr: number | null | undef
         continue;
       }
     }
+    const sz = suuntoZoneSplit(w, aetHr);
+    if (sz) {
+      measuredMin += sz.trackedMin;
+      aerobicMin += sz.belowAetMin;
+      continue;
+    }
     const dur = w.actualDurationMin || 0;
     if (!(dur > 0) || !(typeof w.actualAvgHr === 'number' && w.actualAvgHr > 0)) continue;
     estimatedMin += dur;
@@ -332,9 +339,26 @@ export function hrAerobicShare(workouts: Workout[], aetHr: number | null | undef
   };
 }
 
+/**
+ * Minutos por debajo del AeT (y totales con FC) a partir de las zonas MEDIDAS por Suunto.
+ * Solo si tu AeT coincide con el límite inferior de una zona del reloj (entonces el
+ * reparto es exacto); si no, null y se estima.
+ */
+export function suuntoZoneSplit(w: Workout, aetHr: number): { belowAetMin: number; trackedMin: number } | null {
+  const z = w.suuntoHrZones;
+  if (!z) return null;
+  const order = ['z2', 'z3', 'z4', 'z5'] as const;
+  const idx = order.findIndex((k) => z.lowerLimits[k] === aetHr);
+  if (idx < 0) return null;
+  const times = [z.timesSec.z1, z.timesSec.z2, z.timesSec.z3, z.timesSec.z4, z.timesSec.z5];
+  const below = times.slice(0, idx + 1).reduce((a, b) => a + b, 0);
+  const total = times.reduce((a, b) => a + b, 0);
+  return total > 0 ? { belowAetMin: below / 60, trackedMin: total / 60 } : null;
+}
+
 /** Cómo se obtuvo el % (para mostrarlo junto a la cifra). */
 export function describeHrShareMethod(s: HrAerobicShare): string {
-  if (s.method === 'measured') return 'medido con el tiempo por zonas de tus .FIT';
-  if (s.method === 'mixed') return `${s.measuredMin} min medidos con .FIT y ${s.estimatedMin} min estimados con la FC media`;
+  if (s.method === 'measured') return 'medido con el tiempo por zonas de FC (Suunto o .FIT)';
+  if (s.method === 'mixed') return `${s.measuredMin} min medidos por zonas de FC y ${s.estimatedMin} min estimados con la FC media`;
   return 'estimación con la FC media de cada entreno';
 }
