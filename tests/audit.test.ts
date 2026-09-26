@@ -57,9 +57,10 @@ test('El servidor recalcula con la carga enviada (TSB) y acepta un estado del cl
   assert.equal(bad.level, 'green');
   // El cliente (versión antigua o con más contexto) puede endurecer
   const base = evaluateReadiness({ hrvRmssd: 62, hrvBaseline: 60, sleepHours: 8 });
-  const stricter = strictestReadiness(base, { ...base, level: 'amber', reasons: ['carga del cliente'], limits: { maxDurationMin: 40, maxZoneSense: 'green', allowIntervals: false, mandatoryRest: false } });
+  const stricter = strictestReadiness(base, { ...base, level: 'amber', reasons: ['carga del cliente'], limits: { maxDurationMin: 40, maxHr: 140, allowIntervals: false, mandatoryRest: false } });
   assert.equal(stricter.level, 'amber');
   assert.equal(stricter.limits.maxDurationMin, 40);
+  assert.equal(stricter.limits.maxHr, 140, 'el techo de FC más estricto');
   assert.ok(stricter.reasons.includes('carga del cliente'));
   // Un estado malformado no cuenta
   assert.equal(strictestReadiness(base, { level: 'red', limits: { maxDurationMin: 'x' } }), base);

@@ -245,3 +245,22 @@ export function describeLoadHistory(info: LoadHistoryInfo): string {
     info.status === 'stabilized' ? 'estabilizado' : `en calentamiento: con menos de ${CTL_DAYS} días el CTL está infravalorado`
   }). Pueden diferir de los de la app de Suunto si allí hay historial anterior.`;
 }
+
+/**
+ * % del tiempo por debajo del umbral aeróbico según la FC (la verdad es la FC).
+ * ESTIMACIÓN con la FC media de cada entreno: Suunto no da el tiempo en cada zona de FC
+ * en el resumen, así que un entreno cuenta entero como "bajo AeT" si su FC media ≤ AeT.
+ * null si no hay AeT o ningún entreno completado con FC.
+ */
+export function hrAerobicShare(workouts: Workout[], aetHr: number | null | undefined): { pct: number | null; aerobicMin: number; trackedMin: number } {
+  if (!(typeof aetHr === 'number' && aetHr > 0)) return { pct: null, aerobicMin: 0, trackedMin: 0 };
+  let aerobicMin = 0;
+  let trackedMin = 0;
+  for (const w of workouts) {
+    const dur = w.actualDurationMin || 0;
+    if (!w.completed || !(dur > 0) || !(typeof w.actualAvgHr === 'number' && w.actualAvgHr > 0)) continue;
+    trackedMin += dur;
+    if (w.actualAvgHr <= aetHr) aerobicMin += dur;
+  }
+  return { pct: trackedMin > 0 ? Math.round((aerobicMin / trackedMin) * 1000) / 10 : null, aerobicMin: Math.round(aerobicMin), trackedMin: Math.round(trackedMin) };
+}

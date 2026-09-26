@@ -194,7 +194,7 @@ export const MorningBanner: React.FC<MorningBannerProps> = ({
                 </span>
               </h4>
               <p className="text-[11px] text-zinc-400">
-                Luz verde para la sesión de hoy. Recuerda: con banda de pecho, ZoneSense en verde.
+                Luz verde para la sesión de hoy. Respeta las pulsaciones que marca la sesión.
               </p>
             </div>
           </div>

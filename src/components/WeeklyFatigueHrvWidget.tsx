@@ -208,17 +208,18 @@ export const WeeklyFatigueHrvWidget: React.FC<WeeklyFatigueHrvWidgetProps> = ({
       physiologicalRationale: `La depresión simultánea de la HRV rMSSD por debajo del percentil 15 y el drift del pulso basal reflejan hiperactividad simpática y saturación del sistema nervioso autónomo. Según la metodología Uphill Athlete (Scott Johnston & Steve House), proseguir con sobrecarga de volumen sin descargar provocará desacople celular mitocondrial, estancamiento del umbral aeróbico (AeT ${profile.aetHr} bpm) y alto riesgo de tendinopatía en sóleos/aquiles tras los impactos excéntricos de La Palma.`,
       suggestedVolumeReductionPct: 45,
       coachMiguelPrescription: {
-        maxHeartRateCap: 130, // Strict Z1 recovery, well below AeT 142
-        zoneSenseTarget: 'Regenerativo (verde, muy suave)',
+        // Regenerativo: techo = AeT − 10 ppm (sin AeT, sin techo en ppm)
+        maxHeartRateCap: profile.aetHr ? profile.aetHr - 10 : 0,
+        zoneSenseTarget: '',
         weeklyVolumeHours: 3.2, // ~45% reduction from ~5.8h
         prohibitedElements: [
           'Tiradas > 75 minutos o ritmos tempo Z3/Z4',
           'Desnivel negativo pronunciado (>8% de bajada continuada)',
           'Entrenamientos de fuerza máxima o pliometría agresiva',
-          'Subidas a pulso superior a 135 bpm'
+          profile.aetHr ? `Subidas con la FC por encima de ${profile.aetHr - 10} ppm` : 'Subidas en las que no puedas hablar'
         ],
         mandatoryElements: [
-          '4 sesiones cortas (30-45 min) 100% en Z1 suave sobre hierba o pista llana',
+          profile.aetHr ? `4 sesiones cortas (30-45 min) con la FC por debajo de ${profile.aetHr - 10} ppm sobre hierba o pista llana` : '4 sesiones cortas (30-45 min) muy suaves sobre hierba o pista llana',
           'Respiración nasal continua y cadencia ágil (175-180 ppm)',
           'Movilidad articular de cadera y tobillo 15 min diarios',
           '3 series lentas de sóleo en escalón (3-1-1) sin peso extra'

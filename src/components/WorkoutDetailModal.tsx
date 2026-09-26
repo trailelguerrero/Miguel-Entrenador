@@ -25,7 +25,6 @@ import {
 } from 'lucide-react';
 import { Workout, AthleteProfile, WorkoutType, CoachLearnedInsight } from '../types';
 import { parseFitFile, ParsedFitResult } from '../utils/fitParser';
-import { describeZoneSenseTarget } from '../utils/zoneSense';
 import { calculateWorkoutTss } from '../utils/pmcCalculations';
 import { getWorkoutLoad } from '../utils/trainingLoad';
 import { SuuntoExportModal } from './SuuntoExportModal';
@@ -357,16 +356,18 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
             <div className="bg-zinc-950 p-3 rounded-xl border border-zinc-800 col-span-2">
               <div className="text-[11px] text-zinc-500 flex items-center space-x-1">
                 <Activity className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Objetivo Suunto ZoneSense & FC</span>
+                <span>Objetivo de FC</span>
               </div>
               <div className="text-xs font-bold text-emerald-400 mt-0.5 font-mono">
-                {workout.zoneSenseTarget
-                  ? describeZoneSenseTarget(workout.zoneSenseTarget)
-                  : 'Sin objetivo (actividad importada de Suunto)'}
+                {workout.targetHrMin || workout.targetHrMax
+                  ? `${workout.targetHrMin ? `${workout.targetHrMin}–` : '≤ '}${workout.targetHrMax ?? ''} ppm`
+                  : workout.completed
+                    ? 'Sin objetivo (actividad importada de Suunto)'
+                    : 'Sin umbral de FC: por sensaciones (pudiendo hablar)'}
               </div>
               {profile.aetHr > 0 && (
                 <div className="text-[10px] text-zinc-400 mt-0.5">
-                  Límite AeT: &lt; {profile.aetHr} bpm
+                  Tu umbral aeróbico: {profile.aetHr} ppm
                 </div>
               )}
             </div>

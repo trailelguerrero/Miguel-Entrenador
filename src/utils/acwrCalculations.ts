@@ -265,7 +265,7 @@ export function calculateACWRSummary(
     coachTacticalAdvice = `Tu ratio es ${ratio}: estás cargando menos que tu media de 4 semanas. Si es una descarga buscada, bien; al volver a subir, hazlo de forma gradual para no disparar la carga de golpe.`;
     actionableSteps.push('Vuelve a subir la carga de forma gradual, no de golpe.');
   } else if (latestPoint.acwr <= 1.30) {
-    coachTacticalAdvice = `Tu ratio es ${ratio}: tu carga reciente está en línea con la habitual. Sigue el plan y vigila que los rodajes sigan en ZoneSense verde.`;
+    coachTacticalAdvice = `Tu ratio es ${ratio}: tu carga reciente está en línea con la habitual. Sigue el plan y vigila que los rodajes sigan por debajo de tu umbral aeróbico (FC).`;
     actionableSteps.push('Sigue el plan previsto.');
   } else if (latestPoint.acwr <= 1.50) {
     coachTacticalAdvice = `Tu ratio es ${ratio} (${weeklyChangePct >= 0 ? '+' : ''}${weeklyChangePct}% frente a la semana anterior): has cargado bastante más de lo habitual. Si notas piernas pesadas, dolor o el semáforo del día sale ámbar o rojo, sustituye la intensidad por algo suave.`;

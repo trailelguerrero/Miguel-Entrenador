@@ -1,12 +1,12 @@
 // Validación DETERMINISTA de lo que devuelve la IA. El código es el que
 // garantiza las reglas del cerebro de Miguel; el prompt solo las explica.
-//   - Sin umbral de FC medido → sin pulsaciones (null), nunca inventadas.
-//   - Objetivos ZoneSense siempre canónicos (colores).
+//   - La intensidad se prescribe en PULSACIONES (la FC es la verdad).
+//   - Sin umbral de FC → sin pulsaciones (null), nunca inventadas.
+//   - ZoneSense no se prescribe (solo sirve para analizar entrenos hechos).
 //   - Nutrición numérica solo con evidencia del atleta y sin pasar de ella.
 //   - Adaptaciones recortadas a los límites del motor de readiness.
 import type { AthleteProfile, IntensitySource, Workout } from '../../../src/types/index.js';
 import { resolveIntensityPrescription, type IntensityPrescription } from '../../../src/brain/intensity.js';
-import { normalizeZoneSenseTarget, TARGET_COLOR, colorRank } from '../../../src/brain/zonesense.js';
 import type { ReadinessState } from '../../../src/brain/readiness.js';
 import { verifyTodayReadiness } from '../context.js';
 import { analyzeWeekStructure, addDaysKey } from '../../../src/utils/weekStructure.js';
@@ -24,47 +24,57 @@ export interface NutritionEvidence {
   sodiumRangeMgPerHour?: { min: number; max: number } | null;
 }
 
-const VALID_SOURCES: IntensitySource[] = ['zonesense', 'heart_rate_measured', 'rpe', 'terrain', 'unknown'];
-const INTERVAL_TYPES = new Set(['hill_intervals', 'muscular_endurance', 'intensity_run']);
+/** Sesiones aeróbicas: su techo de FC es el umbral aeróbico. */
+const AEROBIC_TYPES = new Set(['easy_run', 'long_mountain_run']);
 
 const pos = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0;
 
-function fixIntensity(w: any, p: IntensityPrescription, notes: string[], label: string) {
+/**
+ * Intensidad en pulsaciones. `ceiling` = techo de FC del motor de readiness (null = sin techo).
+ */
+function fixIntensity(w: any, p: IntensityPrescription, notes: string[], label: string, ceiling: number | null = null) {
+  // ZoneSense no se prescribe: se analiza después, en los entrenos hechos
+  w.zoneSenseTarget = undefined;
   if (w.type === 'rest') {
     w.targetHrMin = null;
     w.targetHrMax = null;
-    w.zoneSenseTarget = undefined;
     w.intensitySource = undefined;
     return;
   }
-  const target = normalizeZoneSenseTarget(w.zoneSenseTarget);
-  w.zoneSenseTarget = target;
 
   if (!p.hrAllowed) {
-    if (w.targetHrMin != null || w.targetHrMax != null) notes.push(`${label}: se quitaron pulsaciones (no hay umbral de FC medido).`);
+    if (w.targetHrMin != null || w.targetHrMax != null) notes.push(`${label}: se quitaron pulsaciones (no hay umbral aeróbico por FC).`);
     w.targetHrMin = null;
     w.targetHrMax = null;
-  } else {
-    w.targetHrMin = pos(w.targetHrMin) ? Math.round(w.targetHrMin) : null;
-    w.targetHrMax = pos(w.targetHrMax) ? Math.round(w.targetHrMax) : null;
-    // En sesiones verdes/regenerativas el tope de FC no puede pasar del umbral aeróbico medido
-    if (target && TARGET_COLOR[target] === 'green' && w.targetHrMax != null && w.targetHrMax > (p.aetHr as number)) {
-      notes.push(`${label}: tope de FC ${w.targetHrMax} bajado a tu umbral aeróbico medido (${p.aetHr}).`);
-      w.targetHrMax = p.aetHr;
-    }
-    // Nunca por encima de tu FC máxima medida
-    if (p.maxHr != null && w.targetHrMax != null && w.targetHrMax > p.maxHr) {
-      notes.push(`${label}: tope de FC ${w.targetHrMax} por encima de tu FC máxima medida (${p.maxHr}): se ajusta.`);
-      w.targetHrMax = p.maxHr;
-    }
-    if (w.targetHrMin != null && w.targetHrMax != null && w.targetHrMin > w.targetHrMax) w.targetHrMin = null;
+    w.intensitySource = 'rpe';
+    return;
   }
-
-  let src: IntensitySource | undefined = VALID_SOURCES.includes(w.intensitySource) ? w.intensitySource : undefined;
-  if (src === 'heart_rate_measured' && !p.hrAllowed) src = undefined;
-  // ZoneSense solo como fuente si hay objetivo de color Y consta que lleva banda
-  if (src === 'zonesense' && (!target || p.chestStrap !== 'yes')) src = undefined;
-  w.intensitySource = src ?? (target && p.chestStrap === 'yes' ? 'zonesense' : p.hrAllowed && w.targetHrMax != null ? 'heart_rate_measured' : 'rpe');
+  const aet = p.aetHr as number;
+  w.targetHrMin = pos(w.targetHrMin) ? Math.round(w.targetHrMin) : null;
+  w.targetHrMax = pos(w.targetHrMax) ? Math.round(w.targetHrMax) : null;
+  // Rodajes y tiradas largas: por debajo del umbral aeróbico (si no traen tope, el AeT)
+  if (AEROBIC_TYPES.has(w.type)) {
+    if (w.targetHrMax == null) w.targetHrMax = aet;
+    else if (w.targetHrMax > aet) {
+      notes.push(`${label}: tope de FC ${w.targetHrMax} bajado a tu umbral aeróbico (${aet} ppm).`);
+      w.targetHrMax = aet;
+    }
+  }
+  // Techo del día (motor de readiness)
+  if (ceiling != null) {
+    if (w.targetHrMax == null || w.targetHrMax > ceiling) {
+      if (w.targetHrMax != null) notes.push(`${label}: tope de FC ${w.targetHrMax} bajado al máximo de hoy (${ceiling} ppm).`);
+      w.targetHrMax = ceiling;
+    }
+    if (w.targetHrMin != null && w.targetHrMin > ceiling - 5) w.targetHrMin = null;
+  }
+  // Nunca por encima de tu FC máxima
+  if (p.maxHr != null && w.targetHrMax != null && w.targetHrMax > p.maxHr) {
+    notes.push(`${label}: tope de FC ${w.targetHrMax} por encima de tu FC máxima (${p.maxHr}): se ajusta.`);
+    w.targetHrMax = p.maxHr;
+  }
+  if (w.targetHrMin != null && w.targetHrMax != null && w.targetHrMin >= w.targetHrMax) w.targetHrMin = null;
+  w.intensitySource = 'heart_rate_measured' as IntensitySource;
 }
 
 function fixNutrition(w: any, ev: NutritionEvidence | undefined, notes: string[], label: string) {
@@ -181,15 +191,6 @@ export function sanitizeAdaptation(
     }
   }
 
-  // 4. Intensidad: color máximo del día (en rojo, regenerativo)
-  const target = normalizeZoneSenseTarget(w.zoneSenseTarget);
-  const redOrUnknown = state.level === 'red' || state.level === 'unknown';
-  const fallback = state.level === 'red' ? 'Regenerativo (verde, muy suave)' : 'ZoneSense verde (aeróbico)';
-  if (!target || colorRank(TARGET_COLOR[target]) > colorRank(l.maxZoneSense) || (state.level === 'red' && target !== fallback)) {
-    if (target && target !== fallback) corrections.push(`Intensidad "${target}" por encima de lo permitido hoy: pasa a "${fallback}".`);
-    w.zoneSenseTarget = fallback;
-  }
-
   // 5. Textos: sin intensidad permitida, un texto de carrera que la describe se reescribe desde el código
   const texts = [w.warmup, w.mainSet, w.cooldown, w.description];
   if (!l.allowIntervals && RUN_TYPES.includes(w.type) && texts.some(mentionsIntensity)) {
@@ -198,7 +199,8 @@ export function sanitizeAdaptation(
   }
   if (rewrite) {
     const mode = state.level === 'red' ? 'regenerative' : w.type === 'long_mountain_run' ? 'long' : 'easy';
-    Object.assign(w, easySessionText(w.plannedDurationMin, mode), {
+    const aet = resolveIntensityPrescription(profile).aetHr;
+    Object.assign(w, easySessionText(w.plannedDurationMin, mode, l.maxHr ?? aet), {
       description: `Sesión ajustada por el motor de readiness (estado ${state.level}).`,
       strengthExercises: null,
       terrainRecommendation: mode === 'regenerative' ? 'Terreno llano y blando.' : null,
@@ -209,13 +211,14 @@ export function sanitizeAdaptation(
     });
   }
   // En rojo o sin datos: regenerativo o suave y llano, sin desnivel ni distancia heredados
-  if (redOrUnknown) {
+  if (state.level === 'red' || state.level === 'unknown') {
     if (pos(w.plannedElevationGainM)) corrections.push(`Sin desnivel hoy (estado ${state.level}).`);
     w.plannedElevationGainM = null;
     w.plannedDistanceKm = null;
   }
 
-  fixIntensity(w, resolveIntensityPrescription(profile), corrections, w.title || 'Sesión adaptada');
+  // 4. Intensidad en pulsaciones: techo de FC del día (en rojo, AeT − 10)
+  fixIntensity(w, resolveIntensityPrescription(profile), corrections, w.title || 'Sesión adaptada', l.maxHr);
   return { adapted: w, corrections };
 }
 

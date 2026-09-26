@@ -12,6 +12,7 @@ import {
   weeklyLoadThresholds,
   type LoadHistoryInfo,
 } from '../utils/trainingLoad.js';
+import { resolveIntensityPrescription } from './intensity.js';
 import { evaluateReadiness, type ReadinessState, type TodayReadinessInputs } from './readiness.js';
 
 export interface BrainCheckInSummary {
@@ -66,6 +67,8 @@ export function buildBrainContext(
 
   // Sin check-in de hoy también se evalúa: la carga (TSB, TSS de 7 días) puede
   // bastar para subir el nivel, y sin datos de recuperación no se permiten series.
+  // Umbral aeróbico por FC (zonas del reloj o fijado a mano): de él salen los techos de FC
+  const aetHr = resolveIntensityPrescription(profile).aetHr;
   const planned = plannedToday ? { type: plannedToday.type, plannedDurationMin: plannedToday.plannedDurationMin } : null;
   const todayReadinessInputs: TodayReadinessInputs | null = todayCi
     ? {
@@ -76,8 +79,9 @@ export function buildBrainContext(
         stressLevel: todayCi.stressLevel,
         recoveryPct: todayCi.readinessScore,
         plannedWorkout: planned,
+        aetHr,
       }
-    : { plannedWorkout: planned };
+    : { plannedWorkout: planned, aetHr };
   const todayReadiness = evaluateReadiness({ ...todayReadinessInputs, tsb: latest?.tsb, weeklyTss, weeklyThresholds: weeklyLoadThresholds(latest?.ctl) });
 
   return {

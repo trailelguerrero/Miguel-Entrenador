@@ -135,12 +135,10 @@ export function describeBreakdown(b: { aerobicPct: number; transitionPct: number
   return `${base} (sobre el ${b.measuredPct}% de la sesión que ZoneSense midió${b.measuredPct < ZONESENSE_MIN_MEASURED_PCT ? ': poco representativo, no saques conclusiones' : ''})`;
 }
 
-/** Reglas de ZoneSense para los prompts de Miguel (mismo contenido que arriba). */
-export const ZONESENSE_PROMPT_RULES = `SUUNTO ZONESENSE (CÓMO FUNCIONA Y CÓMO USARLO):
-- ZoneSense mide la intensidad con DDFA (análisis de fluctuaciones sin tendencia DINÁMICO) sobre los intervalos R-R de la banda de pecho (Universidad de Tampere / MoniCardi). No es el índice clásico de cortes fijos: nunca hables de "valores" de ZoneSense ni de cortes numéricos; el reloj muestra colores.
-- Colores: VERDE = aeróbico (bajo el umbral aeróbico de ese día); AMARILLO = entre umbral aeróbico y anaeróbico; ROJO = por encima del umbral anaeróbico (zona VO2máx).
-- REGLA CARDINAL: los colores de ZoneSense NO equivalen a ninguna frecuencia cardíaca concreta. Se evalúan contra la línea base aeróbica que el reloj fija en los primeros ~10 minutos suaves de CADA entreno. La misma FC puede ser verde un día y amarilla otro (fatiga, calor, cafeína, altitud) o en otro deporte. NUNCA traduzcas un color a pulsaciones.
-- Jerarquía de intensidad: 1) con banda de pecho, ZoneSense es la referencia principal; 2) sin banda, las zonas de FC del reloj SOLO si el umbral está medido (te lo indicamos en los datos); 3) sin FC fiable, esfuerzo percibido / test del habla / terreno; 4) sin datos suficientes, dilo y no inventes.
-- Requisitos y límites: banda de pecho obligatoria; ~10 min de calentamiento suave para fijar la línea base; retraso de 1-2 min, así que sirve para esfuerzos continuos, no para series cortas ni fuerza.
-- En esfuerzos largos a ritmo constante es normal que tienda hacia el amarillo con las horas (sensible a la duración y a la fatiga): es una señal para aflojar o caminar, no un error.
-- Base aeróbica: la inmensa mayoría del tiempo debe estar en VERDE según el tiempo en zonas que registra Suunto.`;
+/** Jerarquía de intensidad y papel de ZoneSense para los prompts de Miguel. */
+export const ZONESENSE_PROMPT_RULES = `INTENSIDAD: LA VERDAD SON LAS PULSACIONES. ZONESENSE SOLO COMPLEMENTA EL ANÁLISIS:
+- Jerarquía: 1) la FC respecto a los umbrales del atleta (umbral aeróbico AeT y anaeróbico AnT en ppm, de las zonas de FC de su reloj Suunto o fijados a mano) decide la prescripción, los límites del día y la valoración de cada sesión; 2) sin umbral de FC, esfuerzo percibido / test del habla; 3) sin datos suficientes, dilo y no inventes.
+- Prescribe SIEMPRE en pulsaciones (targetHrMin/targetHrMax). NUNCA prescribas en colores de ZoneSense ni pidas "mantener el verde".
+- Base aeróbica (según la metodología que seguimos): la inmensa mayoría del tiempo por debajo del AeT según la FC.
+- ZoneSense (Suunto, DDFA sobre los intervalos R-R de la banda de pecho) es una SEGUNDA OPINIÓN para analizar entrenos YA HECHOS: compara lo que dice con la FC. Si la FC dice suave y ZoneSense marca mucho amarillo, puede indicar fatiga, calor o deriva: coméntalo como observación, nunca como verdad por encima de la FC.
+- Sus colores (VERDE aeróbico, AMARILLO entre umbrales, ROJO por encima del anaeróbico) se evalúan contra una línea base que el reloj fija en los primeros ~10 min de cada entreno: no equivalen a una FC concreta. No traduzcas colores a pulsaciones ni pulsaciones a colores. Necesita banda de pecho y tiene 1-2 min de retraso.`;

@@ -39,6 +39,7 @@ import {
 import { computePmcSeries, localDateKey } from '../utils/trainingLoad';
 import { rebaseSuuntoCheckIn } from '../utils/readiness';
 import { mergeSuuntoCheckIns, mergeSuuntoWorkouts, sportGroup } from '../brain/suuntoMerge';
+import { resolveIntensityPrescription } from '../brain/intensity';
 import { applyEvidence, refreshMemory, type EvidenceContext, type EvidenceItem } from '../brain/memory';
 
 const STORAGE_KEYS = {
@@ -571,7 +572,8 @@ export const StorageService = {
     if (suuntoWorkouts.length > 0 && this.isTestDataActive()) {
       this.clearOnlySampleData();
     }
-    const w = mergeSuuntoWorkouts(this.getWorkouts(), suuntoWorkouts);
+    // Rodajes con intensidad según la FC media frente a tu umbral aeróbico
+    const w = mergeSuuntoWorkouts(this.getWorkouts(), suuntoWorkouts, resolveIntensityPrescription(this.getProfile()).aetHr);
     this.saveWorkouts(w.workouts);
 
     let stored: DailyCheckIn[] = [];
@@ -606,7 +608,7 @@ export const StorageService = {
       role: 'assistant',
       content: `¡Hola! Soy Miguel, tu entrenador de Trail Running. Vamos juntos a por esa Transvulcania en 2027.
 
-Aquí no vamos a perder el tiempo con modas ni con kilometraje basura. Nuestro manual de cabecera es *Training for the Uphill Athlete* y nuestra brújula en cada entreno será tu Suunto con ZoneSense (con banda de pecho) y tu HRV nocturna.
+Aquí no vamos a perder el tiempo con modas ni con kilometraje basura. Nuestro manual de cabecera es *Training for the Uphill Athlete* y nuestra brújula en cada entreno serán tus pulsaciones (con los umbrales de tu Suunto) y tu HRV nocturna; ZoneSense nos servirá como segunda opinión al analizar.
 
 Organizamos la semana en 3 sesiones entre semana (2 si toca aflojar) y la tirada larga el sábado o el domingo, con trabajo de fuerza en casa y al aire libre sin máquinas. 
 
@@ -752,14 +754,14 @@ Puedes revisar tus umbrales (AeT y AnT) en tu perfil, registrar tu test de deriv
 - **Nombre:**
 - **Edad:**
 - **Reloj Suunto:**
-- **Banda de pecho (necesaria para ZoneSense):**
+- **Banda de pecho (FC más precisa):**
 - **FC en reposo:**
 - **FC máxima (y cómo se midió):**
 - **Umbral aeróbico por FC (y cómo se midió):**
 - **Umbral anaeróbico por FC (y cómo se midió):**
 
-## 2. Observaciones con Suunto ZoneSense
-- (Qué ves en tus sesiones: cuándo pasa de verde a amarillo, en qué terreno o a qué hora de la tirada.)
+## 2. Observaciones de pulsaciones (y ZoneSense si lo usas)
+- (Qué ves en tus sesiones: cuándo sube la FC por encima de tu umbral aeróbico, en qué terreno o a qué hora de la tirada.)
 
 ## 3. Historial de carga y carreras previas
 - **Años practicando trail running:**
@@ -848,7 +850,7 @@ Puedes revisar tus umbrales (AeT y AnT) en tu perfil, registrar tu test de deriv
       estimatedFinishTimeFormatted: `${hoursPart}h ${formattedMinutes}m`,
       estimatedFinishMinutes: Math.round(targetTotalMinutes),
       segments: scaledSegments,
-      overallPacingStrategy: 'Subidas en ZoneSense verde (con banda de pecho); en el descenso final, cadencia alta sin frenar en seco.',
+      overallPacingStrategy: 'Subidas por debajo de tu umbral aeróbico (FC); en el descenso final, cadencia alta sin frenar en seco.',
       eccentricImpactWarning: 'El descenso final hasta Tazacorte es muy largo: prepara los cuádriceps con trabajo excéntrico.',
     };
 

@@ -127,7 +127,7 @@ export function computeWatchZoneAdvice(rows: SuuntoWorkoutRow[], now = Date.now(
         current,
         suggested: t.recent,
         direction: t.recent > current ? 'up' : 'down',
-        evidence: `FC a la que ZoneSense detectó el umbral (varía cada día): mediana ${t.previous} ppm en ${t.nPrev} carreras de hace 5-8 semanas y ${t.recent} ppm en ${t.nRecent} carreras de las últimas 4; tus zonas de FC del reloj tienen ${current}. Afecta solo a las zonas de FC (respaldo sin banda); ZoneSense se ajusta solo.`,
+        evidence: `FC a la que ZoneSense detectó el umbral (varía cada día): mediana ${t.previous} ppm en ${t.nPrev} carreras de hace 5-8 semanas y ${t.recent} ppm en ${t.nRecent} carreras de las últimas 4; tus zonas de FC del reloj tienen ${current}. Es una sugerencia: tus zonas de FC del reloj son tus umbrales en la app; si decides cambiarlas en Suunto, la app las tomará en la siguiente sincronización.`,
       });
     }
   }

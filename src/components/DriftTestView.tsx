@@ -71,7 +71,7 @@ export const DriftTestView: React.FC<DriftTestViewProps> = ({
     onUpdateProfile(updated);
     alert(
       aetKnown
-        ? `Test guardado. Umbral aeróbico (AeT) = ${newAet} ppm${driftResult.driftPercentage < 3.5 ? ' (como mínimo: repite el test algo más alto para afinarlo)' : ''}.`
+        ? `Test guardado. Umbral aeróbico (AeT) = ${newAet} ppm${driftResult.driftPercentage < 3.5 ? ' (como mínimo: repite el test algo más alto para afinarlo)' : ''}. Queda fijado por ti: las zonas de tu reloj Suunto ya no lo cambian.`
         : `Test guardado (deriva ${driftResult.driftPercentage} %). Tu AeT está por debajo de ${testHr} ppm: repite el test 5–10 ppm más bajo. No se cambia tu AeT.`,
     );
   };

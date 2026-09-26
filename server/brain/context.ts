@@ -4,6 +4,7 @@ import { describeDataWindows } from '../../src/brain/dataWindows.js';
 import { describeReadiness, evaluateReadiness, strictestReadiness, type ReadinessState } from '../../src/brain/readiness.js';
 import { describeLoadHistory, weeklyLoadThresholds } from '../../src/utils/trainingLoad.js';
 import { tag } from '../../src/brain/provenance.js';
+import { resolveIntensityPrescription } from '../../src/brain/intensity.js';
 
 /** Disponibilidad: solo la que el atleta declara a mano; lo de Suunto es historial, no disponibilidad. */
 export function availabilityLine(p: any): string {
@@ -71,6 +72,7 @@ export function verifyTodayReadiness(lc: any): ReadinessState | null {
     recoveryPct: finite(i.recoveryPct),
     ...loadInputs(lc),
     plannedWorkout: plannedFrom(i.plannedWorkout),
+    aetHr: finite(i.aetHr),
   });
   return strictestReadiness(computed, lc.todayReadiness);
 }
@@ -91,6 +93,7 @@ export function resolveReadinessState(body: any): ReadinessState {
     recoveryPct: checkIn?.readinessScore,
     ...loadInputs(readinessInputs),
     plannedWorkout: plannedFrom(originalWorkout),
+    aetHr: resolveIntensityPrescription(athleteProfile).aetHr,
   });
   return strictestReadiness(computed, readinessState);
 }

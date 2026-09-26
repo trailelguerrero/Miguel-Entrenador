@@ -19,10 +19,14 @@ test('G1. Día ÁMBAR: si la IA no devuelve el tipo, las series de la sesión or
   const state = evaluateReadiness({ hrvRmssd: 50, hrvBaseline: 60, sleepHours: 8, plannedWorkout: { type: 'hill_intervals', plannedDurationMin: 90 } });
   assert.equal(state.level, 'amber');
   const original = { id: 'w1', type: 'hill_intervals', plannedDurationMin: 90, zoneSenseTarget: 'ZoneSense rojo (sobre umbral anaeróbico)' };
-  const { adapted } = sanitizeAdaptation({ title: 'Suave', mainSet: 'rodaje' }, state, {}, original);
+  const profile = { aetHr: 145, fieldSources: { aetHr: 'suunto' } } as any;
+  const { adapted } = sanitizeAdaptation({ title: 'Suave', mainSet: 'rodaje' }, state, profile, original);
   const saved = { ...original, ...adapted }; // como lo guarda la app
   assert.equal(saved.type, 'easy_run');
-  assert.equal(saved.zoneSenseTarget, 'ZoneSense verde (aeróbico)');
+  // La FC manda: techo = AeT; ZoneSense no se prescribe
+  assert.equal(saved.targetHrMax, 145);
+  assert.equal(saved.intensitySource, 'heart_rate_measured');
+  assert.equal(saved.zoneSenseTarget, undefined);
 });
 
 test('G1. Día ROJO: duración en texto o ausente no se salta el máximo de 35 min', () => {

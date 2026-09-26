@@ -4,7 +4,7 @@
  * valores de ejemplo: si un dato no existe, se devuelve null / 0.
  */
 import { Workout } from '../types';
-import { getWorkoutLoad, localDateKey } from './trainingLoad';
+import { getWorkoutLoad, hrAerobicShare, localDateKey } from './trainingLoad';
 
 export interface ZoneSenseMinutes {
   aerobicMin: number; // por debajo de AeT
@@ -25,7 +25,12 @@ export interface WeekSummary {
   completedCount: number;
   tss: number;
   zoneSense: ZoneSenseMinutes;
-  aerobicPct: number | null; // null si ningún entreno de la semana tiene ZoneSense
+  /** % del tiempo bajo el AeT por FC media (estimación). null sin AeT o sin FC. */
+  aerobicPct: number | null;
+  hrAerobicMin: number;
+  hrTrackedMin: number;
+  /** % en verde según ZoneSense (segunda opinión). null si no hay ZoneSense. */
+  zoneSenseAerobicPct: number | null;
 }
 
 export interface BlockSummary {
@@ -70,7 +75,8 @@ function pct(zs: ZoneSenseMinutes): number | null {
 }
 
 /** Últimas `weeks` semanas (lunes a domingo), de la más antigua a la actual. */
-export function buildWeeklySummaries(workouts: Workout[], weeks = 12, antHr?: number): WeekSummary[] {
+/** @param aetHr umbral aeróbico por FC: el % aeróbico sale de la FC (la verdad), ZoneSense aparte. */
+export function buildWeeklySummaries(workouts: Workout[], weeks = 12, antHr?: number, aetHr?: number | null): WeekSummary[] {
   const today = localDateKey();
   const currentMonday = mondayOf(today);
   const out: WeekSummary[] = [];
@@ -90,6 +96,7 @@ export function buildWeeklySummaries(workouts: Workout[], weeks = 12, antHr?: nu
         zs.trackedMin += dur;
       }
     }
+    const hr = hrAerobicShare(ws, aetHr);
     zs.aerobicMin = Math.round(zs.aerobicMin);
     zs.transitionMin = Math.round(zs.transitionMin);
     zs.anaerobicMin = Math.round(zs.anaerobicMin);
@@ -105,7 +112,10 @@ export function buildWeeklySummaries(workouts: Workout[], weeks = 12, antHr?: nu
       completedCount: ws.length,
       tss: Math.round(tss),
       zoneSense: zs,
-      aerobicPct: pct(zs),
+      aerobicPct: hr.pct,
+      hrAerobicMin: hr.aerobicMin,
+      hrTrackedMin: hr.trackedMin,
+      zoneSenseAerobicPct: pct(zs),
     });
   }
   return out;
@@ -129,6 +139,8 @@ export function buildFourWeekBlocks(weeks: WeekSummary[]): BlockSummary[] {
       { aerobicMin: 0, transitionMin: 0, anaerobicMin: 0, trackedMin: 0 },
     );
     const totalGain = slice.reduce((a, w) => a + w.elevationGainM, 0);
+    const hrAer = slice.reduce((a, w) => a + w.hrAerobicMin, 0);
+    const hrTracked = slice.reduce((a, w) => a + w.hrTrackedMin, 0);
     blocks.unshift({
       id: slice[0].weekId,
       label: `${shortDate(slice[0].startDate)} – ${shortDate(slice[n - 1].endDate)}`,
@@ -140,7 +152,8 @@ export function buildFourWeekBlocks(weeks: WeekSummary[]): BlockSummary[] {
       avgWeeklyHours: r1(slice.reduce((a, w) => a + w.durationMin, 0) / 60 / n),
       avgWeeklyTss: Math.round(slice.reduce((a, w) => a + w.tss, 0) / n),
       totalGainM: totalGain,
-      aerobicPct: pct(zs),
+      // Bajo el AeT por FC media (estimación); ZoneSense no manda
+      aerobicPct: hrTracked > 0 ? Math.round((hrAer / hrTracked) * 1000) / 10 : null,
     });
   }
   return blocks;

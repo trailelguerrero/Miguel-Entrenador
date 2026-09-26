@@ -6,6 +6,7 @@ import { buildBrainContext, summarizeWeekWorkouts } from './brain/context';
 import { addPending, isAppliedRule } from './brain/memory';
 import { Navbar } from './components/Navbar';
 import { buildDeload } from './brain/deload';
+import { resolveIntensityPrescription } from './brain/intensity';
 import { SuuntoSyncBar } from './components/SuuntoSyncBar';
 import { MorningBanner } from './components/MorningBanner';
 import { CalendarView } from './components/CalendarView';
@@ -523,7 +524,7 @@ export default function App() {
     // Descarga generada por el código con la política del motor (src/brain/deload.ts):
     // tus sesiones planificadas al 75 % y sin intensidad, sin pulsaciones ni cifras inventadas.
     const startKey = startDateStr || addDaysKey(localDateKey(), 1);
-    const deload = buildDeload(StorageService.getWorkouts(), startKey);
+    const deload = buildDeload(StorageService.getWorkouts(), startKey, resolveIntensityPrescription(profile).aetHr);
     if (!deload.workouts.length) {
       showToast({ type: 'warning', title: 'Descarga no generada', message: deload.message, duration: 8000 });
       return;
@@ -534,7 +535,7 @@ export default function App() {
     const msg: ChatMessage = {
       id: `deload-msg-${Date.now()}`,
       role: 'assistant',
-      content: `🛡️ **Semana de descarga en tu calendario**\n\n${deload.message} Con banda de pecho: ZoneSense en verde todo el tiempo. Sin banda: ${profile.aetHr ? 'por debajo de tu umbral aeróbico medido' : 'ritmo en el que puedas hablar'}.\n\nLo que toque cada día lo sigue decidiendo el semáforo de la mañana.`,
+      content: `🛡️ **Semana de descarga en tu calendario**\n\n${deload.message}\n\nLo que toque cada día lo sigue decidiendo el semáforo de la mañana.`,
       timestamp: new Date().toISOString(),
       contextType: 'plan_adaptation',
     };
@@ -1251,7 +1252,7 @@ ${structureLine} Ya puedes ver los entrenamientos en tu calendario.${warningLine
 
       {/* Footer */}
       <footer className="border-t border-zinc-900 bg-zinc-950/80 py-4 text-center text-xs text-zinc-600">
-        <p>Uphill Coach AI • Basado en <em>Training for the Uphill Athlete</em> & Suunto ZoneSense</p>
+        <p>Uphill Coach AI • Basado en <em>Training for the Uphill Athlete</em> y tus pulsaciones</p>
       </footer>
 
       {/* Offline Mountain Indicator */}

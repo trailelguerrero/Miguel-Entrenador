@@ -79,10 +79,11 @@ test('3. Sin AnT: la FC de respaldo se limita al umbral aeróbico medido', () =>
 });
 
 // ── 4. Sin banda ───────────────────────────────────────────────────────────
-test('4. Sin banda de pecho: FC medida si hay umbral; si no, RPE', () => {
+test('4. FC medida si hay umbral (con o sin banda); si no, RPE', () => {
   assert.equal(resolveIntensityPrescription(measured, false).primary, 'heart_rate_measured');
   assert.equal(resolveIntensityPrescription(without('aetHr', 'antHr', 'maxHr'), false).primary, 'rpe');
-  assert.equal(resolveIntensityPrescription(measured, true).primary, 'zonesense');
+  // La banda no cambia la fuente: la FC manda
+  assert.equal(resolveIntensityPrescription(measured, true).primary, 'heart_rate_measured');
 });
 
 // ── 5. ZoneSense verde + HRV muy baja ──────────────────────────────────────
@@ -90,7 +91,6 @@ test('5. ZoneSense verde + HRV muy baja: manda la HRV → ROJO, sin series, ≤3
   const state = evaluateReadiness({ hrvRmssd: 40, hrvBaseline: 60, sleepHours: 7.5, plannedWorkout: { type: 'hill_intervals', plannedDurationMin: 70 } });
   assert.equal(state.level, 'red');
   assert.equal(state.limits.allowIntervals, false);
-  assert.equal(state.limits.maxZoneSense, 'green');
   assert.equal(state.limits.maxDurationMin, 35);
   const { adapted, corrections } = sanitizeAdaptation(
     { type: 'hill_intervals', plannedDurationMin: 70, zoneSenseTarget: 'ZoneSense rojo (anaeróbico)' },
@@ -99,8 +99,10 @@ test('5. ZoneSense verde + HRV muy baja: manda la HRV → ROJO, sin series, ≤3
   );
   assert.equal(adapted.type, 'easy_run');
   assert.equal(adapted.plannedDurationMin, 35);
-  assert.equal(adapted.zoneSenseTarget, 'Regenerativo (verde, muy suave)');
-  assert.ok(corrections.length >= 3);
+  assert.equal(adapted.zoneSenseTarget, undefined, 'no se prescribe en colores');
+  assert.equal(adapted.intensitySource, 'heart_rate_measured');
+  assert.ok(adapted.targetHrMax <= measured.aetHr!, 'regenerativo por debajo del AeT');
+  assert.ok(corrections.length >= 2);
 });
 
 // ── 6. HRV buena + TSB muy negativo ────────────────────────────────────────

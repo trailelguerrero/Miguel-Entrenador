@@ -405,7 +405,7 @@ export function calculateHRVLoadCorrelation(
     statusBorderColor = 'border-rose-500/30';
     riskAssessment = 'Carga alta con la HRV media por debajo de tu banda normal';
     coachVerdict = `Tu HRV media de 7 días está en ${latest.hrv7dAvg} ms (${hrvDeltaFromBaselinePct}% frente a tu referencia de ${baselineHrv} ms) con una carga semanal alta de ${latest.weeklyTss} TSS. Esta combinación, si se mantiene, es compatible con fatiga acumulada: conviene bajar la carga unos días y vigilar si la HRV se recupera. ${TODAY_RULE}`;
-    actionableRecommendations.push('Baja la carga unos días (rodajes en ZoneSense verde, sin series) y vigila si la HRV media vuelve a tu banda normal.');
+    actionableRecommendations.push('Baja la carga unos días (rodajes con la FC por debajo de tu umbral aeróbico, sin series) y vigila si la HRV media vuelve a tu banda normal.');
     actionableRecommendations.push('Si además hay dolor, mal sueño o bajo rendimiento durante varios días, consúltalo con un profesional sanitario.');
   } else if (latest.status === 'functional_overreaching') {
     statusLabel = 'Tendencia: carga alta asumida';
@@ -414,7 +414,7 @@ export function calculateHRVLoadCorrelation(
     statusBorderColor = 'border-amber-500/30';
     riskAssessment = 'Carga por encima de lo habitual con la HRV media algo baja';
     coachVerdict = `Llevas ${latest.weeklyTss} TSS esta semana y tu HRV media de 7 días (${latest.hrv7dAvg} ms) está algo por debajo de tu referencia, aún dentro de tu banda normal. Es un estímulo fuerte: planifica algo más suave en los próximos días. ${TODAY_RULE}`;
-    actionableRecommendations.push('Mantén los rodajes en ZoneSense verde y reserva la intensidad para cuando el semáforo del día esté en verde.');
+    actionableRecommendations.push('Mantén los rodajes por debajo de tu umbral aeróbico (FC) y reserva la intensidad para cuando el semáforo del día esté en verde.');
   } else if (latest.status === 'recovery_deload') {
     statusLabel = 'Tendencia: descarga y recuperación';
     statusColor = 'text-cyan-400';

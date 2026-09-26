@@ -1,3 +1,5 @@
+import { resolveIntensityPrescription } from '../brain/intensity';
+import { hrAerobicShare } from '../utils/trainingLoad';
 import React, { useState, useMemo } from 'react';
 import { 
   BarChart3, 
@@ -35,7 +37,6 @@ import {
   PMCDataPoint, 
   SuuntoIntegrationConfig 
 } from '../types';
-import { describeZoneSenseTarget } from '../utils/zoneSense';
 import { ReportPdfModal } from './ReportPdfModal';
 import { 
   getTsbZoneDiagnosis, 
@@ -180,6 +181,8 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
   ];
 
   const totalAerobicPct = aerobicPct.toFixed(1);
+  // La referencia: FC media de cada entreno frente a tu umbral aeróbico (estimación)
+  const hrShare = hrAerobicShare(periodWorkouts, resolveIntensityPrescription(profile).aetHr);
 
   // Weight tracking
   const weightHistory = [...StorageService.getWeightHistory()].sort((x, y) => x.date.localeCompare(y.date));
@@ -430,7 +433,7 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
         <div 
           className="bg-zinc-900 border border-zinc-800 p-5 rounded-3xl space-y-3 cursor-pointer hover:border-zinc-700 transition"
           onClick={() => setActiveMetricsTab('zones')}
-          title="Ver desglose de tiempo en zonas ZoneSense"
+          title="Ver desglose de tiempo en zonas"
         >
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Umbral Aeróbico (AeT)</span>
@@ -444,12 +447,12 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
               <span className="text-xs text-zinc-400 font-bold">bpm</span>
             </div>
             <div className="text-xs font-bold text-zinc-200 mt-1">
-              {describeZoneSenseTarget('ZoneSense verde (aeróbico)')}
+              Rodajes y tiradas largas por debajo de esta FC
             </div>
           </div>
           <div className="pt-2 border-t border-zinc-800/80 text-[11px] text-zinc-400 flex items-center justify-between">
-            <span>Test Deriva Cardíaca:</span>
-            <span className="font-bold text-emerald-400 font-mono">3.8% (Óptimo &lt;5%)</span>
+            <span>Origen:</span>
+            <span className="font-bold text-emerald-400">{profile.fieldSources?.aetHr === 'manual' ? 'fijado por ti' : profile.fieldSources?.aetHr === 'suunto' ? 'zonas de FC del reloj Suunto' : 'sin umbral'}</span>
           </div>
         </div>
 
@@ -936,16 +939,16 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
           <div>
             <h3 className="text-base font-black text-zinc-100 flex items-center gap-2">
               <Activity className="w-5 h-5 text-emerald-400" />
-              <span>Distribución en Zonas Fisiológicas & Suunto ZoneSense</span>
+              <span>Tiempo bajo tu umbral aeróbico (FC) y ZoneSense</span>
             </h3>
             <p className="text-xs text-zinc-400 mt-0.5">
-              Tiempo en los colores de Suunto ZoneSense (con banda de pecho). No equivalen a pulsaciones fijas: se miden contra tu línea base de cada entreno.
+              La referencia es la FC: % del tiempo en entrenos con FC media por debajo de tu AeT (estimación). Debajo, los colores de ZoneSense como segunda opinión (no equivalen a pulsaciones fijas).
             </p>
           </div>
 
           <div className="flex items-center space-x-2">
             <span className="px-3 py-1 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-bold">
-              {zsMinutes > 0 ? <>{totalAerobicPct}% bajo AeT (Meta &gt;80%) · {zsWorkouts.length} entrenos con ZoneSense</> : 'Sin datos de ZoneSense en el periodo'}
+              {hrShare.pct !== null ? <>{hrShare.pct}% bajo AeT por FC (Meta &gt;80%)</> : 'Sin FC o sin umbral aeróbico en el periodo'}{zsMinutes > 0 ? <> · ZoneSense: {totalAerobicPct}% verde en {zsWorkouts.length} entrenos</> : null}
             </span>
           </div>
         </div>
@@ -999,7 +1002,7 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
               Cumplimiento de la Regla de Oro (Training for the Uphill Athlete):
             </span>
             <p className="leading-relaxed">
-              Actualmente mantienes un <strong>{totalAerobicPct}%</strong> del tiempo registrado con ZoneSense en verde (por debajo del umbral aeróbico de cada día). Esto garantiza la reversión activa del <strong>Síndrome de Deficiencia Aeróbica (ADS)</strong>, maximiza la densidad mitocondrial de las fibras lentas tipo I y protege tus articulaciones de cara al volumen de Transvulcania.
+              {hrShare.pct !== null ? <>Según tus pulsaciones, el <strong>{hrShare.pct}%</strong> del tiempo fue por debajo de tu umbral aeróbico (estimación con la FC media de cada entreno). La metodología que seguimos pide más del 80 %.</> : <>Sin FC o sin umbral aeróbico no se puede calcular. Configura tus zonas de FC en Suunto o fija tu AeT a mano.</>}
             </p>
           </div>
         </div>

@@ -2,6 +2,7 @@
  * Pendientes de la auditoría resueltos con las recomendaciones (septiembre 2026).
  *   npm test
  */
+import { classifyRunByHr } from '../src/brain/suuntoMerge.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -28,7 +29,9 @@ test('M3. Sin datos de recuperación no hay series; y la carga sola puede subir 
   const none = evaluateReadiness({ plannedWorkout: { type: 'hill_intervals', plannedDurationMin: 60 } });
   assert.equal(none.level, 'unknown');
   assert.equal(none.limits.allowIntervals, false);
-  assert.equal(none.limits.maxZoneSense, 'green');
+  // Sin AeT no hay techo en ppm (por sensaciones); con AeT, el techo es el AeT
+  assert.equal(none.limits.maxHr, null);
+  assert.equal(evaluateReadiness({ plannedWorkout: { type: 'hill_intervals', plannedDurationMin: 60 }, aetHr: 145 }).limits.maxHr, 145);
   assert.equal(evaluateReadiness({ tsb: -45 }).level, 'amber');
 });
 
@@ -100,15 +103,17 @@ const row = (over: Record<string, unknown>) => ({
   timeInAerobicZoneMs: 2545318, timeInAnaerobicZoneMs: 1820653, timeInVo2MaxZoneMs: 20229, ...over,
 });
 
-test('P1/P2. Carrera con 42 % en amarillo = carrera con intensidad; el % medido se guarda', () => {
+test('P1/P2 (FC manda). ZoneSense no clasifica: la FC media frente al AeT decide; el % de ZoneSense se guarda para el análisis', () => {
+  // 42 % en amarillo según ZoneSense, pero la importación no clasifica por ZoneSense
   const [w] = mapSuuntoWorkouts([row({}) as any]);
-  assert.equal(w.type, 'intensity_run');
+  assert.equal(w.type, 'easy_run');
   assert.equal(w.zoneSenseBreakdown!.measuredPct, 100);
-  const [easy] = mapSuuntoWorkouts([row({ timeInAnaerobicZoneMs: 100000, timeInVo2MaxZoneMs: 0 }) as any]);
-  assert.equal(easy.type, 'easy_run');
-  // Muy poco medido: no se usa para clasificar y se avisa a Miguel
+  // FC media 142: por encima de un AeT de 138 → intensidad; por debajo de 145 → rodaje
+  assert.equal(classifyRunByHr(w, 138).type, 'intensity_run');
+  assert.equal(classifyRunByHr(w, 145).type, 'easy_run');
+  assert.equal(classifyRunByHr(w, null).type, 'easy_run', 'sin AeT no se reclasifica');
+  // Muy poco medido: se avisa a Miguel
   const [thin] = mapSuuntoWorkouts([row({ totalTimeSec: 720, timeInAerobicZoneMs: 0, timeInAnaerobicZoneMs: 120000, timeInVo2MaxZoneMs: 0 }) as any]);
-  assert.equal(thin.type, 'easy_run');
   assert.match(describeBreakdown(thin.zoneSenseBreakdown!), /poco representativo/);
 });
 

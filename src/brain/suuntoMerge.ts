@@ -14,12 +14,28 @@
 import type { AthleteProfile, DailyCheckIn, SuuntoProfileSuggestion, WatchZoneAdvice, Workout } from '../types/index.js';
 import { rebaseSuuntoCheckIn } from '../utils/readiness.js';
 import { applySuuntoProfile, type ProfileChange } from '../utils/suuntoProfile.js';
+import { resolveIntensityPrescription } from './intensity.js';
 
 /** Deporte de una sesión, para saber si un entreno de Suunto completa lo planificado. */
 export function sportGroup(type: Workout['type'] | undefined): 'run' | 'strength' | 'other' {
   if (type === 'strength_core') return 'strength';
   if (type === 'easy_run' || type === 'intensity_run' || type === 'long_mountain_run' || type === 'muscular_endurance' || type === 'hill_intervals' || type === 'drift_test') return 'run';
   return 'other';
+}
+
+/**
+ * La FC es la verdad: un rodaje corto importado de Suunto (≤ 90 min, ≤ 500 m D+) con la
+ * FC media POR ENCIMA de tu umbral aeróbico fue una sesión con intensidad. Sin FC o sin
+ * AeT se queda como está. (Estimación con la FC media: Suunto no da el tiempo en cada
+ * zona de FC en el resumen.)
+ */
+export function classifyRunByHr<T extends Pick<Workout, 'type' | 'actualAvgHr'>>(w: T, aetHr: number | null | undefined): T {
+  if (!(typeof aetHr === 'number' && aetHr > 0) || !(typeof w.actualAvgHr === 'number' && w.actualAvgHr > 0)) return w;
+  if (w.type === 'easy_run' || w.type === 'intensity_run') {
+    const type: Workout['type'] = w.actualAvgHr > aetHr ? 'intensity_run' : 'easy_run';
+    return type === w.type ? w : { ...w, type };
+  }
+  return w;
 }
 
 export interface MergeSummary {
@@ -29,8 +45,9 @@ export interface MergeSummary {
 }
 
 /** Workouts: devuelve la lista nueva (no muta la de entrada). */
-export function mergeSuuntoWorkouts(current: Workout[], suuntoWorkouts: Workout[]): { workouts: Workout[]; addedWorkouts: number; completedPlanned: number } {
+export function mergeSuuntoWorkouts(current: Workout[], suuntoIn: Workout[], aetHr?: number | null): { workouts: Workout[]; addedWorkouts: number; completedPlanned: number } {
   const workouts = current.map((w) => ({ ...w }));
+  const suuntoWorkouts = suuntoIn.map((w) => classifyRunByHr(w, aetHr));
   const byKey = new Map(workouts.filter((w) => w.suuntoWorkoutKey).map((w) => [w.suuntoWorkoutKey as string, w]));
   let addedWorkouts = 0;
   let completedPlanned = 0;
@@ -144,10 +161,12 @@ export function mergeSuuntoSyncData(
     profile = { ...profile, watchZoneAdvice: payload.watchZoneAdvice };
   }
 
-  const w = mergeSuuntoWorkouts(state.workouts, payload.workouts || []);
+  // Umbral aeróbico del perfil ya actualizado (zonas del reloj, o el tuyo si lo fijaste a mano)
+  const aet = resolveIntensityPrescription(profile).aetHr;
+  const w = mergeSuuntoWorkouts(state.workouts, payload.workouts || [], aet);
   const c = mergeSuuntoCheckIns(state.checkIns, payload.checkIns || [], profile.baselineHrv || 0);
 
-  // Banda de pecho: ZoneSense en los últimos 30 días → la llevas (lo manual no se toca)
+  // Banda de pecho (precisión de la FC): ZoneSense en los últimos 30 días → la llevas (lo manual no se toca)
   const since30 = addDaysKey(today, -30);
   const zsRecent = (payload.workouts || []).some((x) => x.date >= since30 && !!x.zoneSenseBreakdown);
   if (zsRecent && profile.hasChestStrapSource !== 'manual' && profile.hasChestStrap !== true) {
