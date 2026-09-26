@@ -174,7 +174,7 @@ export const ApiService = {
     athleteHistoryDoc?: AthleteHistoryDocument | null,
     readinessState?: ReadinessState | null,
     /** Carga con la que el servidor recalcula el estado (no se fía del estado del cliente). */
-    readinessInputs?: { tsb?: number; weeklyTss?: number; ctl?: number } | null
+    readinessInputs?: { tsb?: number; weeklyTss?: number; weeklyNonMeasuredTss?: number; ctl?: number } | null
   ): Promise<{
     miguelMessage: string;
     adaptedWorkout: Partial<Workout>;

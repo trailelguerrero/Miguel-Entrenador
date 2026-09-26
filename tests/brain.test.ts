@@ -170,9 +170,9 @@ test('8. FIT sin TSS: TSS estimado (etiquetado), nunca atribuido a Suunto; sin d
 // ── 9. Suunto con TSS ──────────────────────────────────────────────────────
 test('9. Suunto con TSS: se usa el TSS de Suunto tal cual; sin TSS de Suunto = 0, no se estima', () => {
   const s = wk({ completed: true, suuntoWorkoutKey: 'k1', actualTss: 87, actualDurationMin: 90, actualAvgHr: 150 });
-  assert.deepEqual(getWorkoutLoad(s, 168), { tss: 87, source: 'suunto' });
+  assert.deepEqual(getWorkoutLoad(s, 168), { tss: 87, source: 'suunto', confidence: 'measured_suunto' });
   const noTss = wk({ completed: true, suuntoWorkoutKey: 'k2', actualDurationMin: 90, actualAvgHr: 150 });
-  assert.deepEqual(getWorkoutLoad(noTss, 168), { tss: 0, source: 'suunto' });
+  assert.deepEqual(getWorkoutLoad(noTss, 168), { tss: 0, source: 'suunto', confidence: 'measured_suunto' });
 });
 
 test('9b. Historial de carga: "en calentamiento" con < 42 días, "estabilizado" con ≥ 42', () => {

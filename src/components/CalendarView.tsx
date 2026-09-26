@@ -1,4 +1,4 @@
-import { analyzeWeekStructure } from '../utils/weekStructure';
+import { analyzeWeekStructure, deriveWeeklyStructurePolicy } from '../utils/weekStructure';
 import { localDateKey } from '../utils/trainingLoad';
 import React, { useState } from 'react';
 import { 
@@ -140,7 +140,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     .reduce((acc, w) => acc + (w.actualElevationGainM || 0), 0);
 
   // Estructura 3 (o 2) + tirada larga de la semana de hoy (o la 1ª semana del mes mostrado)
-  const weekStructure = analyzeWeekStructure(workouts, getSelectedMondayStr());
+  const weekStructure = analyzeWeekStructure(workouts, getSelectedMondayStr(), deriveWeeklyStructurePolicy(profile));
 
   return (
     <div className="space-y-6">

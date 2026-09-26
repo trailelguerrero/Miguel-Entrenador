@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { measuredAntHr } from '../brain/intensity';
 import { 
   Activity, 
   TrendingUp, 
@@ -48,16 +49,16 @@ export const PMCChartView: React.FC<PMCChartViewProps> = ({ profile: propProfile
   // Serie PMC calculada con todo el historial de entrenos completados
   // (TSS de Suunto cuando existe). Se muestra solo el rango elegido.
   const allDataPoints: PMCDataPoint[] = useMemo(
-    () => computePmcSeries(workouts, profile.antHr),
-    [workouts, profile.antHr]
+    () => computePmcSeries(workouts, measuredAntHr(profile)),
+    [workouts, measuredAntHr(profile)]
   );
   const fullDataPoints: PMCDataPoint[] = useMemo(() => {
     const days = timeRange === '14d' ? 14 : timeRange === '30d' ? 30 : timeRange === '42d' ? 42 : 90;
     return allDataPoints.slice(-days);
   }, [allDataPoints, timeRange]);
   const estimatedCount = useMemo(
-    () => countEstimatedWorkouts(workouts, profile.antHr, fullDataPoints[0]?.date),
-    [workouts, profile.antHr, fullDataPoints]
+    () => countEstimatedWorkouts(workouts, measuredAntHr(profile), fullDataPoints[0]?.date),
+    [workouts, measuredAntHr(profile), fullDataPoints]
   );
 
   if (fullDataPoints.length === 0) {
@@ -137,7 +138,7 @@ export const PMCChartView: React.FC<PMCChartViewProps> = ({ profile: propProfile
   const simResult = calculateWorkoutTss(
     simDuration,
     simAvgHr,
-    profile.antHr || undefined,
+    measuredAntHr(profile),
     simRpe
   );
 

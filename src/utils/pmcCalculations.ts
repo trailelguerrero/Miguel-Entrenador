@@ -57,7 +57,8 @@ export interface RampRateDiagnosis {
 export function calculateWorkoutTss(
   durationMin: number,
   avgHr?: number,
-  antHr: number = 165,
+  /** Umbral anaeróbico MEDIDO (Suunto o manual). Sin él no hay hrTSS: nunca se usa un valor por defecto. */
+  antHr?: number,
   rpe?: number
 ): TSSCalculationResult {
   if (durationMin <= 0) {
@@ -77,7 +78,7 @@ export function calculateWorkoutTss(
 
   const durationHours = durationMin / 60;
 
-  if (avgHr && avgHr > 0 && antHr > 0) {
+  if (avgHr && avgHr > 0 && antHr && antHr > 0) {
     // Exact hrTSS formula
     intensityFactor = Math.round((avgHr / antHr) * 100) / 100;
     tss = Math.round(durationHours * Math.pow(intensityFactor, 2) * 100);

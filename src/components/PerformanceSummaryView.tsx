@@ -1,4 +1,4 @@
-import { resolveIntensityPrescription } from '../brain/intensity';
+import { resolveIntensityPrescription, measuredAntHr } from '../brain/intensity';
 import React, { useState, useMemo } from 'react';
 import { 
   BarChart3, 
@@ -52,7 +52,7 @@ export const PerformanceSummaryView: React.FC<PerformanceSummaryViewProps> = ({
 }) => {
   // State
   // Semanas y bloques de 4 semanas calculados con los entrenos completados reales
-  const weeklySummaries = useMemo(() => buildWeeklySummaries(workouts, 12, profile.antHr, resolveIntensityPrescription(profile).aetHr), [workouts, profile]);
+  const weeklySummaries = useMemo(() => buildWeeklySummaries(workouts, 12, measuredAntHr(profile), resolveIntensityPrescription(profile).aetHr), [workouts, profile]);
   const blocks = useMemo(() => buildFourWeekBlocks(weeklySummaries), [weeklySummaries]);
   const [weightHistory, setWeightHistory] = useState<WeightEntry[]>(
     StorageService.getWeightHistory()

@@ -9,7 +9,7 @@ import type { AthleteProfile, IntensitySource, Workout } from '../../../src/type
 import { resolveIntensityPrescription, type IntensityPrescription } from '../../../src/brain/intensity.js';
 import type { ReadinessState } from '../../../src/brain/readiness.js';
 import { verifyTodayReadiness } from '../context.js';
-import { analyzeWeekStructure, addDaysKey } from '../../../src/utils/weekStructure.js';
+import { analyzeWeekStructure, addDaysKey, DEFAULT_WEEK_POLICY, deriveWeeklyStructurePolicy, type WeeklyStructurePolicy } from '../../../src/utils/weekStructure.js';
 import { allowedTypes, easySessionText, mentionsIntensity, RUN_TYPES, scaleVolume, toRest } from '../../../src/brain/workoutContract.js';
 
 /** Evidencia nutricional real del atleta (la envía el cliente). */
@@ -128,7 +128,7 @@ export function sanitizePlanWorkouts(
     fixNutrition(w, nutrition, notes, label);
     return w;
   });
-  const structureIssues = weekMonday ? analyzeWeekStructure(out as Workout[], weekMonday).issues : [];
+  const structureIssues = weekMonday ? analyzeWeekStructure(out as Workout[], weekMonday, deriveWeeklyStructurePolicy(profile as any)).issues : [];
   return { workouts: out, notes, structureIssues };
 }
 
@@ -262,7 +262,11 @@ const isRunning = (w: any) => RUN_TYPES.includes(w?.type);
  * Lo que se puede arreglar sin inventar (descansos duplicados) se REPARA; el resto
  * se RECHAZA con los motivos.
  */
-export function validatePlanContract(workouts: any[], weekMonday: string): { status: PlanContractStatus; workouts: any[]; issues: string[]; repairs: string[] } {
+export function validatePlanContract(
+  workouts: any[],
+  weekMonday: string,
+  policy: WeeklyStructurePolicy = DEFAULT_WEEK_POLICY,
+): { status: PlanContractStatus; workouts: any[]; issues: string[]; repairs: string[] } {
   const sunday = addDaysKey(weekMonday, 6);
   const issues: string[] = [];
   const repairs: string[] = [];
@@ -302,8 +306,8 @@ export function validatePlanContract(workouts: any[], weekMonday: string): { sta
   for (const w of out.filter(isRunning)) runsByDay.set(w.date, (runsByDay.get(w.date) ?? 0) + 1);
   for (const [d, n] of runsByDay) if (n > 1) issues.push(`${n} sesiones de carrera el ${d}`);
 
-  // Estructura 3 (o 2) + tirada larga
-  const structure = analyzeWeekStructure(out as Workout[], weekMonday);
+  // Estructura (política de la semana: disponibilidad declarada) + tirada larga
+  const structure = analyzeWeekStructure(out as Workout[], weekMonday, policy);
   issues.push(...structure.issues);
   const long = out.find((w) => w.type === 'long_mountain_run' && w.date === structure.longRunDate);
   if (long) {

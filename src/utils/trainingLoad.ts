@@ -48,9 +48,21 @@ export type TssSource = 'suunto' | 'suunto_assigned' | 'estimated';
 /** ¿La carga no es medida? (asignada por Suunto o estimada por la app) */
 export const isNonMeasuredLoad = (s: TssSource | undefined) => s === 'estimated' || s === 'suunto_assigned';
 
+/**
+ * Confianza de la carga: una carga estimada nunca es indistinguible de una medida.
+ * - measured_suunto:    TSS calculado por Suunto con los datos del entreno
+ * - assigned_suunto:    valor fijo por hora que Suunto asigna a una actividad añadida a mano
+ * - estimated_hr:       hrTSS de la app con FC media y umbral anaeróbico MEDIDO
+ * - estimated_rpe:      sRPE (esfuerzo percibido)
+ * - estimated_duration: solo duración (IF fijo): la estimación más débil
+ * - estimated_stored:   TSS estimado que se guardó al completar (método desconocido)
+ */
+export type LoadConfidence = 'measured_suunto' | 'assigned_suunto' | 'estimated_hr' | 'estimated_rpe' | 'estimated_duration' | 'estimated_stored';
+
 export interface WorkoutLoad {
   tss: number;
   source: TssSource;
+  confidence: LoadConfidence;
 }
 
 /**
@@ -62,14 +74,16 @@ export function getWorkoutLoad(w: Workout, antHr?: number): WorkoutLoad | null {
   // Entreno de Suunto: se usa su TSS; si Suunto no le asignó TSS, no suma
   // carga (igual que en la app de Suunto). Nunca se estima.
   // Añadido a mano en Suunto: el TSS es un valor fijo por hora que pone Suunto, no una medida
-  if (w.suuntoWorkoutKey && w.suuntoManualEntry) return { tss: w.actualTss ?? 0, source: 'suunto_assigned' };
-  if (w.suuntoWorkoutKey) return { tss: w.actualTss ?? 0, source: 'suunto' };
-  if (w.actualTss != null) return { tss: w.actualTss, source: 'estimated' };
-  if (w.tss != null) return { tss: w.tss, source: 'estimated' };
+  if (w.suuntoWorkoutKey && w.suuntoManualEntry) return { tss: w.actualTss ?? 0, source: 'suunto_assigned', confidence: 'assigned_suunto' };
+  if (w.suuntoWorkoutKey) return { tss: w.actualTss ?? 0, source: 'suunto', confidence: 'measured_suunto' };
+  if (w.actualTss != null) return { tss: w.actualTss, source: 'estimated', confidence: 'estimated_stored' };
+  if (w.tss != null) return { tss: w.tss, source: 'estimated', confidence: 'estimated_stored' };
   const dur = w.actualDurationMin ?? w.plannedDurationMin ?? 0;
   if (dur <= 0) return null;
-  const calc = calculateWorkoutTss(dur, w.actualAvgHr || undefined, antHr || undefined, w.athleteRpe);
-  return { tss: calc.tss, source: 'estimated' };
+  // antHr solo si es > 0; sin umbral medido no hay hrTSS (se cae a RPE o duración)
+  const calc = calculateWorkoutTss(dur, w.actualAvgHr || undefined, antHr && antHr > 0 ? antHr : undefined, w.athleteRpe);
+  const confidence: LoadConfidence = calc.method === 'hrTSS' ? 'estimated_hr' : calc.method === 'rpeTSS' ? 'estimated_rpe' : 'estimated_duration';
+  return { tss: calc.tss, source: 'estimated', confidence };
 }
 
 export interface DailyLoad {
@@ -168,6 +182,27 @@ export function computePmcSeries(workouts: Workout[], antHr?: number, daysToShow
     });
   }
   return daysToShow ? points.slice(-daysToShow) : points;
+}
+
+export interface WindowLoad {
+  /** TSS total de la ventana (medido + no medido). */
+  tss: number;
+  /** Parte del TSS que NO es medida (estimada por la app o asignada por Suunto). */
+  nonMeasuredTss: number;
+}
+
+/** TSS de los entrenos completados entre from y to (incluidos), separando la parte no medida. */
+export function windowLoad(workouts: Workout[], from: string, to: string, antHr?: number): WindowLoad {
+  let tss = 0;
+  let nonMeasuredTss = 0;
+  for (const w of workouts || []) {
+    if (w.date < from || w.date > to) continue;
+    const load = getWorkoutLoad(w, antHr);
+    if (!load) continue;
+    tss += load.tss;
+    if (isNonMeasuredLoad(load.source)) nonMeasuredTss += load.tss;
+  }
+  return { tss: Math.round(tss), nonMeasuredTss: Math.round(nonMeasuredTss) };
 }
 
 /** ¿Algún día de la serie usa TSS estimado (entrenos sin TSS de Suunto)? */

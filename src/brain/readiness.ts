@@ -13,6 +13,9 @@
  *   - TSS de los últimos 7 días por encima del umbral "muy alta" del atleta
  *     (CTL×7 + 20 %, ver weeklyLoadThresholds)
  *   - Estrés vital declarado ≥ 8
+ * Si más de la mitad del TSS de los últimos 7 días NO es medido (estimado por la
+ * app o asignado por Suunto), TSB y TSS de 7 días se informan pero NO escalan:
+ * una carga estimada nunca decide por sí sola.
  * Límites por nivel (TECHO EN PULSACIONES, la FC es la verdad):
  *   VERDE    sin tope
  *   ÁMBAR    ≤ 75 % de lo planificado, FC ≤ AeT, sin series
@@ -41,13 +44,15 @@ export interface ReadinessInput {
   /** TSS de los últimos 7 días. */
   weeklyTss?: number | null;
   weeklyThresholds?: WeeklyLoadThresholds | null;
+  /** Parte del TSS de 7 días que no es medida (estimada / asignada). */
+  weeklyNonMeasuredTss?: number | null;
   plannedWorkout?: { type?: string; plannedDurationMin?: number } | null;
   /** Umbral aeróbico por FC (ppm): de él salen los techos de FC. */
   aetHr?: number | null;
 }
 
 /** Datos crudos del check-in de hoy (sin la carga): el servidor recalcula con ellos. */
-export type TodayReadinessInputs = Omit<ReadinessInput, 'tsb' | 'weeklyTss' | 'weeklyThresholds'>;
+export type TodayReadinessInputs = Omit<ReadinessInput, 'tsb' | 'weeklyTss' | 'weeklyThresholds' | 'weeklyNonMeasuredTss'>;
 
 export interface ReadinessLimits {
   /** null = sin tope (se mantiene la duración planificada). */
@@ -69,6 +74,14 @@ export interface ReadinessState {
 
 export const TSB_ESCALATION = -30;
 export const STRESS_ESCALATION = 8;
+/** Por encima de esta fracción de TSS no medido en 7 días, la carga no escala el nivel. */
+export const ESTIMATED_LOAD_MAX_SHARE = 0.5;
+
+/** ¿La carga de 7 días es sobre todo estimada? (entonces es informativa, no decide) */
+export function isLoadMostlyEstimated(weeklyTss: number | null | undefined, nonMeasured: number | null | undefined): boolean {
+  if (!(typeof weeklyTss === 'number' && weeklyTss > 0) || !(typeof nonMeasured === 'number' && nonMeasured > 0)) return false;
+  return nonMeasured / weeklyTss > ESTIMATED_LOAD_MAX_SHARE;
+}
 /** Sesión regenerativa máxima en rojo (misma cifra que el consejo histórico del semáforo). */
 export const RED_MAX_DURATION_MIN = 35;
 /** En ámbar, fracción máxima de la duración planificada (elección de diseño de la app). */
@@ -120,9 +133,15 @@ export function evaluateReadiness(input: ReadinessInput): ReadinessState {
   // 2. Escalado (un paso como máximo; varios riesgos a la vez endurecen los límites)
   const baseRank = rank;
   const escalators: string[] = [];
-  if (num(input.tsb) && input.tsb < TSB_ESCALATION) escalators.push(`TSB ${input.tsb} (< ${TSB_ESCALATION})`);
+  const loadSignals: string[] = [];
+  if (num(input.tsb) && input.tsb < TSB_ESCALATION) loadSignals.push(`TSB ${input.tsb} (< ${TSB_ESCALATION})`);
   if (num(input.weeklyTss) && input.weeklyThresholds && input.weeklyTss > input.weeklyThresholds.veryHigh) {
-    escalators.push(`carga de 7 días ${Math.round(input.weeklyTss)} TSS (> ${input.weeklyThresholds.veryHigh}, muy alta para tu forma)`);
+    loadSignals.push(`carga de 7 días ${Math.round(input.weeklyTss)} TSS (> ${input.weeklyThresholds.veryHigh}, muy alta para tu forma)`);
+  }
+  if (loadSignals.length && isLoadMostlyEstimated(input.weeklyTss, input.weeklyNonMeasuredTss)) {
+    reasons.push(...loadSignals.map((e) => `${e} → informativo: la carga de 7 días es sobre todo ESTIMADA, no sube el nivel`));
+  } else {
+    escalators.push(...loadSignals);
   }
   if (num(input.stressLevel) && input.stressLevel >= STRESS_ESCALATION) escalators.push(`estrés ${input.stressLevel}/10`);
   if (escalators.length && rank < 2) {

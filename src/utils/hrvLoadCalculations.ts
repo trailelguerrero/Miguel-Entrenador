@@ -21,6 +21,7 @@
  */
 
 import { Workout, DailyCheckIn, AthleteProfile } from '../types';
+import { measuredAntHr } from '../brain/intensity.js';
 import { buildDailyLoadSeries, buildCtlByDate, weeklyLoadThresholds, WeeklyLoadThresholds } from './trainingLoad';
 
 export type OverreachingType = 
@@ -169,13 +170,13 @@ export function calculateHRVLoadCorrelation(
   // (Need enough past days to calculate a clean 7-day rolling window for the earliest point)
   const totalDaysToFetch = daysCount + 14;
   const workoutTssMap = new Map<string, { tss: number; km: number; minutes: number; titles: string[] }>();
-  for (const day of buildDailyLoadSeries(workouts, totalDaysToFetch, profile.antHr)) {
+  for (const day of buildDailyLoadSeries(workouts, totalDaysToFetch, measuredAntHr(profile))) {
     workoutTssMap.set(day.date, { tss: day.tss, km: day.km, minutes: day.minutes, titles: day.titles });
   }
 
   // CTL de cada fecha: los umbrales de carga de cada día se calculan con la
   // forma física que tenía el atleta ESE día (evolucionan con su carga).
-  const ctlByDate = buildCtlByDate(workouts, profile.antHr);
+  const ctlByDate = buildCtlByDate(workouts, measuredAntHr(profile));
 
   // Generate continuous daily HRV series
   const sortedDates = Array.from(workoutTssMap.keys()).sort();

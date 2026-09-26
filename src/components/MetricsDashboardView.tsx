@@ -1,4 +1,4 @@
-import { resolveIntensityPrescription } from '../brain/intensity';
+import { resolveIntensityPrescription, measuredAntHr } from '../brain/intensity';
 import { hrAerobicShare } from '../utils/trainingLoad';
 import React, { useState, useMemo } from 'react';
 import { 
@@ -89,8 +89,8 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
   // PMC calculado con todo el historial de entrenos completados (TSS de Suunto)
   const calculatedPmcSeries: PMCDataPoint[] = useMemo(() => {
     const days = period === '7d' ? 14 : period === '30d' ? 30 : period === 'mesocycle' ? 42 : 90;
-    return computePmcSeries(workouts, profile.antHr, days);
-  }, [workouts, period, profile.antHr]);
+    return computePmcSeries(workouts, measuredAntHr(profile), days);
+  }, [workouts, period, measuredAntHr(profile)]);
 
   // Latest PMC values
   const latestPmc = calculatedPmcSeries.length > 0 
@@ -106,8 +106,8 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
 
   // ACWR 28-day summary
   const acwrSummary = useMemo(() => {
-    return calculateACWRSummary(workouts, profile.antHr);
-  }, [workouts, profile.antHr]);
+    return calculateACWRSummary(workouts, measuredAntHr(profile));
+  }, [workouts, measuredAntHr(profile)]);
 
   // HRV calculations (check-ins reales, ordenados por fecha: los últimos 7)
   const last7DaysCheckIns = [...checkIns]
