@@ -1,4 +1,4 @@
-import { analyzeWeekStructure, deriveWeeklyStructurePolicy } from '../utils/weekStructure';
+import { analyzeWeekStructure, deriveWeeklyStructurePolicy, planningWindow, shortDayMonth } from '../utils/weekStructure';
 import { localDateKey } from '../utils/trainingLoad';
 import React, { useState } from 'react';
 import { 
@@ -26,7 +26,8 @@ interface CalendarViewProps {
   targetRace: TargetRace;
   onSelectWorkout: (workout: Workout) => void;
   onAddNewWorkout: (dateStr: string) => void;
-  onGenerateWeekWithMiguel: (weekStartDateStr: string) => void;
+  /** Planifica la ventana de planningWindow (no depende del mes que se mire). */
+  onGenerateWeekWithMiguel: () => void;
   isGeneratingPlan: boolean;
   onOpenFartlekGenerator?: () => void;
 }
@@ -96,8 +97,15 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   };
 
   // Get Monday of current selected week for generating a plan
+  // Semana que planifica el botón (vie–dom → la siguiente; lun–jue → desde hoy)
+  const planWin = planningWindow();
+
+  // Semana mostrada: la de HOY si se está viendo el mes actual (al volver a él con las
+  // flechas, currentDate vale el día 1 y antes se tomaba la semana del día 1).
   const getSelectedMondayStr = () => {
-    const d = new Date(currentDate);
+    const now = new Date();
+    const sameMonth = currentDate.getFullYear() === now.getFullYear() && currentDate.getMonth() === now.getMonth();
+    const d = sameMonth ? now : new Date(currentDate);
     const day = d.getDay();
     const diff = d.getDate() - day + (day === 0 ? -6 : 1);
     const monday = new Date(d.setDate(diff));
@@ -205,12 +213,18 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           </button>
 
           <button
-            onClick={() => onGenerateWeekWithMiguel(getSelectedMondayStr())}
+            onClick={() => onGenerateWeekWithMiguel()}
             disabled={isGeneratingPlan}
             className="flex items-center space-x-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-amber-600 hover:from-emerald-500 hover:to-amber-500 text-zinc-950 text-xs font-black transition-all shadow-md disabled:opacity-50"
           >
             <Sparkles className="w-4 h-4" />
-            <span>{isGeneratingPlan ? 'Generando con Miguel...' : 'Planificar Semana con Miguel'}</span>
+            <span>
+              {isGeneratingPlan
+                ? 'Generando con Miguel...'
+                : planWin.fromDate > planWin.monday
+                  ? `Planificar desde hoy hasta el ${shortDayMonth(planWin.sunday)}`
+                  : `Planificar semana del ${shortDayMonth(planWin.monday)}`}
+            </span>
           </button>
         </div>
 

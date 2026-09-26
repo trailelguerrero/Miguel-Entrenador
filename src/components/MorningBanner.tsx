@@ -11,6 +11,24 @@ interface MorningBannerProps {
   isAdapting?: boolean;
   isSetupIncomplete?: boolean;
   onOpenSetupGuide?: () => void;
+  /** La sesión de hoy ya está hecha (y no queda ninguna planificada pendiente): se muestra la recuperación. */
+  todayDone?: boolean;
+  /** Título de lo que se hizo hoy (p. ej. "Trail running 13.43 km"). */
+  todayDoneTitle?: string;
+}
+
+/** Pauta de recuperación tras la sesión, según el estado del día (texto del código, sin cifras). */
+export function recoveryAdvice(status: DailyCheckIn['status'] | undefined): string {
+  switch (status) {
+    case 'fatigued':
+      return 'Hoy nada más de entrenamiento. Prioriza dormir bien esta noche, comer e hidratarte. Mañana decide el check-in: si sigue en rojo, toca descanso o algo muy suave.';
+    case 'moderate':
+      return 'Recupera bien esta tarde (sueño, comida, hidratación). Mañana, si el check-in no mejora, rodaje suave sin series.';
+    case 'optimal':
+      return 'Buen día para asimilar el trabajo: come, hidrátate y duerme. Mañana el check-in confirma la siguiente sesión.';
+    default:
+      return 'Recupera bien esta tarde. Mañana registra el check-in (HRV y sueño) para que Miguel valore la siguiente sesión.';
+  }
 }
 
 export const MorningBanner: React.FC<MorningBannerProps> = ({
@@ -21,6 +39,8 @@ export const MorningBanner: React.FC<MorningBannerProps> = ({
   isAdapting,
   isSetupIncomplete,
   onOpenSetupGuide,
+  todayDone,
+  todayDoneTitle,
 }) => {
   // Puntuación = Recovery (Balance) medio del día según Suunto
   const recoveryText = checkIn?.readinessScore != null
@@ -87,7 +107,32 @@ export const MorningBanner: React.FC<MorningBannerProps> = ({
         </div>
       )}
 
-      {checkIn && checkIn.status === 'fatigued' && (
+      {/* Sesión de hoy hecha: recuperación en lugar del aviso para entrenar */}
+      {todayDone && (
+        <div className="bg-zinc-900/60 border border-emerald-900/40 rounded-2xl p-3.5 flex items-start space-x-3 shadow-sm">
+          <div className="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center border border-emerald-500/30 shrink-0">
+            <CheckCircle2 className="w-4 h-4" />
+          </div>
+          <div className="space-y-1">
+            <h4 className="text-xs font-bold text-zinc-200 flex flex-wrap items-center gap-2">
+              <span>Sesión de hoy hecha{todayDoneTitle ? `: ${todayDoneTitle}` : ''}</span>
+              {checkIn && checkIn.status !== 'unknown' && (
+                <span
+                  className={`text-[10px] font-semibold px-2 py-0.5 rounded ${
+                    checkIn.status === 'fatigued' ? 'bg-red-500/10 text-red-400' : checkIn.status === 'moderate' ? 'bg-amber-500/10 text-amber-400' : 'bg-emerald-500/10 text-emerald-400'
+                  }`}
+                >
+                  Estado de hoy: {checkIn.status === 'fatigued' ? 'fatiga' : checkIn.status === 'moderate' ? 'recuperación moderada' : 'bien'}
+                  {checkIn.hrvRmssd > 0 && checkIn.hrvBaseline > 0 ? ` · HRV ${checkIn.hrvRmssd} ms vs ${checkIn.hrvBaseline} ms` : ''}
+                </span>
+              )}
+            </h4>
+            <p className="text-[11px] text-zinc-400 leading-relaxed">{recoveryAdvice(checkIn?.status)}</p>
+          </div>
+        </div>
+      )}
+
+      {!todayDone && checkIn && checkIn.status === 'fatigued' && (
         <div className="bg-gradient-to-r from-red-950/40 via-zinc-900 to-zinc-950 border border-red-800/40 rounded-2xl p-4 shadow-xl">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
             <div className="flex items-start space-x-3">
@@ -130,7 +175,7 @@ export const MorningBanner: React.FC<MorningBannerProps> = ({
         </div>
       )}
 
-      {checkIn && checkIn.status === 'moderate' && (
+      {!todayDone && checkIn && checkIn.status === 'moderate' && (
         <div className="bg-gradient-to-r from-amber-950/30 via-zinc-900 to-zinc-950 border border-amber-800/40 rounded-2xl p-4 shadow-lg">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
             <div className="flex items-start space-x-3">
@@ -161,7 +206,7 @@ export const MorningBanner: React.FC<MorningBannerProps> = ({
         </div>
       )}
 
-      {checkIn && checkIn.status === 'optimal' && (
+      {!todayDone && checkIn && checkIn.status === 'optimal' && (
         <div className="bg-zinc-900/60 border border-emerald-900/30 rounded-2xl p-3.5 flex items-center justify-between shadow-sm">
           <div className="flex items-center space-x-3">
             <div className="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center border border-emerald-500/30 shrink-0">

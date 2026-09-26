@@ -268,13 +268,23 @@ const isRunning = (w: any) => RUN_TYPES.includes(w?.type);
  *   - 2 o 3 sesiones entre semana y UNA tirada larga en sábado o domingo, con
  *     duración, distancia y desnivel positivo (una tirada larga sin D+ no vale);
  *   - ninguna tirada larga entre semana.
- * Lo que se puede arreglar sin inventar (descansos duplicados) se REPARA; el resto
- * se RECHAZA con los motivos.
+ * Si la semana ya está en curso (`fromDate` > lunes), solo se planifican los días
+ * desde `fromDate`: lo anterior se descarta y la estructura se evalúa contando lo
+ * YA HECHO esa semana (`done`).
+ * Lo que se puede arreglar sin inventar (descansos duplicados, días pasados) se
+ * REPARA; el resto se RECHAZA con los motivos.
  */
+export interface PlanContractOptions {
+  fromDate?: string;
+  /** Entrenos ya completados esa semana (cuentan para la estructura). */
+  done?: Array<{ date: string; type: string }>;
+}
+
 export function validatePlanContract(
   workouts: any[],
   weekMonday: string,
   policy: WeeklyStructurePolicy = DEFAULT_WEEK_POLICY,
+  opts: PlanContractOptions = {},
 ): { status: PlanContractStatus; workouts: any[]; issues: string[]; repairs: string[] } {
   const sunday = addDaysKey(weekMonday, 6);
   const issues: string[] = [];
@@ -288,6 +298,22 @@ export function validatePlanContract(
     if (!PLAN_TYPES.has(w?.type)) issues.push(`"${label}" tiene un tipo no válido (${w?.type})`);
     if (w?.type !== 'rest' && !pos(w?.plannedDurationMin)) issues.push(`"${label}" no tiene duración`);
   }
+
+  // Semana en curso: los días ya pasados no se planifican
+  const fromDate = opts.fromDate && opts.fromDate > weekMonday ? opts.fromDate : null;
+  if (fromDate) {
+    out = out.filter((w) => {
+      if (w?.date && w.date >= weekMonday && w.date < fromDate) {
+        if (w.type !== 'rest') repairs.push(`"${w.title || w.date}" descartada: el ${w.date} ya ha pasado`);
+        return false;
+      }
+      return true;
+    });
+    if (!out.length) return { status: 'rejected', workouts: out, issues: ['el plan no trae sesiones para los días que quedan'], repairs };
+  }
+  const done = (opts.done || [])
+    .filter((d) => d?.date && d.date >= weekMonday && d.date <= sunday && (!fromDate || d.date < fromDate))
+    .map((d, i) => ({ id: `done-${i}`, date: d.date, type: d.type, completed: true, title: 'hecha' }));
 
   // Descansos duplicados el mismo día: se deja uno (reparación)
   const restDays = new Set<string>();
@@ -316,7 +342,7 @@ export function validatePlanContract(
   for (const [d, n] of runsByDay) if (n > 1) issues.push(`${n} sesiones de carrera el ${d}`);
 
   // Estructura (política de la semana: disponibilidad declarada) + tirada larga
-  const structure = analyzeWeekStructure(out as Workout[], weekMonday, policy);
+  const structure = analyzeWeekStructure([...out, ...done] as Workout[], weekMonday, policy);
   issues.push(...structure.issues);
   const long = out.find((w) => w.type === 'long_mountain_run' && w.date === structure.longRunDate);
   if (long) {

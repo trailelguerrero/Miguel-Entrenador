@@ -300,15 +300,23 @@ app.post('/api/generate-plan', serverData('generate-plan'), async (req: Request,
     if (typeof weekStartDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(weekStartDate)) {
       return res.status(400).json({ error: 'Falta el lunes de la semana (weekStartDate).', code: 'PLAN_INPUT' });
     }
+    // Semana en curso: solo desde planFromDate; lo ya hecho cuenta para la estructura
+    const planFromDate = typeof req.body?.planFromDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.body.planFromDate) ? req.body.planFromDate : undefined;
+    const planOpts = {
+      fromDate: planFromDate,
+      done: (Array.isArray(req.body?.existingWorkouts) ? req.body.existingWorkouts : [])
+        .filter((w: any) => w?.status === 'hecha' && typeof w.date === 'string' && typeof w.type === 'string')
+        .map((w: any) => ({ date: w.date, type: w.type })),
+    };
     const t0 = Date.now();
-    const basePrompt = buildPlanPrompt(req.body);
+    const basePrompt = buildPlanPrompt({ ...req.body, planFromDate });
 
     // Plan de la IA → limpieza → CONTRATO DEL PLAN. Si lo incumple, un reintento
     // con los motivos (si queda tiempo en la función de 60 s); si no, se rechaza.
     const attempt = async (prompt: string) => {
       const parsed = parseModelJson(await runAi(res, { system: MIGUEL_SYSTEM_INSTRUCTION, input: prompt, json: true }));
       const checked = sanitizePlanWorkouts(parsed.workouts, athleteProfile, weekStartDate, nutritionEvidence);
-      return { parsed, checked, contract: validatePlanContract(checked.workouts, weekStartDate, deriveWeeklyStructurePolicy(athleteProfile)) };
+      return { parsed, checked, contract: validatePlanContract(checked.workouts, weekStartDate, deriveWeeklyStructurePolicy(athleteProfile), planOpts) };
     };
     let r = await attempt(basePrompt);
     if (r.contract.status === 'rejected' && Date.now() - t0 < 25_000) {
