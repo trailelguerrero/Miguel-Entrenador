@@ -8,6 +8,8 @@ import { Navbar } from './components/Navbar';
 import { buildDeload } from './brain/deload';
 import { resolveIntensityPrescription } from './brain/intensity';
 import { SuuntoSyncBar } from './components/SuuntoSyncBar';
+import { ZoneAdviceBanner, ZONE_CHANGE_HOW_TO, describeZoneRecommendation } from './components/ZoneAdviceBanner';
+import { driftZoneRecommendation, pendingZoneAdvice, updateZoneAdviceState, zoneAdviceKey } from './brain/suuntoMerge';
 import { MorningBanner } from './components/MorningBanner';
 import { CalendarView } from './components/CalendarView';
 import { CoachChat } from './components/CoachChat';
@@ -56,7 +58,8 @@ import {
   CoachLearnedMemory,
   CoachLearnedInsight,
   ToastMessage,
-  ToastType
+  ToastType,
+  WatchZoneRecommendation
 } from './types';
 import { StorageService } from './services/storage';
 import { RemoteData, type RemoteState } from './services/remoteData';
@@ -251,6 +254,66 @@ export default function App() {
     }
   };
 
+  // Zonas de FC del reloj: Miguel te cuenta en el chat las recomendaciones nuevas (una sola vez cada una)
+  const announcingZones = useRef(false);
+  const announceZoneAdvice = async () => {
+    const p = StorageService.getProfile();
+    const recs = pendingZoneAdvice(p, true);
+    if (!recs.length || announcingZones.current) return;
+    announcingZones.current = true;
+    try {
+      const lines = recs.map((r) => `- ${describeZoneRecommendation(r)}. Señal: ${r.evidence}`);
+      const prompt =
+        `[AVISO AUTOMÁTICO – ZONAS DE FC DEL RELOJ] La app ha detectado que conviene cambiar las zonas de FC de carrera de mi reloj Suunto:\n${lines.join('\n')}\n` +
+        `Explícame en pocas líneas qué debo cambiar (de cuánto a cuánto), por qué y cómo hacerlo en la app de Suunto (${ZONE_CHANGE_HOW_TO}). ` +
+        'Recuerda que las zonas de FC del reloj son mis umbrales en la app. Si la señal viene de ZoneSense o de un test, es una sugerencia y decido yo.';
+      const { reply, knowledgeSources } = await ApiService.sendMessage(
+        [{ role: 'user', content: prompt }],
+        p,
+        StorageService.getTodayCheckIn(),
+        targetRace,
+        'Aviso de zonas de FC del reloj',
+        historyDoc,
+        coachMemory,
+        getBrainContext(),
+      );
+      const msg: ChatMessage = { id: `assistant-zones-${Date.now()}`, role: 'assistant', content: reply, timestamp: new Date().toISOString(), contextType: 'general', knowledgeSources };
+      const msgs = [...StorageService.getChatMessages(), msg];
+      StorageService.saveChatMessages(msgs);
+      setChatMessages(msgs);
+      // Anunciadas: no se repiten
+      const cur = StorageService.getProfile();
+      const state = { ...(cur.zoneAdviceState || {}) };
+      const now = new Date().toISOString();
+      for (const r of recs) {
+        const k = zoneAdviceKey(r);
+        if (state[k]) state[k] = { ...state[k], announcedAt: now };
+      }
+      const updated = { ...cur, zoneAdviceState: state };
+      setProfile(updated);
+      StorageService.saveProfile(updated);
+      showToast({ type: 'warning', title: 'Miguel tiene un aviso sobre tus zonas de FC', message: 'Míralo en el chat con Miguel.', duration: 7000 });
+    } catch (err) {
+      console.error('Miguel no pudo avisar de las zonas:', err);
+    } finally {
+      announcingZones.current = false;
+    }
+  };
+
+  const handleResolveZoneAdvice = (rec: WatchZoneRecommendation, status: 'done' | 'ignored') => {
+    const cur = StorageService.getProfile();
+    const k = zoneAdviceKey(rec);
+    const prev = cur.zoneAdviceState?.[k] ?? { status: 'pending' as const, firstSeen: new Date().toISOString() };
+    const updated = { ...cur, zoneAdviceState: { ...(cur.zoneAdviceState || {}), [k]: { ...prev, status } } };
+    setProfile(updated);
+    StorageService.saveProfile(updated);
+    showToast({
+      type: 'info',
+      title: status === 'done' ? 'Anotado: zonas cambiadas' : 'Aviso ignorado',
+      message: status === 'done' ? 'En la próxima sincronización la app tomará tus zonas nuevas.' : 'No volverá a aparecer esta recomendación.',
+    });
+  };
+
   const handleDisconnectSuunto = async () => {
     if (!confirm('¿Desconectar tu cuenta Suunto de esta app?\n\nSe borran los tokens de conexión. Tus entrenos importados y tu perfil se conservan.')) return;
     if (RemoteData.state.mode === 'server') {
@@ -299,14 +362,7 @@ export default function App() {
         });
         askMiguelAboutSuuntoProfile(newProfile, res.profileChanges);
       }
-      if (res.freshZoneAdvice.length) {
-        showToast({
-          type: 'warning',
-          title: 'Revisa las zonas de FC de tu reloj',
-          message: res.freshZoneAdvice.map((r: any) => `${r.label}: ${r.current} → ${r.suggested}`).join(' • '),
-          duration: 9000,
-        });
-      }
+      if (res.freshZoneAdvice.length) void announceZoneAdvice();
       apiStatus.reportSuuntoOk();
       showToast({ type: 'success', title: 'Suunto sincronizado', message: res.message });
       return res.message;
@@ -359,21 +415,15 @@ export default function App() {
         }
       }
 
-      // Aviso de zonas del reloj: solo aparece con una tendencia sostenida
+      // Zonas del reloj: señales del servidor + tu AeT fijado frente a Z3; Miguel te lo cuenta
       if (res.watchZoneAdvice) {
-        const prevKeys = new Set((StorageService.getProfile().watchZoneAdvice?.recommendations || []).map((r) => `${r.field}:${r.suggested}`));
-        const withAdvice = { ...StorageService.getProfile(), watchZoneAdvice: res.watchZoneAdvice };
+        const cur = StorageService.getProfile();
+        const drift = driftZoneRecommendation(cur, res.watchZoneAdvice);
+        const advice = { ...res.watchZoneAdvice, recommendations: [...res.watchZoneAdvice.recommendations, ...(drift ? [drift] : [])] };
+        const withAdvice = { ...cur, watchZoneAdvice: advice, zoneAdviceState: updateZoneAdviceState(cur.zoneAdviceState, advice.recommendations, new Date().toISOString()) };
         setProfile(withAdvice);
         StorageService.saveProfile(withAdvice);
-        const fresh = res.watchZoneAdvice.recommendations.filter((r) => !prevKeys.has(`${r.field}:${r.suggested}`));
-        if (fresh.length) {
-          showToast({
-            type: 'warning',
-            title: 'Revisa las zonas de FC de tu reloj',
-            message: fresh.map((r) => `${r.label}: ${r.current} → ${r.suggested}`).join(' • '),
-            duration: 9000,
-          });
-        }
+        void announceZoneAdvice();
       }
 
       // Después del perfil, para que los check-ins usen su HRV de referencia
@@ -471,6 +521,8 @@ export default function App() {
       .then((st) => {
         reloadFromStorage();
         if (st.mode === 'server' && st.needsImport) return;
+        // Recomendaciones de zonas que Miguel aún no te ha contado (p. ej. tras el cron de la mañana)
+        void announceZoneAdvice();
         const cfg = StorageService.getSuuntoConfig();
         const stale = !cfg.lastSync || Date.now() - Date.parse(cfg.lastSync) > 3 * 3600_000;
         if (backFromSuunto || (cfg.connected && stale && navigator.onLine !== false)) handleSyncSuunto();
@@ -928,6 +980,7 @@ ${structureLine} Ya puedes ver los entrenamientos en tu calendario.${warningLine
         {/* Sincronizar con Suunto desde la pantalla principal (o conectarlo) */}
         {remote.needsImport && <ServerDataBanner onImport={handleServerImport} />}
         <SuuntoSyncBar config={suuntoConfig} isSyncing={isSyncingSuunto} onSync={() => void handleSyncSuunto()} />
+        <ZoneAdviceBanner recommendations={pendingZoneAdvice(profile)} onResolve={handleResolveZoneAdvice} />
 
         {/* Morning Readiness & Fatigue Warning Banner */}
         <MorningBanner
@@ -938,7 +991,6 @@ ${structureLine} Ya puedes ver los entrenamientos en tu calendario.${warningLine
           isAdapting={isAdaptingSession}
           isSetupIncomplete={!profile.setupCompleted}
           onOpenSetupGuide={() => setIsSetupGuideOpen(true)}
-          watchZoneAdvice={profile.watchZoneAdvice}
         />
 
         {/* Quick Weight & Biomechanics Widget */}

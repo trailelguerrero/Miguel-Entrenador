@@ -11,7 +11,6 @@ interface MorningBannerProps {
   isAdapting?: boolean;
   isSetupIncomplete?: boolean;
   onOpenSetupGuide?: () => void;
-  watchZoneAdvice?: WatchZoneAdvice;
 }
 
 export const MorningBanner: React.FC<MorningBannerProps> = ({
@@ -22,7 +21,6 @@ export const MorningBanner: React.FC<MorningBannerProps> = ({
   isAdapting,
   isSetupIncomplete,
   onOpenSetupGuide,
-  watchZoneAdvice,
 }) => {
   // Puntuación = Recovery (Balance) medio del día según Suunto
   const recoveryText = checkIn?.readinessScore != null
@@ -31,23 +29,6 @@ export const MorningBanner: React.FC<MorningBannerProps> = ({
 
   return (
     <div className="space-y-3">
-      {/* Aviso de zonas del reloj: solo con tendencia sostenida (ver server/zone-advice.ts) */}
-      {watchZoneAdvice && watchZoneAdvice.recommendations.length > 0 && (
-        <div className="bg-gradient-to-r from-amber-950/40 to-zinc-950 border border-amber-700/40 rounded-2xl p-4 shadow-lg">
-          <div className="text-xs font-extrabold text-amber-400 uppercase tracking-wide">
-            Recomendado cambiar las zonas de FC de tu reloj (carrera)
-          </div>
-          <ul className="mt-1.5 space-y-1.5">
-            {watchZoneAdvice.recommendations.map((r) => (
-              <li key={r.field} className="text-xs text-zinc-200">
-                <strong>{r.label}: {r.current} → {r.suggested} ppm</strong>{' '}
-                <span className="text-zinc-400">({r.direction === 'up' ? 'tendencia al alza' : 'tendencia a la baja'}). {r.evidence}</span>
-              </li>
-            ))}
-          </ul>
-          <p className="text-[10px] text-zinc-500 mt-1.5">Cámbialo en la configuración de zonas de FC de carrera de tu Suunto. Cuando la tendencia deje de cumplirse, el aviso desaparece en la siguiente sincronización.</p>
-        </div>
-      )}
       {/* Guía de Setup Callout si no se ha completado */}
       {isSetupIncomplete && onOpenSetupGuide && (
         <div className="bg-gradient-to-r from-amber-950/40 via-zinc-900 to-zinc-950 border border-amber-500/40 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg animate-in fade-in duration-200">

@@ -94,7 +94,7 @@ ${describeMemoryForPrompt(coachMemory, athleteToday(body))}
 - Origen de Datos: ${athleteProfile?.dataSource || 'Registro / Suunto'}
 - VO2máx (Suunto): ${athleteProfile?.vo2Max ?? 'No disponible'}
 - HRV nocturna de referencia: ${athleteProfile?.baselineHrv ? athleteProfile.baselineHrv + ' ms' : 'Pendiente'}
-- Zonas de FC del reloj (carrera): ${formatWatchZones(athleteProfile?.watchZoneAdvice)}
+- Zonas de FC del reloj (carrera): ${formatWatchZones(athleteProfile?.watchZoneAdvice, athleteProfile?.zoneAdviceState)}
 - Origen de cada dato del perfil (Suunto = calculado de su reloj; Manual = lo ha puesto o corregido el atleta): ${
     athleteProfile?.fieldSources && Object.keys(athleteProfile.fieldSources).length
       ? Object.entries(athleteProfile.fieldSources).map(([k, v]) => `${k}=${v === 'suunto' ? 'Suunto' : 'Manual'}`).join(', ')
