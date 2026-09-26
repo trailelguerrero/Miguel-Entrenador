@@ -9,6 +9,7 @@ import { describeReadiness, type ReadinessState } from '../../../src/brain/readi
 import { describeBreakdown } from '../../../src/brain/zonesense.js';
 import { localDateKey } from '../../../src/utils/trainingLoad.js';
 import { tag } from '../../../src/brain/provenance.js';
+import { deriveWeeklyStructurePolicy, describeWeeklyStructurePolicy } from '../../../src/utils/weekStructure.js';
 
 export { MIGUEL_SYSTEM_INSTRUCTION };
 
@@ -88,13 +89,13 @@ ${describeMemoryForPrompt(coachMemory, athleteToday(body))}
 - Umbral Anaeróbico por FC: ${athleteProfile?.antHr ? athleteProfile.antHr + ' bpm' : 'Pendiente de registrar'}
 - Estado ADS (Síndrome Deficiencia Aeróbica): ${athleteProfile?.hasAds ? 'SÍ (necesita volumen estricto Z1/Z2)' : 'NO'}
 - [OBJETIVO PRINCIPAL] ${describeTargetRace(targetRace)}
-- Estructura semanal: 3 sesiones entre semana (o 2 si lo decides por fatiga/disponibilidad) + tirada larga en sábado o domingo.
+- Estructura semanal: ${describeWeeklyStructurePolicy(deriveWeeklyStructurePolicy(athleteProfile))}
 - ${availabilityLine(athleteProfile)}
 - Check-in de hoy: ${currentReadiness ? 'registrado (sus datos y el ÚNICO estado válido de hoy, el del motor de readiness, van en CARGA Y RECUPERACIÓN)' : 'pendiente (sin HRV ni sueño de hoy)'}
 - Origen de Datos: ${athleteProfile?.dataSource || 'Registro / Suunto'}
 - VO2máx (Suunto): ${athleteProfile?.vo2Max ?? 'No disponible'}
 - HRV nocturna de referencia: ${athleteProfile?.baselineHrv ? athleteProfile.baselineHrv + ' ms' : 'Pendiente'}
-- Zonas de FC del reloj (carrera): ${formatWatchZones(athleteProfile?.watchZoneAdvice, athleteProfile?.zoneAdviceState)}
+- Zonas de FC del reloj (carrera): ${formatWatchZones(athleteProfile?.watchZoneAdvice, athleteProfile?.zoneAdviceState, athleteProfile)}
 - Origen de cada dato del perfil (Suunto = calculado de su reloj; Manual = lo ha puesto o corregido el atleta): ${
     athleteProfile?.fieldSources && Object.keys(athleteProfile.fieldSources).length
       ? Object.entries(athleteProfile.fieldSources).map(([k, v]) => `${k}=${v === 'suunto' ? 'Suunto' : 'Manual'}`).join(', ')
@@ -143,6 +144,7 @@ export function buildPlanPrompt(body: any): string {
 ${describeMemoryForPrompt(coachMemory, athleteToday(body))}
 ` : '';
 
+  const weekPolicy = deriveWeeklyStructurePolicy(athleteProfile);
   const prompt = `
 Genera un microciclo semanal de entrenamiento de 7 días (comenzando el lunes ${weekStartDate || 'próximo'}) para preparar su carrera objetivo.
 [OBJETIVO PRINCIPAL] ${describeTargetRace(targetRace)}
@@ -153,11 +155,11 @@ Genera un microciclo semanal de entrenamiento de 7 días (comenzando el lunes ${
 - En cada sesión debes rellenar obligatoriamente "personalizedReasoning" (explicando en primera persona por qué prescribe esto para él, mencionando sus datos concretos) y "learnedAdjustment" (qué adaptación o regla de su memoria estás aplicando).
 
 [ESTRUCTURA SEMANAL OBLIGATORIA]:
-- 3 sesiones de carrera entre semana (lunes a viernes). Puedes reducirlas a 2 SOLO si el estado de fatiga de abajo lo aconseja o si la disponibilidad declarada por el atleta es menor; si reduces, explícalo en "weekSummary".
+- Estructura de ESTA semana: ${describeWeeklyStructurePolicy(weekPolicy)} Dentro de ese rango, usa el mínimo si el estado de fatiga de abajo lo aconseja; si reduces, explícalo en "weekSummary".
 - 1 tirada larga ("type": "long_mountain_run") en SÁBADO o DOMINGO, con desnivel positivo y descenso. Elige el día que mejor encaje esta semana (no tiene que ser siempre el mismo). OBLIGATORIO en la tirada larga: "plannedDistanceKm" y "plannedElevationGainM" mayores que 0.
 - Todas las fechas dentro de la semana (lunes a domingo) y como mucho una sesión de carrera por día.
 - El sistema COMPRUEBA esta estructura en código: un plan que no la cumpla se rechaza y no se guarda.
-- Nunca más de 3 sesiones entre semana, nunca tirada larga entre semana, nunca dos tiradas largas.
+- Nunca más de ${weekPolicy.midweekRunsMax} sesiones entre semana, nunca tirada larga entre semana, nunca dos tiradas largas.
 - Los demás días: DESCANSO TOTAL o movilidad ligera ("type": "rest"). La fuerza sin material puede ir como "strength_core" y no cuenta como sesión de carrera.
 - ${availabilityLine(athleteProfile)}
 
@@ -199,6 +201,7 @@ Responde ÚNICAMENTE con un JSON válido estructurado así:
       "plannedDurationMin": number,
       "plannedDistanceKm": number (opcional),
       "plannedElevationGainM": number (opcional),
+      "plannedElevationLossM": number (opcional; D− de la ruta, obligatorio en la tirada larga si no es circular),
       "intensitySource": "heart_rate_measured | rpe",
       "targetHrMin": number o null (ppm; null si no hay umbral de FC),
       "targetHrMax": number o null (ppm; OBLIGATORIO si hay umbral de FC: rodajes y tiradas largas ≤ AeT),

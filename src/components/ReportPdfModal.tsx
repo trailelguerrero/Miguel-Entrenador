@@ -1,6 +1,6 @@
 import { resolveIntensityPrescription } from '../brain/intensity';
 import { hrAerobicShare } from '../utils/trainingLoad';
-import { getTsbZoneDiagnosis } from '../utils/pmcCalculations';
+import { describeTsb } from '../utils/pmcCalculations';
 import { isAppliedRule } from '../brain/memory';
 import { localDateKey } from '../utils/trainingLoad';
 import { StorageService } from '../services/storage';
@@ -291,7 +291,7 @@ export const ReportPdfModal: React.FC<ReportPdfModalProps> = ({
               <div className="bg-zinc-900/60 print:bg-zinc-50 p-3 rounded-xl border border-zinc-800 print:border-zinc-200">
                 <span className="text-[10px] text-zinc-400 print:text-zinc-600 block uppercase font-bold">Forma (TSB)</span>
                 <div className="text-xl font-black text-red-400 print:text-red-700 font-mono">{latestPmc.tsb.toFixed(1)}</div>
-                <span className="text-[10px] text-zinc-500">{getTsbZoneDiagnosis(latestPmc.tsb).label}</span>
+                <span className="text-[10px] text-zinc-500">{describeTsb(latestPmc.tsb).label}</span>
               </div>
 
               <div className="bg-zinc-900/60 print:bg-zinc-50 p-3 rounded-xl border border-zinc-800 print:border-zinc-200">

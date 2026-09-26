@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { computePmcSeries, getWorkoutLoad } from './utils/trainingLoad';
-import { analyzeWeekStructure, mondayOfKey, addDaysKey } from './utils/weekStructure';
+import { analyzeWeekStructure, deriveWeeklyStructurePolicy, mondayOfKey, addDaysKey } from './utils/weekStructure';
 import { localDateKey } from './utils/trainingLoad';
 import { buildBrainContext, summarizeWeekWorkouts } from './brain/context';
 import { addPending, isAppliedRule } from './brain/memory';
 import { Navbar } from './components/Navbar';
 import { buildDeload } from './brain/deload';
-import { resolveIntensityPrescription } from './brain/intensity';
+import { resolveIntensityPrescription, measuredAntHr } from './brain/intensity';
 import { SuuntoSyncBar } from './components/SuuntoSyncBar';
 import { ZoneAdviceBanner, ZONE_CHANGE_HOW_TO, describeZoneRecommendation } from './components/ZoneAdviceBanner';
 import { driftZoneRecommendation, pendingZoneAdvice, updateZoneAdviceState, zoneAdviceKey } from './brain/suuntoMerge';
@@ -76,7 +76,7 @@ export default function App() {
   const [secondaryRaces, setSecondaryRaces] = useState<TargetRace[]>(StorageService.getSecondaryRaces());
   const [workouts, setWorkouts] = useState<Workout[]>(StorageService.getWorkouts());
   // PMC real (CTL/ATL/TSB) calculado desde los entrenos completados, TSS de Suunto
-  const pmcData = useMemo(() => computePmcSeries(workouts, profile.antHr), [workouts, profile.antHr]);
+  const pmcData = useMemo(() => computePmcSeries(workouts, measuredAntHr(profile)), [workouts, measuredAntHr(profile)]);
   const [todayCheckIn, setTodayCheckIn] = useState<DailyCheckIn | undefined>(StorageService.getTodayCheckIn());
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(StorageService.getChatMessages());
   const [suuntoConfig, setSuuntoConfig] = useState<SuuntoIntegrationConfig>(StorageService.getSuuntoConfig());
@@ -551,7 +551,7 @@ export default function App() {
     if (selectedWorkout && selectedWorkout.id === workout.id) {
       setSelectedWorkout(workout);
     }
-    const completedTss = workout.completed ? getWorkoutLoad(workout, profile.antHr)?.tss : undefined;
+    const completedTss = workout.completed ? getWorkoutLoad(workout, measuredAntHr(profile))?.tss : undefined;
     const tssInfo = workout.completed 
       ? (completedTss != null ? ` • ${completedTss} TSS` : '')
       : (workout.plannedTss ? ` • ${workout.plannedTss} TSS` : '');
@@ -672,6 +672,7 @@ Tus células y tu sistema nervioso autónomo están pidiendo tregua. No fuerces 
       const adaptation = await ApiService.adaptSession(todayWorkout, todayCheckIn, profile, historyDoc, brain.todayReadiness, {
         tsb: brain.tsb,
         weeklyTss: brain.weeklyTss,
+        weeklyNonMeasuredTss: brain.weeklyNonMeasuredTss,
         ctl: brain.ctl,
       });
 
@@ -735,7 +736,7 @@ Tus células y tu sistema nervioso autónomo están pidiendo tregua. No fuerces 
         historyDoc,
         coachMemory,
         getBrainContext(),
-        summarizeWeekWorkouts(workouts, monday, profile.antHr),
+        summarizeWeekWorkouts(workouts, monday, measuredAntHr(profile)),
         {
           maxCarbsPerHourG: gut?.currentMaxCarbsPerHour ?? null,
           sweatRateLph: heat?.sweatRateDocumentedLitersPerHour ?? null,
@@ -785,7 +786,7 @@ Tus células y tu sistema nervioso autónomo están pidiendo tregua. No fuerces 
       handleSaveWorkouts(combined);
 
       // Resumen con la estructura REAL que ha devuelto Miguel
-      const structure = analyzeWeekStructure(newWorkouts, monday);
+      const structure = analyzeWeekStructure(newWorkouts, monday, deriveWeeklyStructurePolicy(profile));
       const structureLine = `Estructura: ${structure.midweekPlanned} sesiones entre semana + tirada larga ${structure.longRunDay ? `el ${structure.longRunDay}` : '(no planificada)'}.`;
       const allNotes = [
         ...(plan.validationNotes || []),
@@ -1031,7 +1032,6 @@ ${structureLine} Ya puedes ver los entrenamientos en tu calendario.${warningLine
             pmcData={pmcData}
             suuntoConfig={suuntoConfig}
             onNavigateTab={(tab) => setActiveTab(tab)}
-            onScheduleDeload={handleScheduleDeload}
           />
         )}
 
@@ -1226,7 +1226,7 @@ ${structureLine} Ya puedes ver los entrenamientos en tu calendario.${warningLine
         }}
         initialDateStr={selectedAddDate}
         defaultAetHr={profile.aetHr}
-        defaultAntHr={profile.antHr}
+        defaultAntHr={measuredAntHr(profile)}
       />
 
       <FartlekGeneratorModal

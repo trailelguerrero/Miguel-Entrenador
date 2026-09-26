@@ -26,7 +26,7 @@ import {
 } from '../types';
 import { StorageService } from '../services/storage';
 import { estimateFromRecentRuns, formatPace } from '../utils/runEstimates';
-import { resolveIntensityPrescription } from '../brain/intensity';
+import { resolveIntensityPrescription, measuredAntHr } from '../brain/intensity';
 import { RED_HR_MARGIN } from '../brain/readiness';
 import { calculateWorkoutTss } from '../utils/pmcCalculations';
 
@@ -248,7 +248,7 @@ export const FartlekGeneratorModal: React.FC<FartlekGeneratorModalProps> = ({
 
   // Handler to add the generated fartlek to Calendar
   const handleAddToCalendar = () => {
-    const tssResult = calculateWorkoutTss(fartlekPlan.totalDurationMin, undefined, profile.antHr || undefined);
+    const tssResult = calculateWorkoutTss(fartlekPlan.totalDurationMin, undefined, measuredAntHr(profile));
 
     const workoutToAdd: Workout = {
       id: `workout-fartlek-${Date.now()}`,

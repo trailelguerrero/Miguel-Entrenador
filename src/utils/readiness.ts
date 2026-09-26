@@ -55,21 +55,44 @@ export function computeReadiness(input: {
 }
 
 /**
- * Recalcula un check-in de Suunto contra la HRV de referencia del perfil, para
- * que el semáforo, las gráficas y la ficha usen siempre la MISMA referencia.
+ * Versión del motor que calculó el estado derivado de un check-in. Súbela cuando
+ * cambien los cortes de src/brain/readiness.ts: lo guardado con otra versión es caché
+ * obsoleta (igualmente, al LEER siempre se recalcula con deriveCheckIn).
  */
-export function rebaseSuuntoCheckIn(ci: DailyCheckIn, profileBaseline: number): DailyCheckIn {
-  // Sin referencia en el perfil se usa la que trae el check-in (se recalcula igual el
-  // semáforo, por si se le han añadido tu dolor o tu estrés)
-  const hrvBaseline = profileBaseline > 0 ? profileBaseline : ci.hrvBaseline;
-  if (!(hrvBaseline > 0) || ci.source !== 'suunto') return ci;
-  const r = computeReadiness({ hrvRmssd: ci.hrvRmssd, hrvBaseline, sleepHours: ci.sleepHours, muscleSoreness: ci.muscleSoreness, stressLevel: ci.stressLevel });
-  const balance = ci.coachAdvice.match(/ Recovery Suunto del día: \d+%\./)?.[0] ?? '';
+export const READINESS_ENGINE_VERSION = 'readiness-v3';
+
+/**
+ * El check-in guarda DATOS CRUDOS (HRV, sueño, dolor, estrés, Recovery de Suunto).
+ * status / coachAdvice / suggestedAction son DERIVADOS: se recalculan aquí con el
+ * motor actual cada vez que se leen, para que el historial y el chat no usen un
+ * semáforo calculado con reglas o una referencia de HRV antiguas.
+ * Referencia de HRV: en los de Suunto, la del perfil (la misma que usa el cerebro);
+ * en los manuales, la que declaró el atleta en ese check-in.
+ */
+export function deriveCheckIn(ci: DailyCheckIn, profileBaseline?: number | null): DailyCheckIn {
+  const hrvBaseline = ci.source === 'suunto' && typeof profileBaseline === 'number' && profileBaseline > 0 ? profileBaseline : ci.hrvBaseline;
+  const r = computeReadiness({
+    hrvRmssd: ci.hrvRmssd,
+    hrvBaseline,
+    sleepHours: ci.sleepHours,
+    muscleSoreness: ci.muscleSoreness,
+    stressLevel: ci.stressLevel,
+  });
+  const balance = ci.readinessScore != null ? ` Recovery Suunto del día: ${ci.readinessScore}%.` : '';
   return {
     ...ci,
     hrvBaseline,
     status: r.status,
     suggestedAction: r.suggestedAction,
-    coachAdvice: `${r.coachAdvice} (Datos de Suunto: sueño ${ci.sleepHours} h, HRV ${ci.hrvRmssd} ms vs referencia ${hrvBaseline} ms.${balance})`,
+    coachAdvice:
+      ci.source === 'suunto'
+        ? `${r.coachAdvice} (Datos de Suunto: sueño ${ci.sleepHours} h, HRV ${ci.hrvRmssd} ms vs referencia ${hrvBaseline} ms.${balance})`
+        : r.coachAdvice,
+    derivedEngineVersion: READINESS_ENGINE_VERSION,
   };
+}
+
+/** Recalcula un check-in de Suunto contra la HRV de referencia del perfil (los manuales no cambian). */
+export function rebaseSuuntoCheckIn(ci: DailyCheckIn, profileBaseline: number): DailyCheckIn {
+  return ci.source === 'suunto' ? deriveCheckIn(ci, profileBaseline) : ci;
 }

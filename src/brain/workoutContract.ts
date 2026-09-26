@@ -33,6 +33,7 @@ export function allowedTypes(state: Pick<ReadinessState, 'level' | 'limits'>): r
 const TRAINING_FIELDS = [
   'plannedDistanceKm',
   'plannedElevationGainM',
+  'plannedElevationLossM',
   'targetHrMin',
   'targetHrMax',
   'plannedCarbsPerHourG',
@@ -83,10 +84,84 @@ export function easySessionText(minutes: number, mode: EasyMode, maxHr?: number 
 /** Tipos de carrera (se les audita el texto cuando no se permite intensidad). */
 export const RUN_TYPES: readonly WorkoutType[] = ['easy_run', 'long_mountain_run', 'intensity_run', 'hill_intervals', 'muscular_endurance', 'drift_test'];
 
-/** Cuando se recorta la duración, la distancia y el desnivel se recortan en la misma proporción. */
+/**
+ * Cuando se recorta la duración, la DISTANCIA se recorta en la misma proporción.
+ * El desnivel NO: en trail la carga mecánica (subida, sobre todo bajada) no escala
+ * con el tiempo; lo limita el presupuesto mecánico del nivel (applyMechanicalBudget).
+ */
 export function scaleVolume(w: Record<string, any>, fromMin: number, toMin: number): void {
   if (!(fromMin > 0) || !(toMin >= 0) || toMin >= fromMin) return;
   const r = toMin / fromMin;
   if (typeof w.plannedDistanceKm === 'number') w.plannedDistanceKm = Math.round(w.plannedDistanceKm * r * 10) / 10;
-  if (typeof w.plannedElevationGainM === 'number') w.plannedElevationGainM = Math.round(w.plannedElevationGainM * r);
+}
+
+/**
+ * PRESUPUESTO MECÁNICO por nivel de readiness (decisión del atleta):
+ *   ámbar           → D+ ≤ 50 % y D− ≤ 40 % de lo planificado, sin bajadas técnicas
+ *   rojo / sin datos → 0 m de desnivel, terreno llano
+ *   verde           → sin tope
+ * Sin D− planificado se toma el D+ como referencia (ruta circular: baja lo que sube).
+ */
+export const AMBER_GAIN_FACTOR = 0.5;
+export const AMBER_LOSS_FACTOR = 0.4;
+
+export interface MechanicalBudget {
+  maxElevationGainM: number | null;
+  maxElevationLossM: number | null;
+  technicalDescents: boolean;
+  flatOnly: boolean;
+}
+
+export function mechanicalBudget(level: ReadinessLevel, planned: { plannedElevationGainM?: unknown; plannedElevationLossM?: unknown }): MechanicalBudget {
+  if (level === 'red' || level === 'unknown') return { maxElevationGainM: 0, maxElevationLossM: 0, technicalDescents: false, flatOnly: true };
+  if (level !== 'amber') return { maxElevationGainM: null, maxElevationLossM: null, technicalDescents: true, flatOnly: false };
+  const gain = typeof planned.plannedElevationGainM === 'number' && planned.plannedElevationGainM > 0 ? planned.plannedElevationGainM : 0;
+  const lossRef = typeof planned.plannedElevationLossM === 'number' && planned.plannedElevationLossM > 0 ? planned.plannedElevationLossM : gain;
+  return {
+    maxElevationGainM: Math.round(gain * AMBER_GAIN_FACTOR),
+    maxElevationLossM: Math.round(lossRef * AMBER_LOSS_FACTOR),
+    technicalDescents: false,
+    flatOnly: false,
+  };
+}
+
+/**
+ * Aplica el presupuesto a la sesión (sin subirlo nunca: si ya trae menos, se queda).
+ * `planned` = la sesión original (referencia del %). Devuelve las correcciones.
+ */
+export function applyMechanicalBudget(w: Record<string, any>, level: ReadinessLevel, planned: Record<string, any> = w): string[] {
+  const b = mechanicalBudget(level, planned);
+  const notes: string[] = [];
+  if (b.flatOnly) {
+    if ((typeof w.plannedElevationGainM === 'number' && w.plannedElevationGainM > 0) || (typeof w.plannedElevationLossM === 'number' && w.plannedElevationLossM > 0)) {
+      notes.push(`Sin desnivel hoy (estado ${level}): terreno llano.`);
+    }
+    w.plannedElevationGainM = null;
+    w.plannedElevationLossM = null;
+    w.terrainRecommendation = 'Terreno llano y blando, sin cuestas ni bajadas.';
+    return notes;
+  }
+  if (b.maxElevationGainM == null) return notes;
+  const cap = (field: 'plannedElevationGainM' | 'plannedElevationLossM', max: number, label: string) => {
+    const cur = typeof w[field] === 'number' ? w[field] : null;
+    if (cur == null) {
+      // Sin D− en la sesión: se fija el tope para que quede explícito
+      if (field === 'plannedElevationLossM' && max > 0) w[field] = max;
+      return;
+    }
+    if (cur > max) {
+      notes.push(`${label} ${cur} m recortado a ${max} m (estado ${level}).`);
+      w[field] = max;
+    }
+  };
+  cap('plannedElevationGainM', b.maxElevationGainM, 'D+');
+  cap('plannedElevationLossM', b.maxElevationLossM!, 'D−');
+  if (b.maxElevationGainM > 0 || (b.maxElevationLossM ?? 0) > 0) {
+    const limits = `como mucho ${w.plannedElevationGainM ?? 0} m de D+ y ${w.plannedElevationLossM ?? 0} m de D−`;
+    const prev = typeof w.terrainRecommendation === 'string' && w.terrainRecommendation.trim() ? `${w.terrainRecommendation.trim()} ` : '';
+    w.terrainRecommendation = `${prev}Hoy ${limits}, sin bajadas técnicas: bajadas cortas y tendidas, caminando si hace falta.`;
+  } else {
+    w.terrainRecommendation = 'Terreno llano o con muy poca pendiente, sin bajadas técnicas.';
+  }
+  return notes;
 }

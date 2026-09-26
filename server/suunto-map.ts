@@ -1,7 +1,7 @@
 // Convierte lo que devuelven las tools del MCP de Suunto a los tipos de la app
 // (Workout y DailyCheckIn).
 import type { DailyCheckIn, Workout, WorkoutType } from '../src/types/index.js';
-import { computeReadiness } from '../src/utils/readiness.js';
+import { computeReadiness, READINESS_ENGINE_VERSION } from '../src/utils/readiness.js';
 import { normalizeSuuntoZoneSense, toStoredBreakdown } from '../src/brain/zonesense.js';
 
 /** Fila de la tool `suunto_list_workouts_summary`. */
@@ -192,6 +192,7 @@ export function mapSuuntoCheckIns(
         ...(naps.get(date) ? { napMinutes: Math.round(naps.get(date)!) } : {}),
         coachAdvice: `${readiness.coachAdvice} (Datos de Suunto: sueño ${sleepHours} h, HRV ${hrvRmssd} ms vs referencia ${hrvBaseline} ms.${balanceNote})`,
         suggestedAction: readiness.suggestedAction,
+        derivedEngineVersion: READINESS_ENGINE_VERSION,
         source: 'suunto',
       } satisfies DailyCheckIn;
     });

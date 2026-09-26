@@ -13,7 +13,8 @@ import { join, relative } from 'node:path';
 import type { AthleteProfile, Workout } from '../src/types/index.js';
 import { resolveIntensityPrescription } from '../src/brain/intensity.js';
 import { evaluateReadiness } from '../src/brain/readiness.js';
-import { normalizeSuuntoZoneSense, toStoredBreakdown, normalizeZoneSenseTarget } from '../src/brain/zonesense.js';
+import { normalizeSuuntoZoneSense, toStoredBreakdown } from '../src/brain/zonesense.js';
+import { normalizeZoneSenseTarget } from '../src/legacy/zonesense.js';
 import { getWorkoutLoad, getLoadHistoryInfo, localDateKey, weeklyLoadThresholds } from '../src/utils/trainingLoad.js';
 import { analyzeWeekStructure, mondayOfKey, addDaysKey } from '../src/utils/weekStructure.js';
 import { computeReadiness } from '../src/utils/readiness.js';
@@ -170,9 +171,9 @@ test('8. FIT sin TSS: TSS estimado (etiquetado), nunca atribuido a Suunto; sin d
 // ── 9. Suunto con TSS ──────────────────────────────────────────────────────
 test('9. Suunto con TSS: se usa el TSS de Suunto tal cual; sin TSS de Suunto = 0, no se estima', () => {
   const s = wk({ completed: true, suuntoWorkoutKey: 'k1', actualTss: 87, actualDurationMin: 90, actualAvgHr: 150 });
-  assert.deepEqual(getWorkoutLoad(s, 168), { tss: 87, source: 'suunto' });
+  assert.deepEqual(getWorkoutLoad(s, 168), { tss: 87, source: 'suunto', confidence: 'measured_suunto' });
   const noTss = wk({ completed: true, suuntoWorkoutKey: 'k2', actualDurationMin: 90, actualAvgHr: 150 });
-  assert.deepEqual(getWorkoutLoad(noTss, 168), { tss: 0, source: 'suunto' });
+  assert.deepEqual(getWorkoutLoad(noTss, 168), { tss: 0, source: 'suunto', confidence: 'measured_suunto' });
 });
 
 test('9b. Historial de carga: "en calentamiento" con < 42 días, "estabilizado" con ≥ 42', () => {
@@ -218,8 +219,7 @@ test('Nutrición: sin evidencia del atleta no hay cifras; con evidencia, nunca p
 // ── Barrido del repositorio: ni DFA a1 ni cortes 0,75/0,50 fuera de compatibilidad ──
 const ROOT = join(import.meta.dirname, '..');
 const ALLOWED = new Set([
-  'src/brain/zonesense.ts', // LEGACY_MAP (compatibilidad con sesiones guardadas)
-  'src/types/index.ts', // LegacyZoneSenseTarget
+  'src/legacy/zonesense.ts', // capa de compatibilidad (LEGACY_MAP, LegacyZoneSenseTarget)
   'src/services/sampleData.ts', // datos de ejemplo antiguos (se normalizan al leer)
   'src/services/storage.ts', // migración de memoria/perfil guardados
   'src/components/ZoneSenseSuuntoView.tsx', // explica por qué ZoneSense NO es el DFA a1 clásico

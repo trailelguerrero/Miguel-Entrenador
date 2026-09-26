@@ -21,6 +21,7 @@ import {
 import { RACE_EXTRACTION_SYSTEM, RACE_SEARCH_SYSTEM, buildRaceAdvicePrompt, buildRaceExtractionPrompt, buildRaceSearchPrompt } from './brain/prompts/race.js';
 import { athleteToday, resolveReadinessState } from './brain/context.js';
 import { applyTodayReadinessToPlan, sanitizeAdaptation, sanitizePlanWorkouts, validatePlanContract } from './brain/decision/validate.js';
+import { deriveWeeklyStructurePolicy } from '../src/utils/weekStructure.js';
 import { filterRaceAdvice, RACE_NUMERIC_FIELDS, RACE_TEXT_FIELDS, targetFigures, verifyRaceInfo } from './brain/decision/race.js';
 import { verifyHistoryNumbers } from './brain/decision/history.js';
 import { RETRIEVED_DATA_RULE, buildKnowledgeBlock, buildLibraryIndexBlock, buildKnowledgeQuery, buildMemoryBlock, chatTurnsFromBody, withRetrievedContext } from './brain/prompts/knowledge.js';
@@ -307,7 +308,7 @@ app.post('/api/generate-plan', serverData('generate-plan'), async (req: Request,
     const attempt = async (prompt: string) => {
       const parsed = parseModelJson(await runAi(res, { system: MIGUEL_SYSTEM_INSTRUCTION, input: prompt, json: true }));
       const checked = sanitizePlanWorkouts(parsed.workouts, athleteProfile, weekStartDate, nutritionEvidence);
-      return { parsed, checked, contract: validatePlanContract(checked.workouts, weekStartDate) };
+      return { parsed, checked, contract: validatePlanContract(checked.workouts, weekStartDate, deriveWeeklyStructurePolicy(athleteProfile)) };
     };
     let r = await attempt(basePrompt);
     if (r.contract.status === 'rejected' && Date.now() - t0 < 25_000) {

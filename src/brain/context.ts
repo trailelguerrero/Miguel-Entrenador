@@ -10,10 +10,12 @@ import {
   getWorkoutLoad,
   localDateKey,
   weeklyLoadThresholds,
+  windowLoad,
   type LoadHistoryInfo,
 } from '../utils/trainingLoad.js';
 import { resolveIntensityPrescription } from './intensity.js';
 import { evaluateReadiness, type ReadinessState, type TodayReadinessInputs } from './readiness.js';
+import { deriveCheckIn } from '../utils/readiness.js';
 
 export interface BrainCheckInSummary {
   date: string;
@@ -35,6 +37,8 @@ export interface BrainContext {
   atl?: number;
   tsb?: number;
   weeklyTss?: number;
+  /** Parte del TSS de 7 días que no es medida (estimada por la app o asignada por Suunto). */
+  weeklyNonMeasuredTss?: number;
   loadHistory: LoadHistoryInfo;
   recentCheckIns: BrainCheckInSummary[];
   /** Estado de hoy según el motor de readiness (sin check-in: solo con la carga → 'unknown' o más estricto). */
@@ -56,13 +60,14 @@ export function buildBrainContext(
   /** Fecha del atleta (el servidor la pasa: en Vercel el reloj está en UTC). */
   today: string = localDateKey(),
 ): BrainContext {
-  const series = computePmcSeries(workouts, profile.antHr, undefined, today);
+  // Solo el umbral anaeróbico MEDIDO (Suunto/manual) sirve para estimar hrTSS
+  const antHr = resolveIntensityPrescription(profile).antHr ?? undefined;
+  const series = computePmcSeries(workouts, antHr, undefined, today);
   const latest = series[series.length - 1];
-  const since = addDays(today, -6);
-  const weeklyTss = Math.round(
-    workouts.filter((w) => w.date >= since && w.date <= today).reduce((a, w) => a + (getWorkoutLoad(w, profile.antHr)?.tss ?? 0), 0),
-  );
-  const sorted = [...checkIns].sort((a, b) => a.date.localeCompare(b.date));
+  const week = windowLoad(workouts, addDays(today, -6), today, antHr);
+  const weeklyTss = week.tss;
+  // El semáforo guardado es caché: se recalcula con el motor actual y la referencia del perfil
+  const sorted = [...checkIns].map((c) => deriveCheckIn(c, profile.baselineHrv)).sort((a, b) => a.date.localeCompare(b.date));
   const todayCi = sorted.find((c) => c.date === today) ?? null;
 
   // Sin check-in de hoy también se evalúa: la carga (TSB, TSS de 7 días) puede
@@ -82,7 +87,13 @@ export function buildBrainContext(
         aetHr,
       }
     : { plannedWorkout: planned, aetHr };
-  const todayReadiness = evaluateReadiness({ ...todayReadinessInputs, tsb: latest?.tsb, weeklyTss, weeklyThresholds: weeklyLoadThresholds(latest?.ctl) });
+  const todayReadiness = evaluateReadiness({
+    ...todayReadinessInputs,
+    tsb: latest?.tsb,
+    weeklyTss,
+    weeklyNonMeasuredTss: week.nonMeasuredTss,
+    weeklyThresholds: weeklyLoadThresholds(latest?.ctl),
+  });
 
   return {
     today,
@@ -90,7 +101,8 @@ export function buildBrainContext(
     atl: latest?.atl,
     tsb: latest?.tsb,
     weeklyTss,
-    loadHistory: getLoadHistoryInfo(workouts, profile.antHr, today),
+    weeklyNonMeasuredTss: week.nonMeasuredTss,
+    loadHistory: getLoadHistoryInfo(workouts, antHr, today),
     recentCheckIns: sorted.slice(-7).map((c) => ({
       date: c.date,
       hrvRmssd: c.hrvRmssd,

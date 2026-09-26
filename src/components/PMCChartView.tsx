@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { measuredAntHr } from '../brain/intensity';
 import { 
   Activity, 
   TrendingUp, 
@@ -22,8 +23,8 @@ import { PMCDataPoint, AthleteProfile, Workout } from '../types';
 import { StorageService } from '../services/storage';
 import { 
   calculateWorkoutTss, 
-  getTsbZoneDiagnosis, 
-  getRampRateDiagnosis
+  describeTsb, 
+  describeRampRate
 } from '../utils/pmcCalculations';
 import { computePmcSeries, countEstimatedWorkouts, CTL_DAYS, ATL_DAYS } from '../utils/trainingLoad';
 
@@ -48,16 +49,16 @@ export const PMCChartView: React.FC<PMCChartViewProps> = ({ profile: propProfile
   // Serie PMC calculada con todo el historial de entrenos completados
   // (TSS de Suunto cuando existe). Se muestra solo el rango elegido.
   const allDataPoints: PMCDataPoint[] = useMemo(
-    () => computePmcSeries(workouts, profile.antHr),
-    [workouts, profile.antHr]
+    () => computePmcSeries(workouts, measuredAntHr(profile)),
+    [workouts, measuredAntHr(profile)]
   );
   const fullDataPoints: PMCDataPoint[] = useMemo(() => {
     const days = timeRange === '14d' ? 14 : timeRange === '30d' ? 30 : timeRange === '42d' ? 42 : 90;
     return allDataPoints.slice(-days);
   }, [allDataPoints, timeRange]);
   const estimatedCount = useMemo(
-    () => countEstimatedWorkouts(workouts, profile.antHr, fullDataPoints[0]?.date),
-    [workouts, profile.antHr, fullDataPoints]
+    () => countEstimatedWorkouts(workouts, measuredAntHr(profile), fullDataPoints[0]?.date),
+    [workouts, measuredAntHr(profile), fullDataPoints]
   );
 
   if (fullDataPoints.length === 0) {
@@ -69,8 +70,8 @@ export const PMCChartView: React.FC<PMCChartViewProps> = ({ profile: propProfile
   }
 
   const latest = fullDataPoints[fullDataPoints.length - 1];
-  const tsbDiagnosis = getTsbZoneDiagnosis(latest.tsb);
-  const rampRateDiagnosis = getRampRateDiagnosis(latest.rampRate || 0);
+  const tsbDiagnosis = describeTsb(latest.tsb);
+  const rampRateDiagnosis = describeRampRate(latest.rampRate || 0);
 
   // Calculate 7-day accumulated TSS
   const last7DaysPoints = fullDataPoints.slice(-7);
@@ -137,7 +138,7 @@ export const PMCChartView: React.FC<PMCChartViewProps> = ({ profile: propProfile
   const simResult = calculateWorkoutTss(
     simDuration,
     simAvgHr,
-    profile.antHr || undefined,
+    measuredAntHr(profile),
     simRpe
   );
 
@@ -188,7 +189,7 @@ export const PMCChartView: React.FC<PMCChartViewProps> = ({ profile: propProfile
           <div className={`px-5 py-4 rounded-2xl border ${tsbDiagnosis.bgColor} ${tsbDiagnosis.borderColor} max-w-md shrink-0 shadow-lg`}>
             <div className="flex items-center justify-between gap-2 mb-1">
               <span className="text-[10px] uppercase font-black tracking-wider text-zinc-400">
-                Diagnóstico Fisiológico Actual (TSB):
+                Balance de carga actual (TSB):
               </span>
               <span className="text-xs font-mono font-bold text-zinc-400">
                 {tsbDiagnosis.rangeDescription}
@@ -199,7 +200,7 @@ export const PMCChartView: React.FC<PMCChartViewProps> = ({ profile: propProfile
               {tsbDiagnosis.label}
             </div>
             <p className="text-xs text-zinc-300 mt-1.5 leading-snug">
-              {tsbDiagnosis.actionRecommendation}
+              {tsbDiagnosis.description}
             </p>
           </div>
         </div>
@@ -292,8 +293,8 @@ export const PMCChartView: React.FC<PMCChartViewProps> = ({ profile: propProfile
             <span className="text-xs text-zinc-400">/sem</span>
           </div>
           <div className="mt-2 pt-2 border-t border-zinc-800 text-[11px] text-zinc-400 flex justify-between">
-            <span>Guía (+3 a +7):</span>
-            <span className={`font-bold ${rampRateDiagnosis.textColor}`}>{rampRateDiagnosis.status.toUpperCase()}</span>
+            <span>Guía orientativa (+3 a +7):</span>
+            <span className={`font-bold ${rampRateDiagnosis.textColor}`}>{rampRateDiagnosis.label.replace(/^.*\((.*)\)$/, '$1').toUpperCase()}</span>
           </div>
         </div>
 
@@ -658,7 +659,7 @@ export const PMCChartView: React.FC<PMCChartViewProps> = ({ profile: propProfile
                 )}
               </div>
               <p className="text-xs text-zinc-400">
-                {getTsbZoneDiagnosis(hoveredPoint.tsb).label}
+                {describeTsb(hoveredPoint.tsb).label}
               </p>
             </div>
 
@@ -787,7 +788,7 @@ export const PMCChartView: React.FC<PMCChartViewProps> = ({ profile: propProfile
           {/* Contrast Table of TSB Interpretations (Joe Friel's Standard) */}
           <div className="space-y-2">
             <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400">
-              Tabla Fisiológica de Zonas de TSB (Joe Friel):
+              Bandas de TSB (orientativas, Joe Friel):
             </h3>
             
             <div className="overflow-x-auto rounded-2xl border border-zinc-800">
@@ -795,41 +796,32 @@ export const PMCChartView: React.FC<PMCChartViewProps> = ({ profile: propProfile
                 <thead className="bg-zinc-950 text-zinc-400 font-semibold border-b border-zinc-800">
                   <tr>
                     <th className="py-2.5 px-3">Rango TSB</th>
-                    <th className="py-2.5 px-3">Estado Fisiológico</th>
-                    <th className="py-2.5 px-3">Efecto Biológico</th>
-                    <th className="py-2.5 px-3">Acción Recomendada</th>
+                    <th className="py-2.5 px-3">Qué significa</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-800/60 font-mono text-[11px]">
                   <tr className="bg-rose-950/20">
                     <td className="py-2.5 px-3 text-rose-400 font-bold">&lt; -30</td>
-                    <td className="py-2.5 px-3 font-sans font-bold text-rose-300">Fatiga Severa / Peligro</td>
-                    <td className="py-2.5 px-3 font-sans text-zinc-300">Inmunosupresión, riesgo de tendinopatía y sobreentrenamiento no funcional.</td>
-                    <td className="py-2.5 px-3 font-sans text-rose-400 font-semibold">Descarga inmediata (-45% vol)</td>
+                    <td className="py-2.5 px-3 font-sans text-zinc-300">{describeTsb(-31).label}</td>
                   </tr>
                   <tr className="bg-amber-950/20">
                     <td className="py-2.5 px-3 text-amber-400 font-bold">-30 a -10</td>
-                    <td className="py-2.5 px-3 font-sans font-bold text-amber-300">Sobrecarga Óptima</td>
-                    <td className="py-2.5 px-3 font-sans text-zinc-300">Estímulo adaptativo máximo. Aumento de densidad capilar y enzimas oxidativas.</td>
-                    <td className="py-2.5 px-3 font-sans text-amber-300">Mantener bloque de carga + HRV</td>
+                    <td className="py-2.5 px-3 font-sans text-zinc-300">{describeTsb(-20).label}</td>
                   </tr>
                   <tr className="bg-zinc-950">
                     <td className="py-2.5 px-3 text-zinc-300 font-bold">-10 a +5</td>
-                    <td className="py-2.5 px-3 font-sans font-bold text-zinc-200">Zona Neutra / Asimilación</td>
-                    <td className="py-2.5 px-3 font-sans text-zinc-400">Balance metabólico estable. Recuperación celular y consolidación del mesociclo.</td>
-                    <td className="py-2.5 px-3 font-sans text-zinc-300">Semanas de transición / Test</td>
+                    <td className="py-2.5 px-3 font-sans text-zinc-300">{describeTsb(0).label}</td>
                   </tr>
                   <tr className="bg-cyan-950/20">
                     <td className="py-2.5 px-3 text-cyan-400 font-bold">+5 a +25</td>
-                    <td className="py-2.5 px-3 font-sans font-bold text-cyan-300">Pico de Rendimiento (Peak Form)</td>
-                    <td className="py-2.5 px-3 font-sans text-zinc-300">Máxima potencia mitocondrial con fatiga neuromuscular prácticamente nula.</td>
-                    <td className="py-2.5 px-3 font-sans text-cyan-400 font-semibold">Día de carrera (Transvulcania)</td>
+                    <td className="py-2.5 px-3 font-sans text-zinc-300">{describeTsb(10).label}</td>
                   </tr>
                   <tr className="bg-zinc-950">
                     <td className="py-2.5 px-3 text-zinc-400 font-bold">&gt; +25</td>
-                    <td className="py-2.5 px-3 font-sans font-bold text-zinc-400">Desentrenamiento</td>
-                    <td className="py-2.5 px-3 font-sans text-zinc-400">Pérdida paulatina de adaptaciones mitocondriales y reducción de VO2max.</td>
-                    <td className="py-2.5 px-3 font-sans text-zinc-400">Reanudar estímulos aeróbicos Z1/Z2</td>
+                    <td className="py-2.5 px-3 font-sans text-zinc-300">{describeTsb(30).label}</td>
+                  </tr>
+                  <tr className="bg-zinc-950">
+                    <td colSpan={2} className="py-2.5 px-3 font-sans text-zinc-500">Bandas orientativas (Friel/Coggan), no validadas para ti. El TSB describe la carga; lo que haces hoy lo decide el estado de readiness.</td>
                   </tr>
                 </tbody>
               </table>
@@ -840,11 +832,10 @@ export const PMCChartView: React.FC<PMCChartViewProps> = ({ profile: propProfile
           <div className="bg-zinc-950 p-4 rounded-2xl border border-zinc-800 flex items-start gap-3">
             <TrendingUp className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
             <div className="text-xs space-y-1">
-              <span className="font-bold text-zinc-200">Regla de Oro: Ramp Rate de CTL Semanal</span>
+              <span className="font-bold text-zinc-200">Ramp Rate de CTL semanal (guía orientativa)</span>
               <p className="text-zinc-400 leading-relaxed">
-                Según las investigaciones de Joe Friel, el incremento de condición física (CTL) debe oscilar estrictamente entre 
-                <strong> +3 y +7 puntos por semana</strong>. Progresiones superiores a <strong>+10 CTL/semana</strong> incrementan 
-                exponencialmente la tasa de lesiones musculoesqueléticas y sobrecarga tendinosa en trail running.
+                La guía habitual de Joe Friel/TrainingPeaks sitúa la subida de CTL entre <strong>+3 y +7 puntos por semana</strong>.
+                Es una referencia general, no un umbral de lesión validado para ti: la app la muestra como dato y no decide con ella.
               </p>
             </div>
           </div>
@@ -974,7 +965,7 @@ export const PMCChartView: React.FC<PMCChartViewProps> = ({ profile: propProfile
                 <div className="text-right">
                   <span className="text-zinc-500 text-[9px] block">Diagnóstico</span>
                   <span className="text-zinc-300 text-[10px] font-sans font-semibold">
-                    {getTsbZoneDiagnosis(projTsb).label.split('(')[0]}
+                    {describeTsb(projTsb).label.split('(')[0]}
                   </span>
                 </div>
               </div>

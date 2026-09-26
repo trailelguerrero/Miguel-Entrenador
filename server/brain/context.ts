@@ -5,22 +5,40 @@ import { describeReadiness, evaluateReadiness, strictestReadiness, type Readines
 import { describeLoadHistory, weeklyLoadThresholds } from '../../src/utils/trainingLoad.js';
 import { tag } from '../../src/brain/provenance.js';
 import { resolveIntensityPrescription } from '../../src/brain/intensity.js';
+import { deriveWeeklyStructurePolicy, describeWeeklyStructurePolicy } from '../../src/utils/weekStructure.js';
 
 /** Disponibilidad: solo la que el atleta declara a mano; lo de Suunto es historial, no disponibilidad. */
 export function availabilityLine(p: any): string {
   const days = p?.availableDaysPerWeek;
-  if (days && p?.fieldSources?.availableDaysPerWeek === 'manual') {
-    return `Disponibilidad declarada por el atleta: ${days} días/semana${days <= 3 ? ' → como máximo 2 sesiones entre semana + tirada larga' : ''}.`;
+  const policy = deriveWeeklyStructurePolicy(p);
+  if (policy.source === 'declared') {
+    return `Disponibilidad declarada por el atleta: ${days} días/semana → ${describeWeeklyStructurePolicy(policy)} El sistema lo comprueba en código.`;
   }
   if (days) return `Disponibilidad no declarada por el atleta. Según Suunto entrena de media ${days} días/semana (incluye otros deportes); no es un límite.`;
   return 'Disponibilidad no declarada por el atleta.';
 }
 
+/**
+ * Qué es una zona del reloj para la app. Una Z3/Z5 del reloj SOLO es el umbral
+ * aeróbico/anaeróbico si el perfil tiene ese umbral con origen Suunto y el mismo
+ * valor (procedencia trazable). Si no, es una zona configurada, no un umbral medido.
+ */
+function zoneRole(value: unknown, field: 'aetHr' | 'antHr', profile: any, factory: boolean): string {
+  const name = field === 'aetHr' ? 'umbral aeróbico' : 'umbral anaeróbico';
+  if (factory) return ` (zona de FÁBRICA: no es tu ${name})`;
+  const src = profile?.fieldSources?.[field];
+  const v = profile?.[field];
+  if (typeof value === 'number' && src === 'suunto' && v === value) return ` (= tu ${name} en la app, origen Suunto)`;
+  if (src === 'manual' && typeof v === 'number' && v > 0) return ` (zona del reloj; tu ${name} lo fijaste a mano en ${v} ppm)`;
+  return ` (zona configurada del reloj; NO se considera ${name} medido)`;
+}
+
 /** Zonas del reloj y las recomendaciones de cambio, con su estado (pendiente, hecho o ignorado). */
-export function formatWatchZones(a: any, state?: Record<string, { status?: string }>): string {
+export function formatWatchZones(a: any, state?: Record<string, { status?: string }>, profile?: any): string {
   if (!a?.watch) return 'sin datos';
   const z = a.watch.zones;
-  const base = `FC máx ${a.watch.maxHr ?? '?'}; inicio Z2 ${z?.z2 ?? '?'}, Z3 ${z?.z3 ?? '?'} (= umbral aeróbico), Z4 ${z?.z4 ?? '?'}, Z5 ${z?.z5 ?? '?'} (= umbral anaeróbico)`;
+  const factory = (a.recommendations || []).some((r: any) => r?.field === 'zones' && r?.source === 'factory');
+  const base = `FC máx ${a.watch.maxHr ?? '?'}; inicio Z2 ${z?.z2 ?? '?'}, Z3 ${z?.z3 ?? '?'}${zoneRole(z?.z3, 'aetHr', profile, factory)}, Z4 ${z?.z4 ?? '?'}, Z5 ${z?.z5 ?? '?'}${zoneRole(z?.z5, 'antHr', profile, factory)}`;
   const statusOf = (r: any) => state?.[`${r.field}:${r.suggested ?? '-'}`]?.status ?? 'pending';
   const recs = (a.recommendations || []).map((r: any) => {
     const st = statusOf(r);
@@ -35,7 +53,9 @@ export function formatWatchZones(a: any, state?: Record<string, { status?: strin
 export function formatLoadContext(lc: any): string {
   if (!lc) return '- Sin datos de carga ni recuperación.';
   const lines: string[] = [];
-  if (lc.ctl != null) lines.push(`- ${tag('derived')} CTL ${lc.ctl} · ATL ${lc.atl} · TSB ${lc.tsb}${lc.weeklyTss != null ? ` · TSS últimos 7 días ${lc.weeklyTss}` : ''}`);
+  if (lc.ctl != null) lines.push(`- ${tag('derived')} CTL ${lc.ctl} · ATL ${lc.atl} · TSB ${lc.tsb}${lc.weeklyTss != null ? ` · TSS últimos 7 días ${lc.weeklyTss}` : ''}${
+    finite(lc.weeklyNonMeasuredTss) ? ` (${tag('estimated')} ${lc.weeklyNonMeasuredTss} de ellos NO medidos: estimados por la app o asignados por Suunto)` : ''
+  }`);
   if (lc.loadHistory) lines.push(`- ${tag('derived')} ${describeLoadHistory(lc.loadHistory)}`);
   for (const c of lc.recentCheckIns || []) {
     lines.push(`- ${c.date}: ${c.fromSuunto ? `${tag('real')} (Suunto)` : `${tag('real')} (declarado por el atleta)`} HRV ${c.hrvRmssd} ms (referencia ${c.hrvBaseline} ms), sueño ${c.sleepHours} h${c.napMinutes ? ` (+ ${c.napMinutes} min que Suunto marcó como siesta; puede ser parte de la noche, no se suman)` : ''}${c.recoveryPct != null ? `, Recovery Suunto ${c.recoveryPct}%` : ''}, semáforo ${tag('derived')} ${c.status}`);
@@ -53,7 +73,12 @@ const finite = (v: unknown): number | null => (typeof v === 'number' && Number.i
 /** Carga enviada por el cliente (TSB, TSS 7 días, CTL), saneada. */
 function loadInputs(load: any) {
   const ctl = finite(load?.ctl);
-  return { tsb: finite(load?.tsb), weeklyTss: finite(load?.weeklyTss), weeklyThresholds: weeklyLoadThresholds(ctl ?? undefined) };
+  return {
+    tsb: finite(load?.tsb),
+    weeklyTss: finite(load?.weeklyTss),
+    weeklyNonMeasuredTss: finite(load?.weeklyNonMeasuredTss),
+    weeklyThresholds: weeklyLoadThresholds(ctl ?? undefined),
+  };
 }
 
 function plannedFrom(w: any) {

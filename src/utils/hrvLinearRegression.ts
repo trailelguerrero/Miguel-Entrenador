@@ -6,8 +6,8 @@
  *   and 7-day rolling baseline values to quantify the rate of parasympathetic tone drift (slope m in ms/day).
  * - Projects autonomic fatigue trajectory for the next 7 days (t+1 through t+7) with standard error
  *   prediction corridors (confidence fan).
- * - Translates mathematical trend into actionable training load decisions (Uphill Athlete methodology):
- *   Determines whether the runner should apply a deload (-35% TSS), trim volume (-15%), or safely maintain/increase load.
+ * - Solo DESCRIBE la tendencia (bajando / estable / subiendo). No recomienda cargas
+ *   ni descargas: qué hacer hoy lo decide el motor de readiness (src/brain/readiness.ts).
  */
 
 import { DailyCheckIn, Workout, AthleteProfile } from '../types';
@@ -38,12 +38,12 @@ export interface ProjectedPoint {
   isBelowSwc: boolean;
 }
 
-export type FatigueRiskLevel = 
-  | 'insufficient_data'       // Menos de MIN_REGRESSION_NIGHTS noches: no hay tendencia que leer
-  | 'critical_overreaching'   // Tendencia descendente marcada hacia/bajo la banda SWC
-  | 'moderate_strain'         // Tendencia descendente leve
-  | 'stable_adaptation'       // Tendencia neutra dentro de la banda
-  | 'supercompensation';      // Tendencia ascendente (favorable; NO autoriza subir carga)
+export type HrvTrend =
+  | 'insufficient_data' // Menos de MIN_REGRESSION_NIGHTS noches: no hay tendencia que leer
+  | 'falling_marked'    // Descenso marcado, o proyección bajo la banda SWC
+  | 'falling_slight'    // Descenso leve
+  | 'stable'            // Pendiente neutra dentro de la banda
+  | 'rising';           // Ascenso (NO autoriza subir carga)
 
 /** Noches con HRV medida por debajo de las cuales no se calcula tendencia (umbral de la app). */
 export const MIN_REGRESSION_NIGHTS = 10;
@@ -66,14 +66,10 @@ export interface LinearRegressionResult {
   projectedHrv7d: number;     // Projected value at day t+7
   projectedDelta7d: number;   // projectedHrv7d - currentHrv7d
   daysUntilSwcCrossover: number | null; // Days until crossing below SWC lower, or null
-  fatigueRiskLevel: FatigueRiskLevel;
-  riskTitle: string;
-  riskDescription: string;
-  riskBadgeColor: string;
-  recommendedAction: string;
-  /** Siempre 0: la tendencia de HRV no fija % de carga (es un modificador, no un autorizador). */
-  recommendedLoadAdjustmentPct: number;
-  coachPrescription: string;
+  trend: HrvTrend;
+  trendTitle: string;
+  trendDescription: string;
+  trendBadgeColor: string;
   historicalPoints: HistoricalRegressionPoint[];
   projectedPoints: ProjectedPoint[];
 }
@@ -267,56 +263,39 @@ export function calculateHrvPredictiveRegression(
   const projectedHrv7d = finalProjectedDay.simulatedHrv;
   const projectedDelta7d = Math.round((projectedHrv7d - currentHrv7d) * 10) / 10;
 
-  // 4. Lectura de la tendencia (no es un diagnóstico clínico)
-  let fatigueRiskLevel: FatigueRiskLevel;
-  let riskTitle: string;
-  let riskDescription: string;
-  let riskBadgeColor: string;
-  let recommendedAction: string;
-  let recommendedLoadAdjustmentPct: number;
-  let coachPrescription: string;
-
-  // La HRV es un MODIFICADOR, no un autorizador: ninguna tendencia da permiso para subir
-  // carga ni fija un % de recorte. Qué hacer hoy lo decide el motor de readiness.
-  const TODAY_RULE = 'Qué sesión hacer hoy lo decide el semáforo del día (check-in y motor de readiness).';
+  // 4. Lectura de la tendencia: descripción, no diagnóstico ni recomendación.
+  // La HRV no autoriza ni fija carga: qué hacer hoy lo decide el motor de readiness.
+  let trend: HrvTrend;
+  let trendTitle: string;
+  let trendDescription: string;
+  let trendBadgeColor: string;
   const fit = `ajuste R² ${rSquared.toFixed(2)}${rSquared < 0.1 ? ', tendencia débil' : ''}; ${n} noches`;
-  recommendedLoadAdjustmentPct = 0;
 
   if (n < MIN_REGRESSION_NIGHTS) {
-    fatigueRiskLevel = 'insufficient_data';
-    riskTitle = 'Datos insuficientes para una tendencia';
-    riskDescription = `Solo hay ${n} noche${n === 1 ? '' : 's'} con HRV de Suunto en los últimos 30 días; hacen falta al menos ${MIN_REGRESSION_NIGHTS} para leer una tendencia.`;
-    riskBadgeColor = 'bg-zinc-700/40 text-zinc-300 border-zinc-600';
-    recommendedAction = 'Sin conclusiones: sincroniza Suunto a diario para acumular noches.';
-    coachPrescription = `Coach Miguel: "Con ${n} noches no puedo sacar una tendencia fiable de tu HRV. ${TODAY_RULE}"`;
+    trend = 'insufficient_data';
+    trendTitle = 'Datos insuficientes para una tendencia';
+    trendDescription = `Solo hay ${n} noche${n === 1 ? '' : 's'} con HRV de Suunto en los últimos 30 días; hacen falta al menos ${MIN_REGRESSION_NIGHTS} para leer una tendencia.`;
+    trendBadgeColor = 'bg-zinc-700/40 text-zinc-300 border-zinc-600';
   } else if (slopeDaily <= -0.28 || projectedHrv7d < swcLower) {
-    fatigueRiskLevel = 'critical_overreaching';
-    riskTitle = 'Tendencia descendente marcada de la HRV';
-    riskDescription = `La HRV baja ${(slopeDaily).toFixed(2)} ms/día (${slopeWeekly} ms/semana) y, si siguiera igual, en 7 días estaría en ${projectedHrv7d} ms, por debajo de tu banda normal (${swcLower} ms). Es una proyección lineal (${fit}), no un diagnóstico.`;
-    riskBadgeColor = 'bg-rose-500/20 text-rose-400 border-rose-500/40';
-    recommendedAction = 'Vigila la recuperación y considera una descarga si el semáforo del día sale ámbar o rojo.';
-    coachPrescription = `Coach Miguel: "Tu HRV viene bajando de forma clara. No es un diagnóstico, pero conviene no apretar hasta que se estabilice. ${TODAY_RULE}"`;
+    trend = 'falling_marked';
+    trendTitle = 'HRV bajando de forma marcada';
+    trendDescription = `La HRV baja ${(slopeDaily).toFixed(2)} ms/día (${slopeWeekly} ms/semana) y, si siguiera igual, en 7 días estaría en ${projectedHrv7d} ms, por debajo de tu banda normal (${swcLower} ms). Es una proyección lineal (${fit}), no un diagnóstico.`;
+    trendBadgeColor = 'bg-rose-500/20 text-rose-400 border-rose-500/40';
   } else if (slopeDaily < -0.08 || (projectedHrv7d <= swcLower + 1.5)) {
-    fatigueRiskLevel = 'moderate_strain';
-    riskTitle = 'Tendencia descendente leve de la HRV';
-    riskDescription = `Pendiente de ${(slopeDaily).toFixed(2)} ms/día. La HRV sigue en tu banda normal (${swcLower}-${swcUpper} ms), pero la proyección a 7 días (${projectedHrv7d} ms) se acerca al límite inferior (${fit}).`;
-    riskBadgeColor = 'bg-amber-500/20 text-amber-400 border-amber-500/40';
-    recommendedAction = 'Prudencia con la intensidad los próximos días.';
-    coachPrescription = `Coach Miguel: "La tendencia es algo descendente; nada alarmante, pero no la ignores. ${TODAY_RULE}"`;
+    trend = 'falling_slight';
+    trendTitle = 'HRV bajando levemente';
+    trendDescription = `Pendiente de ${(slopeDaily).toFixed(2)} ms/día. La HRV sigue en tu banda normal (${swcLower}-${swcUpper} ms); la proyección a 7 días (${projectedHrv7d} ms) se acerca al límite inferior (${fit}).`;
+    trendBadgeColor = 'bg-amber-500/20 text-amber-400 border-amber-500/40';
   } else if (slopeDaily > 0.20 && projectedHrv7d >= baselineHrv) {
-    fatigueRiskLevel = 'supercompensation';
-    riskTitle = 'Tendencia ascendente de la HRV';
-    riskDescription = `Pendiente positiva (+${(slopeDaily).toFixed(2)} ms/día) por encima de tu referencia (${baselineHrv} ms) (${fit}). Es una señal favorable de recuperación.`;
-    riskBadgeColor = 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40';
-    recommendedAction = 'Sin restricciones extra. Una HRV al alza no autoriza por sí sola a subir la carga.';
-    coachPrescription = `Coach Miguel: "Buena señal: tu HRV sube. Sigue el plan; subir la carga lo decide la progresión del plan, no la HRV sola. ${TODAY_RULE}"`;
+    trend = 'rising';
+    trendTitle = 'HRV subiendo';
+    trendDescription = `Pendiente positiva (+${(slopeDaily).toFixed(2)} ms/día) por encima de tu referencia (${baselineHrv} ms) (${fit}). Una HRV al alza no autoriza por sí sola a subir la carga.`;
+    trendBadgeColor = 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40';
   } else {
-    fatigueRiskLevel = 'stable_adaptation';
-    riskTitle = 'Tendencia estable de la HRV';
-    riskDescription = `Pendiente neutra (${(slopeDaily >= 0 ? '+' : '') + (slopeDaily).toFixed(2)} ms/día); proyección a 7 días de ${projectedHrv7d} ms dentro de tu banda normal (${fit}).`;
-    riskBadgeColor = 'bg-cyan-500/20 text-cyan-400 border-cyan-500/40';
-    recommendedAction = 'Mantén el plan.';
-    coachPrescription = `Coach Miguel: "Tu HRV está estable. ${TODAY_RULE}"`;
+    trend = 'stable';
+    trendTitle = 'HRV estable';
+    trendDescription = `Pendiente neutra (${(slopeDaily >= 0 ? '+' : '') + (slopeDaily).toFixed(2)} ms/día); proyección a 7 días de ${projectedHrv7d} ms dentro de tu banda normal (${fit}).`;
+    trendBadgeColor = 'bg-cyan-500/20 text-cyan-400 border-cyan-500/40';
   }
 
   return {
@@ -336,13 +315,10 @@ export function calculateHrvPredictiveRegression(
     projectedHrv7d,
     projectedDelta7d,
     daysUntilSwcCrossover,
-    fatigueRiskLevel,
-    riskTitle,
-    riskDescription,
-    riskBadgeColor,
-    recommendedAction,
-    recommendedLoadAdjustmentPct,
-    coachPrescription,
+    trend,
+    trendTitle,
+    trendDescription,
+    trendBadgeColor,
     historicalPoints,
     projectedPoints,
   };

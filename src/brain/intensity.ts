@@ -88,3 +88,8 @@ export function describeIntensityPrescription(p: IntensityPrescription, profile?
   if (p.missing.length) lines.push(`Datos que faltan: ${p.missing.join(', ')}.`);
   return lines.join('\n');
 }
+
+/** Umbral anaeróbico MEDIDO (Suunto o manual) para estimar hrTSS; undefined si no hay (nunca un valor por defecto). */
+export function measuredAntHr(profile: Partial<AthleteProfile> | undefined): number | undefined {
+  return measured(profile, 'antHr') ?? undefined;
+}

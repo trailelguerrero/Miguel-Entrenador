@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { measuredAntHr } from '../brain/intensity';
 import { 
   X, 
   Clock, 
@@ -159,7 +160,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
       const tssResult = calculateWorkoutTss(
         Number(actualDuration),
         Number(actualAvgHr) || undefined,
-        profile.antHr || undefined,
+        measuredAntHr(profile),
         Number(athleteRpe) || undefined
       );
 
@@ -389,7 +390,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                   <span className="text-[10px] text-zinc-500 uppercase tracking-wider block font-semibold">TSS Sesión</span>
                   <div className="flex items-baseline gap-1 mt-0.5">
                     <span className="text-xl font-black text-amber-400 font-mono">
-                      {getWorkoutLoad(workout, profile.antHr)?.tss ?? workout.plannedTss ?? calculateWorkoutTss(workout.plannedDurationMin, undefined, profile.antHr || undefined).tss}
+                      {getWorkoutLoad(workout, measuredAntHr(profile))?.tss ?? workout.plannedTss ?? calculateWorkoutTss(workout.plannedDurationMin, undefined, measuredAntHr(profile)).tss}
                     </span>
                     <span className="text-[10px] text-zinc-500">TSS</span>
                   </div>
@@ -402,7 +403,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                         ? workout.intensityFactor.toFixed(2)
                         : workout.suuntoWorkoutKey
                           ? '—'
-                          : calculateWorkoutTss(workout.actualDurationMin || workout.plannedDurationMin, workout.actualAvgHr || undefined, profile.antHr || undefined, workout.athleteRpe).intensityFactor.toFixed(2)}
+                          : calculateWorkoutTss(workout.actualDurationMin || workout.plannedDurationMin, workout.actualAvgHr || undefined, measuredAntHr(profile), workout.athleteRpe).intensityFactor.toFixed(2)}
                     </span>
                     <span className="text-[10px] text-zinc-500">IF</span>
                   </div>

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { X, Heart, Moon, Zap, AlertTriangle, CheckCircle, ArrowRight, Activity } from 'lucide-react';
 import { DailyCheckIn } from '../types';
-import { computeReadiness } from '../utils/readiness';
+import { computeReadiness, READINESS_ENGINE_VERSION } from '../utils/readiness';
 import { localDateKey } from '../utils/trainingLoad';
 import { StorageService } from '../services/storage';
 
@@ -61,6 +61,7 @@ export const DailyReadinessModal: React.FC<DailyReadinessModalProps> = ({
       status: calculatedStatus,
       coachAdvice,
       suggestedAction,
+      derivedEngineVersion: READINESS_ENGINE_VERSION,
     };
 
     onSave(checkIn);

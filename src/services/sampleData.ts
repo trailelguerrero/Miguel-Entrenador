@@ -451,14 +451,11 @@ export const generateSamplePMCData = (daysCount: number = 90): PMCDataPoint[] =>
       workoutTitle = tss > 0 ? 'Recuperación Activa Z1' : undefined;
     }
 
-    // Mountain-adjusted TSS factoring in eccentric descent:
-    const mountainTss = tss + Math.round((dMinus / 1000) * 8);
-
     // Standard impulse-response model for PMC:
     // CTL_today = CTL_yesterday + (TSS - CTL_yesterday) * (1 - e^(-1/42))
     // ATL_today = ATL_yesterday + (TSS - ATL_yesterday) * (1 - e^(-1/7))
-    ctl = ctl + (mountainTss - ctl) * ctlDecay;
-    atl = atl + (mountainTss - atl) * atlDecay;
+    ctl = ctl + (tss - ctl) * ctlDecay;
+    atl = atl + (tss - atl) * atlDecay;
     const tsb = ctl - atl;
 
     ctlHistory.push(ctl);
@@ -471,7 +468,6 @@ export const generateSamplePMCData = (daysCount: number = 90): PMCDataPoint[] =>
       date: dateStr,
       dayLabel: d.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' }),
       tss,
-      mountainTss,
       intensityFactor: ifFactor > 0 ? ifFactor : undefined,
       ctl: Math.round(ctl * 10) / 10,
       atl: Math.round(atl * 10) / 10,
@@ -772,7 +768,7 @@ export const SAMPLE_WEEKLY_SUMMARIES: WeeklyPerformanceSummary[] = [
     totalElevationLossM: 920,
     completedWorkoutsCount: 4,
     plannedWorkoutsCount: 4,
-    mountainTss: 172,
+    weeklyTss: 172,
     avgHeartRate: 135,
     compliancePct: 100,
     coachWeeklyAssessment: 'Semana impecable de disciplina aeróbica. Ritmo de caminata en subidas empinadas para salvaguardar el AeT a 142 bpm.',
@@ -799,7 +795,7 @@ export const SAMPLE_WEEKLY_SUMMARIES: WeeklyPerformanceSummary[] = [
     totalElevationLossM: 1140,
     completedWorkoutsCount: 4,
     plannedWorkoutsCount: 4,
-    mountainTss: 215,
+    weeklyTss: 215,
     avgHeartRate: 136,
     compliancePct: 100,
     coachWeeklyAssessment: 'Crecimiento de volumen progresivo. El pulso promedio se mantuvo en 136 bpm en tirada larga. Ratio aeróbico del 89.4%.',
@@ -826,7 +822,7 @@ export const SAMPLE_WEEKLY_SUMMARIES: WeeklyPerformanceSummary[] = [
     totalElevationLossM: 1580,
     completedWorkoutsCount: 4,
     plannedWorkoutsCount: 4,
-    mountainTss: 278,
+    weeklyTss: 278,
     avgHeartRate: 137,
     compliancePct: 100,
     coachWeeklyAssessment: 'Superada la barrera de los 1.500m D+. Muy buena respuesta neuromuscular con las sesiones de sóleo excéntrico.',
@@ -853,7 +849,7 @@ export const SAMPLE_WEEKLY_SUMMARIES: WeeklyPerformanceSummary[] = [
     totalElevationLossM: 1850,
     completedWorkoutsCount: 4,
     plannedWorkoutsCount: 4,
-    mountainTss: 320,
+    weeklyTss: 320,
     avgHeartRate: 137,
     compliancePct: 100,
     coachWeeklyAssessment: 'Pico de volumen del segundo mesociclo. Aumento de velocidad a pulso constante (de 6:25 a 6:05 min/km a 140 bpm).',
@@ -880,7 +876,7 @@ export const SAMPLE_WEEKLY_SUMMARIES: WeeklyPerformanceSummary[] = [
     totalElevationLossM: 1320,
     completedWorkoutsCount: 4,
     plannedWorkoutsCount: 4,
-    mountainTss: 228,
+    weeklyTss: 228,
     avgHeartRate: 134,
     compliancePct: 100,
     coachWeeklyAssessment: 'Semana de descarga asimilativa. Regeneración completa comprobada con HRV en verde y pulso en reposo a 46 bpm.',

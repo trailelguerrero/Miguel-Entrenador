@@ -4,6 +4,7 @@
 // navegador solo se usa para lo que el servidor aún no tiene (p. ej. antes de la
 // importación) o no guarda todavía (nutrición, hidratación).
 import type { AthleteHistoryDocument, AthleteProfile, CoachLearnedMemory, DailyCheckIn, TargetRace, Workout } from '../../src/types/index.js';
+import { resolveIntensityPrescription } from '../../src/brain/intensity.js';
 import { buildBrainContext, summarizeWeekWorkouts } from '../../src/brain/context.js';
 import { storeReady } from '../store/docStore.js';
 import { getSingleton, isImported, listCheckIns, listWorkouts } from '../store/athleteData.js';
@@ -50,12 +51,12 @@ export async function withServerData(body: any, route: BrainRoute): Promise<Serv
         out.targetRace = targetRaceS ?? body?.targetRace;
         out.coachMemory = memory;
         out.loadContext = ctx();
-        if (typeof body?.weekStartDate === 'string') out.existingWorkouts = summarizeWeekWorkouts(workouts, body.weekStartDate, profile.antHr);
+        if (typeof body?.weekStartDate === 'string') out.existingWorkouts = summarizeWeekWorkouts(workouts, body.weekStartDate, resolveIntensityPrescription(profile).antHr ?? undefined);
         break;
       case 'adapt-session': {
         const c = ctx();
         out.checkIn = todayCheckIn ?? body?.checkIn;
-        out.readinessInputs = { tsb: c.tsb, weeklyTss: c.weeklyTss, ctl: c.ctl };
+        out.readinessInputs = { tsb: c.tsb, weeklyTss: c.weeklyTss, weeklyNonMeasuredTss: c.weeklyNonMeasuredTss, ctl: c.ctl };
         break;
       }
       case 'analyze-workout':

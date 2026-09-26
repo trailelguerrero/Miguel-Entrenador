@@ -1,3 +1,5 @@
+import type { LegacyZoneSenseTarget } from '../legacy/zonesense';
+
 export type WorkoutType = 
   | 'easy_run' 
   | 'long_mountain_run' 
@@ -26,11 +28,6 @@ export type ZoneSenseTarget =
   | 'ZoneSense amarillo (entre umbrales)'
   | 'ZoneSense rojo (sobre umbral anaeróbico)'
   | 'Regenerativo (verde, muy suave)';
-export type LegacyZoneSenseTarget =
-  | 'DFA a1 > 0.75 (Aeróbico puro)'
-  | 'DFA a1 0.75 - 0.50 (Transición)'
-  | 'DFA a1 < 0.50 (Anaeróbico)'
-  | 'Regenerativo';
 
 /** Fuente de la prescripción de intensidad (jerarquía en src/brain/intensity.ts). */
 export type IntensitySource = 'zonesense' | 'heart_rate_measured' | 'rpe' | 'terrain' | 'unknown';
@@ -43,6 +40,8 @@ export interface Workout {
   plannedDurationMin: number;
   plannedDistanceKm?: number;
   plannedElevationGainM?: number;
+  /** D− planificado (m). Sin dato, el presupuesto mecánico toma el D+ (ruta circular). */
+  plannedElevationLossM?: number | null;
   
   // Uphill Athlete & ZoneSense targets
   // Topes de FC: SOLO con umbral medido (si no, null). Ver src/brain/intensity.ts
@@ -51,7 +50,7 @@ export interface Workout {
   /** De dónde sale la prescripción de intensidad de esta sesión. */
   intensitySource?: IntensitySource;
   // Objetivo de intensidad en colores de ZoneSense (NO equivalen a pulsaciones).
-  // Se aceptan los textos antiguos "DFA a1 ..." de sesiones ya guardadas.
+  // Se aceptan los textos de versiones antiguas (ver src/legacy/zonesense.ts).
   zoneSenseTarget?: ZoneSenseTarget | LegacyZoneSenseTarget;
   
   description: string;
@@ -232,7 +231,6 @@ export interface PMCDataPoint {
   date: string; // YYYY-MM-DD
   dayLabel: string;
   tss: number; // Standard Training Stress Score (Coggan)
-  mountainTss: number; // Mountain-adjusted TSS factoring eccentric descent
   ctl: number; // Chronic Training Load (Fitness - 42d EWMA)
   atl: number; // Acute Training Load (Fatigue - 7d EWMA)
   tsb: number; // Training Stress Balance (Form = CTL - ATL)
@@ -607,8 +605,8 @@ export interface SuuntoProfileSuggestion {
 // 5. Performance Summary & Mesocycle Progression Types
 export interface WeeklyZoneDistribution {
   zone1Min: number; // Recuperación / Regenerativo (< AeT - 15)
-  zone2Min: number; // Base Aeróbica Sub-AeT (AeT - 15 a AeT, DFA a1 > 0.75)
-  zone3Min: number; // Tempo / Transición (AeT a AnT - 10, DFA a1 0.75 - 0.50)
+  zone2Min: number; // Base Aeróbica Sub-AeT (AeT - 15 a AeT)
+  zone3Min: number; // Tempo / Transición (AeT a AnT - 10)
   zone4Min: number; // Umbral Anaeróbico AnT (AnT - 10 a AnT + 5)
   zone5Min: number; // VO2max / Anaeróbico (> AnT + 5)
   totalDurationMin: number;
@@ -628,7 +626,8 @@ export interface WeeklyPerformanceSummary {
   totalElevationLossM: number;
   completedWorkoutsCount: number;
   plannedWorkoutsCount: number;
-  mountainTss: number;
+  /** TSS de la semana (sin ajuste por desnivel: no hay un factor validado). */
+  weeklyTss: number;
   zoneDistribution: WeeklyZoneDistribution;
   avgHeartRate?: number;
   compliancePct: number;
@@ -664,10 +663,15 @@ export interface DailyCheckIn {
   readinessScore?: number;
   /** Muestras de Recovery de Suunto de ese día (pocas = día aún incompleto). */
   recoverySamples?: number;
-  /** Verde, ámbar, rojo o 'unknown' (sin HRV, sueño ni dolor: no se puede valorar). */
+  /**
+   * DERIVADOS (caché): verde/ámbar/rojo/'unknown', consejo y acción. No son datos:
+   * al leer se recalculan con el motor actual (deriveCheckIn en utils/readiness).
+   */
   status: 'optimal' | 'moderate' | 'fatigued' | 'unknown';
   coachAdvice: string;
   suggestedAction?: 'maintain' | 'downgrade_easy' | 'full_rest' | 'swap_with_rest';
+  /** Versión del motor que calculó los campos derivados (READINESS_ENGINE_VERSION). */
+  derivedEngineVersion?: string;
   source?: 'suunto'; // presente si el check-in viene de la sincronización con Suunto
   /**
    * Minutos que Suunto marcó como "siesta" y terminaron ese día. No se suman a
@@ -766,30 +770,10 @@ export interface WeeklyHrvFatigueTrend {
   avgMuscleSoreness: number; // 1-10
   avgStressLevel: number; // 1-10
   avgReadinessScore: number; // 0-100
-  amberRedDaysCount: number;
   totalDays: number;
-  fatigueClassification: 'optimal_recovery' | 'functional_overreaching' | 'accumulated_fatigue' | 'imminent_overtraining';
+  /** Descriptivo: HRV media semanal frente a la referencia (no es un diagnóstico). */
+  hrvClassification: 'no_data' | 'in_reference' | 'slightly_below' | 'below';
   isCurrentWeek: boolean;
-}
-
-export interface DeloadPrediction {
-  urgency: 'low' | 'moderate' | 'high' | 'imminent';
-  recommendedStartDate: string;
-  recommendedDurationDays: number;
-  confidencePct: number;
-  currentMesocycleWeek: number; // e.g. Week 4 of 4
-  totalLoadingWeeks: number;
-  triggersDetected: string[];
-  physiologicalRationale: string;
-  suggestedVolumeReductionPct: number;
-  coachMiguelPrescription: {
-    maxHeartRateCap: number;
-    zoneSenseTarget: string;
-    weeklyVolumeHours: number;
-    prohibitedElements: string[];
-    mandatoryElements: string[];
-    recoveryInterventions: string[];
-  };
 }
 
 // 7. Fartlek Generator Types
