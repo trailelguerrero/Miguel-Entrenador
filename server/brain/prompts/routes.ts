@@ -127,7 +127,7 @@ ${formatLoadContext(brainContext)}
 
 /** Prompt de /api/generate-plan. */
 export function buildPlanPrompt(body: any): string {
-  const { athleteProfile, targetRace, weekStartDate, planFromDate, phaseFocus, existingWorkouts, athleteHistoryDoc, coachMemory, loadContext, nutritionEvidence } = body || {};
+  const { athleteProfile, targetRace, weekStartDate, planFromDate, phaseFocus, existingWorkouts, athleteHistoryDoc, coachMemory, loadContext, nutritionEvidence, weekTargetText } = body || {};
   const partialWeek = typeof planFromDate === 'string' && typeof weekStartDate === 'string' && planFromDate > weekStartDate;
   const intensity = resolveIntensityPrescription(athleteProfile);
   const weekSessions = Array.isArray(existingWorkouts) && existingWorkouts.length
@@ -153,7 +153,7 @@ ${
       : `Genera un microciclo semanal de entrenamiento de 7 días (comenzando el lunes ${weekStartDate || 'próximo'}) para preparar su carrera objetivo.`
   }
 [OBJETIVO PRINCIPAL] ${describeTargetRace(targetRace)}
-
+${typeof weekTargetText === 'string' && weekTargetText ? `\n[PLAN HASTA LA CARRERA: ESTA SEMANA]\n${weekTargetText}\nNo superes esos topes: el sistema rechaza el plan si la semana los pasa. Si el estado de hoy pide menos, haz menos.\n` : ''}
 [DIRECTIVA CRÍTICA: CERO PLANES GENÉRICOS O DE PLANTILLA]:
 - Queda TERMINANTEMENTE PROHIBIDO prescribir sesiones genéricas estándar (como "45 min de carrera suave", "hacer series", "estirar").
 - Cada sesión debe estar diseñada al 100% para ESTE atleta individual, teniendo en cuenta sus antecedentes, sus zonas fisiológicas exactas, sus debilidades mecánicas y las reglas aprendidas.

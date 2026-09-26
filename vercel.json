@@ -21,6 +21,10 @@
     {
       "path": "/api/cron/suunto-sync",
       "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/cron/weekly-plan",
+      "schedule": "0 17 * * 0"
     }
   ]
 }

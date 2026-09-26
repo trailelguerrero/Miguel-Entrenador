@@ -137,7 +137,7 @@ export function resolveReadinessState(body: any): ReadinessState {
 }
 
 /** Carrera objetivo por defecto (si la app no la envía). */
-export const DEFAULT_TARGET = { name: 'Transvulcania 2027', distanceKm: 73, elevationGainM: 4350, elevationLossM: 4057, location: 'La Palma', dateConfirmed: false } as const;
+export const DEFAULT_TARGET = { name: 'Transvulcania 2027', distanceKm: 73, elevationGainM: 4350, elevationLossM: 4057, location: 'La Palma', date: '2027-05-08', dateConfirmed: true } as const;
 
 /**
  * La carrera objetivo en texto para Miguel, a partir de los DATOS de la app (no escrita

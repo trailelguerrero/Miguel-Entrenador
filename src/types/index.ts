@@ -705,15 +705,49 @@ export interface DailyCheckIn {
   isSample?: boolean;
 }
 
+export type MesocyclePhase = 'base_aerobic' | 'ads_reversal' | 'muscular_endurance' | 'mountain_specific' | 'peak_taper';
+
+/** Objetivo de UNA semana del macrociclo (lo fija el código: src/brain/macrocycle.ts). */
+export interface MicrocycleTarget {
+  /** Lunes de la semana. */
+  monday: string;
+  /** Índice de la semana en el macrociclo (0 = primera). */
+  index: number;
+  phase: MesocyclePhase;
+  /** Semana de carga, de descarga, de afinado o de carrera. */
+  kind: 'load' | 'recovery' | 'taper' | 'race';
+  /** Horas de entrenamiento a pie objetivo (tope; Miguel puede proponer menos). */
+  targetHours: number;
+  /** D+ semanal objetivo en metros (tope). */
+  targetElevationGainM: number;
+  /** Duración objetivo de la tirada larga (min). */
+  longRunMin: number;
+  /** D+ objetivo de la tirada larga (m). */
+  longRunElevationGainM: number;
+}
+
+/** Adaptación que busca un mesociclo, medible con datos que la app ya tiene. */
+export interface AdaptationMarker {
+  id: 'aerobic_share' | 'drift_test' | 'long_run' | 'long_run_elevation' | 'descent_tolerance' | 'gut_tolerance' | 'readiness_green';
+  label: string;
+  /** Valor objetivo (unidades según el marcador) o null si es cualitativo. */
+  target: number | null;
+  unit?: string;
+}
+
 export interface Mesocycle {
   id: string;
   number: number;
   title: string;
-  phase: 'base_aerobic' | 'ads_reversal' | 'muscular_endurance' | 'mountain_specific' | 'peak_taper';
+  phase: MesocyclePhase;
   startDate: string;
   endDate: string;
   focus: string;
   keyWorkouts: string[];
+  /** Adaptaciones buscadas en este mesociclo (las evalúa el código). */
+  markers?: AdaptationMarker[];
+  /** Explicación de Miguel (texto; no puede cambiar fechas ni cifras). */
+  rationale?: string;
 }
 
 export interface MacrocyclePlan {
@@ -724,6 +758,14 @@ export interface MacrocyclePlan {
   totalWeeks: number;
   mesocycles: Mesocycle[];
   secondaryRaces: TargetRace[];
+  /** Objetivos semana a semana (fuente única de las cifras del plan largo). */
+  weeks?: MicrocycleTarget[];
+  /** Carga de partida medida (media semanal de las 4-6 semanas anteriores al plan). */
+  baseline?: { weeklyHours: number; weeklyElevationGainM: number; longestRunMin: number; weeksOfData: number; conservative: boolean };
+  version?: number;
+  createdAt?: string;
+  /** Cambios del plan (re-planificaciones, semanas repetidas) para contárselos al atleta. */
+  log?: Array<{ date: string; message: string }>;
 }
 
 export interface ChatMessage {

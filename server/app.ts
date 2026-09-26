@@ -4,6 +4,8 @@ import { registerSuuntoRoutes } from './suunto-routes.js';
 import { registerSuuntoSyncRoutes } from './suunto-sync.js';
 import { registerDataRoutes } from './data-routes.js';
 import { serverData } from './brain/serverData.js';
+import { generateWeekPlan } from './brain/weeklyPlan.js';
+import { registerWeeklyPlanRoutes } from './weekly-plan-cron.js';
 import { storeProblem, storeReady } from './store/docStore.js';
 import { SESSION_DAYS, createSessionToken, isAuthenticated, loginSecrets, requireSession, secretMatches, sessionCookie } from './auth.js';
 import { sanitizeEvidenceItems } from '../src/brain/memory.js';
@@ -16,12 +18,10 @@ import {
   buildChatEvidencePrompt,
   buildHistoryPrompt,
   buildNoteEvidencePrompt,
-  buildPlanPrompt,
 } from './brain/prompts/routes.js';
 import { RACE_EXTRACTION_SYSTEM, RACE_SEARCH_SYSTEM, buildRaceAdvicePrompt, buildRaceExtractionPrompt, buildRaceSearchPrompt } from './brain/prompts/race.js';
 import { athleteToday, resolveReadinessState } from './brain/context.js';
-import { applyTodayReadinessToPlan, sanitizeAdaptation, sanitizePlanWorkouts, validatePlanContract } from './brain/decision/validate.js';
-import { deriveWeeklyStructurePolicy } from '../src/utils/weekStructure.js';
+import { sanitizeAdaptation } from './brain/decision/validate.js';
 import { filterRaceAdvice, RACE_NUMERIC_FIELDS, RACE_TEXT_FIELDS, targetFigures, verifyRaceInfo } from './brain/decision/race.js';
 import { verifyHistoryNumbers } from './brain/decision/history.js';
 import { RETRIEVED_DATA_RULE, buildKnowledgeBlock, buildLibraryIndexBlock, buildKnowledgeQuery, buildMemoryBlock, chatTurnsFromBody, withRetrievedContext } from './brain/prompts/knowledge.js';
@@ -296,50 +296,21 @@ app.post('/api/chat', serverData('chat'), async (req: Request, res: Response) =>
 // 2. Generate Plan / Microcycle Workouts
 app.post('/api/generate-plan', serverData('generate-plan'), async (req: Request, res: Response) => {
   try {
-    const { athleteProfile, weekStartDate, nutritionEvidence } = req.body;
+    const { weekStartDate } = req.body;
     if (typeof weekStartDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(weekStartDate)) {
       return res.status(400).json({ error: 'Falta el lunes de la semana (weekStartDate).', code: 'PLAN_INPUT' });
     }
-    // Semana en curso: solo desde planFromDate; lo ya hecho cuenta para la estructura
-    const planFromDate = typeof req.body?.planFromDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.body.planFromDate) ? req.body.planFromDate : undefined;
-    const planOpts = {
-      fromDate: planFromDate,
-      done: (Array.isArray(req.body?.existingWorkouts) ? req.body.existingWorkouts : [])
-        .filter((w: any) => w?.status === 'hecha' && typeof w.date === 'string' && typeof w.type === 'string')
-        .map((w: any) => ({ date: w.date, type: w.type })),
-    };
-    const t0 = Date.now();
-    const basePrompt = buildPlanPrompt({ ...req.body, planFromDate });
-
-    // Plan de la IA → limpieza → CONTRATO DEL PLAN. Si lo incumple, un reintento
-    // con los motivos (si queda tiempo en la función de 60 s); si no, se rechaza.
-    const attempt = async (prompt: string) => {
-      const parsed = parseModelJson(await runAi(res, { system: MIGUEL_SYSTEM_INSTRUCTION, input: prompt, json: true }));
-      const checked = sanitizePlanWorkouts(parsed.workouts, athleteProfile, weekStartDate, nutritionEvidence);
-      return { parsed, checked, contract: validatePlanContract(checked.workouts, weekStartDate, deriveWeeklyStructurePolicy(athleteProfile), planOpts) };
-    };
-    let r = await attempt(basePrompt);
-    if (r.contract.status === 'rejected' && Date.now() - t0 < 25_000) {
-      r = await attempt(`${basePrompt}\n\n[TU PROPUESTA ANTERIOR SE RECHAZÓ por: ${r.contract.issues.join('; ')}. Corrígelo cumpliendo la estructura obligatoria.]`);
-    }
-    if (r.contract.status === 'rejected') {
+    const r = await generateWeekPlan(req.body, (opts) => runAi(res, opts));
+    if (!r.ok) {
       return res.status(422).json({
         status: 'rejected',
         code: 'PLAN_REJECTED',
         error: 'El plan de Miguel no cumple la estructura obligatoria y no se ha guardado.',
-        issues: r.contract.issues,
-        hint: 'Vuelve a pulsar "Generar semana con Miguel".',
+        issues: r.issues,
+        hint: 'Vuelve a pulsar "Planificar semana".',
       });
     }
-    // La sesión de hoy del plan, recortada a los límites del motor de readiness
-    const today = applyTodayReadinessToPlan(r.contract.workouts, req.body?.loadContext, athleteProfile);
-    res.json({
-      ...r.parsed,
-      status: r.contract.status,
-      workouts: today.workouts,
-      validationNotes: [...r.checked.notes, ...r.contract.repairs, ...today.corrections],
-      structureIssues: [],
-    });
+    res.json(r.payload);
   } catch (err) {
     sendAiError(res, '/api/generate-plan', err);
   }
@@ -518,6 +489,7 @@ app.post('/api/parse-markdown-history', async (req: Request, res: Response) => {
 
 registerSuuntoRoutes(app);
 registerSuuntoSyncRoutes(app);
+registerWeeklyPlanRoutes(app);
 registerDataRoutes(app);
 
 export default app;

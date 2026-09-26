@@ -277,8 +277,13 @@ const isRunning = (w: any) => RUN_TYPES.includes(w?.type);
 export interface PlanContractOptions {
   fromDate?: string;
   /** Entrenos ya completados esa semana (cuentan para la estructura). */
-  done?: Array<{ date: string; type: string }>;
+  done?: Array<{ date: string; type: string; durationMin?: number }>;
+  /** Topes de la semana fijados por el macrociclo (horas a pie, D+ y tirada larga). */
+  weekTarget?: { targetHours: number; targetElevationGainM: number; longRunMin: number };
 }
+
+/** Margen sobre los topes del macro: horas +15 %, D+ +10 %, tirada larga +15 %. */
+export const WEEK_TARGET_TOLERANCE = { hours: 1.15, gain: 1.1, longRun: 1.15 } as const;
 
 export function validatePlanContract(
   workouts: any[],
@@ -313,7 +318,7 @@ export function validatePlanContract(
   }
   const done = (opts.done || [])
     .filter((d) => d?.date && d.date >= weekMonday && d.date <= sunday && (!fromDate || d.date < fromDate))
-    .map((d, i) => ({ id: `done-${i}`, date: d.date, type: d.type, completed: true, title: 'hecha' }));
+    .map((d, i) => ({ id: `done-${i}`, date: d.date, type: d.type, completed: true, title: 'hecha', actualDurationMin: d.durationMin }));
 
   // Descansos duplicados el mismo día: se deja uno (reparación)
   const restDays = new Set<string>();
@@ -348,6 +353,18 @@ export function validatePlanContract(
   if (long) {
     if (!pos(long.plannedDistanceKm)) issues.push('la tirada larga no tiene distancia');
     if (!pos(long.plannedElevationGainM)) issues.push('la tirada larga no tiene desnivel positivo');
+  }
+
+  // Topes del macrociclo: lo hecho + lo planificado no puede pasarse de la semana objetivo
+  const t = opts.weekTarget;
+  if (t && t.targetHours > 0) {
+    const min = out.filter(isRunning).reduce((a, w) => a + (Number(w.plannedDurationMin) || 0), 0)
+      + done.filter(isRunning).reduce((a, w) => a + (Number(w.actualDurationMin) || 0), 0);
+    const hours = min / 60;
+    if (hours > t.targetHours * WEEK_TARGET_TOLERANCE.hours) issues.push(`la semana suma ${Math.round(hours * 10) / 10} h a pie y el tope del plan es ${t.targetHours} h`);
+    const gain = out.filter(isRunning).reduce((a, w) => a + (Number(w.plannedElevationGainM) || 0), 0);
+    if (t.targetElevationGainM > 0 && gain > t.targetElevationGainM * WEEK_TARGET_TOLERANCE.gain) issues.push(`la semana suma ${Math.round(gain)} m de D+ y el tope del plan es ${t.targetElevationGainM} m`);
+    if (long && t.longRunMin > 0 && Number(long.plannedDurationMin) > t.longRunMin * WEEK_TARGET_TOLERANCE.longRun) issues.push(`la tirada larga dura ${long.plannedDurationMin} min y el tope del plan es ${t.longRunMin} min`);
   }
 
   const status: PlanContractStatus = issues.length ? 'rejected' : repairs.length ? 'repaired' : 'valid';

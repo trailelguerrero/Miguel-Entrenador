@@ -1,6 +1,6 @@
 // Datos del atleta en el servidor (Fase B): lectura del estado completo, escrituras,
 // importación única desde el navegador y los datos con los que razona el cerebro.
-import type { AthleteHistoryDocument, AthleteProfile, CoachLearnedMemory, DailyCheckIn, SuuntoAuth, TargetRace, Workout } from '../../src/types/index.js';
+import type { AthleteHistoryDocument, AthleteProfile, CoachLearnedMemory, DailyCheckIn, MacrocyclePlan, SuuntoAuth, TargetRace, Workout } from '../../src/types/index.js';
 import { docStore, type Collection, type StoredDoc } from './docStore.js';
 import { open, seal } from './secretBox.js';
 
@@ -10,6 +10,8 @@ export const SINGLETONS = {
   targetRace: 'target_race',
   coachMemory: 'coach_memory',
   historyMd: 'history_md',
+  // Plan hasta la carrera: lo crea y lo actualiza SOLO el servidor (el navegador lo lee)
+  macrocycle: 'macrocycle',
 } as const satisfies Record<string, Collection>;
 export type SingletonName = keyof typeof SINGLETONS;
 const ONE = 'current';
@@ -27,6 +29,7 @@ export interface AthleteSnapshot {
   targetRace: TargetRace | null;
   coachMemory: CoachLearnedMemory | null;
   historyMd: AthleteHistoryDocument | null;
+  macrocycle: MacrocyclePlan | null;
   workouts: Workout[];
   checkIns: DailyCheckIn[];
   suunto: SuuntoStatus;
@@ -92,17 +95,18 @@ export async function saveSuuntoStatus(status: Omit<SuuntoStatus, 'connected'>):
 }
 
 export async function loadSnapshot(): Promise<AthleteSnapshot> {
-  const [profile, targetRace, coachMemory, historyMd, workouts, checkIns, suunto, imported] = await Promise.all([
+  const [profile, targetRace, coachMemory, historyMd, macrocycle, workouts, checkIns, suunto, imported] = await Promise.all([
     getSingleton<AthleteProfile>('profile'),
     getSingleton<TargetRace>('targetRace'),
     getSingleton<CoachLearnedMemory>('coachMemory'),
     getSingleton<AthleteHistoryDocument>('historyMd'),
+    getSingleton<MacrocyclePlan>('macrocycle'),
     listWorkouts(),
     listCheckIns(),
     getSuuntoStatus(),
     isImported(),
   ]);
-  return { profile, targetRace, coachMemory, historyMd, workouts, checkIns, suunto, imported, serverTime: new Date().toISOString() };
+  return { profile, targetRace, coachMemory, historyMd, macrocycle, workouts, checkIns, suunto, imported, serverTime: new Date().toISOString() };
 }
 
 // --- Importación única desde el navegador ---
@@ -144,13 +148,14 @@ function recordTime(x: any): number {
 export async function importFromBrowser(p: ImportPayload): Promise<ImportReport> {
   const store = docStore();
   const report: ImportReport = {
-    singletons: { profile: 'empty', targetRace: 'empty', coachMemory: 'empty', historyMd: 'empty' },
+    singletons: { profile: 'empty', targetRace: 'empty', coachMemory: 'empty', historyMd: 'empty', macrocycle: 'empty' },
     workouts: { imported: 0, merged: 0, keptServer: 0 },
     checkIns: { imported: 0, merged: 0, keptServer: 0 },
     suuntoAuth: 'empty',
   };
 
-  for (const name of Object.keys(SINGLETONS) as SingletonName[]) {
+  // El macrociclo no se importa: lo crea el servidor
+  for (const name of (Object.keys(SINGLETONS) as SingletonName[]).filter((n): n is Exclude<SingletonName, 'macrocycle'> => n !== 'macrocycle')) {
     const incoming = p[name];
     if (incoming == null) continue;
     const server = await store.get(SINGLETONS[name], ONE);

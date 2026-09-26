@@ -42,6 +42,9 @@ import { mergeSuuntoCheckIns, mergeSuuntoWorkouts, sportGroup } from '../brain/s
 import { resolveIntensityPrescription } from '../brain/intensity';
 import { applyEvidence, refreshMemory, type EvidenceContext, type EvidenceItem } from '../brain/memory';
 
+/** Último cambio del plan hasta la carrera que el atleta ya vio en el chat. */
+const MACRO_LOG_SEEN_KEY = 'miguel_macro_log_seen';
+
 const STORAGE_KEYS = {
   PROFILE: 'uphill_coach_profile',
   TARGET_RACE: 'uphill_coach_target_race',
@@ -78,6 +81,8 @@ export interface ServerSnapshot {
   targetRace: TargetRace | null;
   coachMemory: CoachLearnedMemory | null;
   historyMd: AthleteHistoryDocument | null;
+  /** Plan hasta la carrera (lo crea el servidor; aquí solo se guarda en caché). */
+  macrocycle?: MacrocyclePlan | null;
   workouts: Workout[];
   checkIns: DailyCheckIn[];
   suunto: Pick<SuuntoIntegrationConfig, 'connected' | 'lastSync' | 'syncStatus' | 'lastSyncMessage' | 'totalActivitiesSynced'>;
@@ -109,9 +114,14 @@ function writeTracked(key: string, value: string | null): void {
 export const DEFAULT_TARGET_RACE: TargetRace = {
   id: 'transvulcania-2027',
   name: 'Transvulcania Ultramarathon 2027',
-  // La organización aún no ha publicado la fecha de 2027 (la de 2026 fue el 9 de mayo)
+  // Fecha publicada por la organización (evento del 6 al 8 de mayo de 2027; la ultra, el sábado 8)
   date: '2027-05-08',
-  dateConfirmed: false,
+  dateConfirmed: true,
+  webSources: [
+    { title: 'Transvulcania adidas 2027 abre inscripciones (transvulcania.com)', uri: 'https://transvulcania.com/en/transvulcania-adidas-2027-opens-registration-following-a-historic-event-that-set-eight-records/' },
+    { title: 'Inscripción Transvulcania 2027 (avaibooksports.com)', uri: 'https://www.avaibooksports.com/inscripcion/transvulcania-2027/' },
+    { title: 'Ultramaratón (transvulcania.utmb.world)', uri: 'https://transvulcania.utmb.world/races/ultra-marathon' },
+  ],
   distanceKm: 73.0,
   elevationGainM: 4350,
   elevationLossM: 4057,
@@ -392,6 +402,10 @@ export const StorageService = {
       writeTracked(STORAGE_KEYS.ATHLETE_HISTORY_MD, snap.historyMd ? JSON.stringify(snap.historyMd) : null);
       writeTracked(STORAGE_KEYS.WORKOUTS, JSON.stringify(snap.workouts));
       writeTracked(STORAGE_KEYS.DAILY_CHECKINS, JSON.stringify(snap.checkIns));
+      if (snap.macrocycle) {
+        this.saveMacrocycle(snap.macrocycle);
+        this.postUnseenMacroLog(snap.macrocycle);
+      }
       const prev = this.getSuuntoConfig();
       this.saveSuuntoConfig({
         ...prev,
@@ -476,7 +490,11 @@ export const StorageService = {
       if (!stored) return DEFAULT_TARGET_RACE;
       const race: TargetRace = JSON.parse(stored);
       // Guardada con una versión anterior: la fecha por defecto de 2027 no es oficial
-      if (race.dateConfirmed === undefined && race.id === DEFAULT_TARGET_RACE.id && race.date === DEFAULT_TARGET_RACE.date) race.dateConfirmed = false;
+      // La organización ya publicó el 8-may-2027: la carrera por defecto pasa a fecha confirmada
+      if (!race.dateConfirmed && race.id === DEFAULT_TARGET_RACE.id && race.date === DEFAULT_TARGET_RACE.date) {
+        race.dateConfirmed = true;
+        race.webSources = race.webSources?.length ? race.webSources : DEFAULT_TARGET_RACE.webSources;
+      }
       return race;
     } catch {
       return DEFAULT_TARGET_RACE;
@@ -679,6 +697,35 @@ Puedes revisar tus umbrales (AeT y AnT) en tu perfil, registrar tu test de deriv
 
   saveMacrocycle(plan: MacrocyclePlan): void {
     localStorage.setItem(STORAGE_KEYS.MACROCYCLE, JSON.stringify(plan));
+  },
+
+  /** Marca como leídos los cambios del plan (p. ej. los que acaba de pedir el atleta). */
+  markMacroLogSeen(plan: MacrocyclePlan): void {
+    const last = plan.log?.[plan.log.length - 1];
+    try {
+      if (last) localStorage.setItem(MACRO_LOG_SEEN_KEY, `${last.date}|${last.message}`);
+    } catch { /* sin almacenamiento: se repetiría el aviso, nada más */ }
+  },
+
+  /**
+   * Cambios del plan hechos por el servidor (plan del domingo, re-planificación) que el
+   * atleta aún no ha visto → mensajes de Miguel en el chat. Sin marca previa, solo el último.
+   */
+  postUnseenMacroLog(plan: MacrocyclePlan): void {
+    const log = plan.log || [];
+    if (!log.length) return;
+    let seen: string | null = null;
+    try { seen = localStorage.getItem(MACRO_LOG_SEEN_KEY); } catch { /* ignorar */ }
+    const idx = seen ? log.findIndex((l) => `${l.date}|${l.message}` === seen) : -1;
+    const unseen = idx >= 0 ? log.slice(idx + 1) : log.slice(-1);
+    if (!unseen.length) return;
+    const msgs = this.getChatMessages();
+    const stamp = Date.now();
+    this.saveChatMessages([
+      ...msgs,
+      ...unseen.map((l, i) => ({ id: `macro-log-${stamp}-${i}`, role: 'assistant' as const, content: l.message, timestamp: new Date().toISOString(), contextType: 'general' as const })),
+    ]);
+    this.markMacroLogSeen(plan);
   },
 
   getAthleteHistory(): AthleteHistoryDocument | null {
