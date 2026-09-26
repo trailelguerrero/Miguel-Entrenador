@@ -197,3 +197,8 @@ test('La IA marca a favor un resumen que niega el aprendizaje → cuenta en cont
   const ok = applyEvidence(memory, sanitizeEvidenceItems([{ insightId: 'p', supports: true, summary: 'Otra vez dolor de sóleo al bajar' }], memory), CTX).memory;
   assert.equal(ok.insights[0].evidence!.at(-1)!.supports, true);
 });
+
+test('Regresión HRV: describe la tendencia, sin "Decisión Táctica" ni % de carga ni descarga', () => {
+  const src = readFileSync('src/utils/hrvLinearRegression.ts', 'utf8') + readFileSync('src/components/HRVPredictiveRegressionCard.tsx', 'utf8');
+  assert.doesNotMatch(src, /Decisión Táctica|recommendedAction|recommendedLoadAdjustmentPct|coachPrescription|onScheduleDeload|Overreaching|mitocondrial/);
+});

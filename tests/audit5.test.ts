@@ -145,14 +145,14 @@ test('#15/C35. HRV con 3 noches → datos insuficientes; y nunca autoriza subir 
   const today = localDateKey();
   const three = [0, 1, 2].map((k) => suuntoCi(addDaysKey(today, -k), 50 + k));
   const r = calculateHrvPredictiveRegression(three, [], { baselineHrv: 45 } as any);
-  assert.equal(r.fatigueRiskLevel, 'insufficient_data');
+  assert.equal(r.trend, 'insufficient_data');
   assert.ok(r.n < MIN_REGRESSION_NIGHTS);
   // Tendencia claramente ascendente con datos suficientes → favorable pero SIN % de carga
   const up = Array.from({ length: 20 }, (_, k) => suuntoCi(addDaysKey(today, -19 + k), 35 + k));
   const r2 = calculateHrvPredictiveRegression(up, [], { baselineHrv: 40 } as any);
-  assert.equal(r2.fatigueRiskLevel, 'supercompensation');
-  assert.equal(r2.recommendedLoadAdjustmentPct, 0);
-  assert.doesNotMatch(r2.recommendedAction, /\+\d+ ?%|Autorizado/);
+  assert.equal(r2.trend, 'rising');
+  assert.equal((r2 as any).recommendedLoadAdjustmentPct, undefined);
+  assert.doesNotMatch(r2.trendDescription, /\+\d+ ?%|Autorizado/);
 });
 
 test('#16. Sin HRV el panel HRV-carga no dice "estable" ni recomienda descarga', () => {

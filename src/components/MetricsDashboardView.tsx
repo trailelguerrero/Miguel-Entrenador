@@ -912,7 +912,6 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
             checkIns={checkIns}
             workouts={workouts}
             profile={profile}
-            onScheduleDeload={onScheduleDeload}
             onNavigateTab={onNavigateTab}
           />
         </div>

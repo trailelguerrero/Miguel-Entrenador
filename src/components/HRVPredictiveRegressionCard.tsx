@@ -4,7 +4,6 @@ import {
   TrendingUp, 
   AlertTriangle, 
   CheckCircle2, 
-  RotateCcw, 
   Sliders, 
   Sparkles, 
   Info, 
@@ -13,8 +12,7 @@ import {
   ShieldAlert, 
   Activity, 
   Calendar, 
-  ArrowRight,
-  Flame
+  ArrowRight
 } from 'lucide-react';
 import { DailyCheckIn, Workout, AthleteProfile } from '../types';
 import { 
@@ -27,7 +25,6 @@ interface HRVPredictiveRegressionCardProps {
   checkIns: DailyCheckIn[];
   workouts: Workout[];
   profile: AthleteProfile;
-  onScheduleDeload?: () => void;
   onNavigateTab?: (tab: string) => void;
 }
 
@@ -35,7 +32,6 @@ export const HRVPredictiveRegressionCard: React.FC<HRVPredictiveRegressionCardPr
   checkIns,
   workouts,
   profile,
-  onScheduleDeload,
   onNavigateTab,
 }) => {
   const [hoveredPoint, setHoveredPoint] = useState<{
@@ -177,17 +173,14 @@ export const HRVPredictiveRegressionCard: React.FC<HRVPredictiveRegressionCardPr
           </div>
           <p>
             El sistema calcula la recta de mínimos cuadrados ordinarios (y = mx + b) sobre la serie temporal de los últimos 30 días de HRV rMSSD. 
-            La pendiente <strong>m</strong> (ms/día) representa la <strong>tasa de aceleración o decaimiento del tono parasimpático (vagal)</strong>:
+            La pendiente <strong>m</strong> (ms/día) indica cuánto sube o baja tu HRV cada día. Solo describe la tendencia: la sesión de hoy la decide el estado de readiness.
           </p>
           <ul className="list-disc pl-5 space-y-1 text-zinc-400">
             <li>
-              <strong className="text-rose-400">Pendiente Negativa Crítica (m &lt; -0.25 ms/día):</strong> Agotamiento progresivo de la capacidad de regeneración celular. Al proyectar a 7 días, cruzar el límite inferior SWC ({regression.swcLower} ms) pronostica un estado de <em>Non-Functional Overreaching (NFOR)</em>.
+              <strong className="text-rose-400">Pendiente negativa marcada (m ≤ -0,28 ms/día):</strong> la HRV baja de forma sostenida. Si la proyección a 7 días cruza el límite inferior de tu banda ({regression.swcLower} ms), la app lo marca como descenso marcado. Es una recta, no un pronóstico clínico.
             </li>
             <li>
               <strong className="text-cyan-400">Corredor de Confianza al 90%:</strong> Se calcula el error estándar de la estimación (S<sub>e</sub>) expandiéndose en abanico según la varianza residual histórica (S<sub>e</sub> ≈ {regression.stdError} ms).
-            </li>
-            <li>
-              <strong className="text-emerald-400">Decisión Táctica:</strong> Si la regresión proyecta una caída sostenida, recortar la carga entre un -35% y -40% restablece el equilibrio vagal antes de la destrucción mitocondrial.
             </li>
           </ul>
         </div>
@@ -383,7 +376,7 @@ export const HRVPredictiveRegressionCard: React.FC<HRVPredictiveRegressionCardPr
               fill="url(#swcBandGradient)"
             />
 
-            {/* SWC Lower Line (Threshold of Functional Overreaching) */}
+            {/* Límite inferior de la banda SWC */}
             <line
               x1={padding.left}
               y1={swcLowerY}
@@ -680,62 +673,40 @@ export const HRVPredictiveRegressionCard: React.FC<HRVPredictiveRegressionCardPr
 
       </div>
 
-      {/* Coach Tactical Verdict & Action Decision Box */}
+      {/* Lectura descriptiva de la tendencia */}
       <div className={`p-5 sm:p-6 rounded-3xl border space-y-4 ${
-        regression.fatigueRiskLevel === 'critical_overreaching'
+        regression.trend === 'falling_marked'
           ? 'bg-rose-950/20 border-rose-500/40 text-rose-200'
-          : regression.fatigueRiskLevel === 'moderate_strain'
+          : regression.trend === 'falling_slight'
           ? 'bg-amber-950/20 border-amber-500/40 text-amber-200'
           : 'bg-emerald-950/20 border-emerald-500/40 text-emerald-200'
       }`}>
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            {regression.fatigueRiskLevel === 'critical_overreaching' ? (
+            {regression.trend === 'falling_marked' ? (
               <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0" />
-            ) : regression.fatigueRiskLevel === 'moderate_strain' ? (
+            ) : regression.trend === 'falling_slight' ? (
               <Activity className="w-5 h-5 text-amber-400 shrink-0" />
             ) : (
               <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
             )}
             <h4 className="text-sm font-black text-zinc-100 uppercase tracking-wide">
-              {regression.riskTitle}
+              {regression.trendTitle}
             </h4>
           </div>
 
-          <span className={`px-3 py-1 rounded-xl text-xs font-black uppercase font-mono tracking-wider border self-start sm:self-auto ${regression.riskBadgeColor}`}>
-            Recomendación: {regression.recommendedAction}
-          </span>
         </div>
 
         <p className="text-xs sm:text-sm text-zinc-300 leading-relaxed font-sans">
-          {regression.riskDescription}
+          {regression.trendDescription}
         </p>
 
-        {/* Coach Miguel Specific Direct Quote */}
-        <div className="bg-zinc-950/60 p-4 rounded-2xl border border-zinc-800/80 space-y-2">
-          <div className="flex items-center justify-between text-xs text-zinc-400">
-            <span className="font-bold text-amber-400 flex items-center gap-1.5">
-              <Flame className="w-3.5 h-3.5" />
-              Prescripción Directa de Carga — Coach Miguel (Transvulcania 2027)
-            </span>
-            <span className="text-[11px] font-mono text-zinc-500">Ajuste de Microciclo</span>
-          </div>
-          <p className="text-xs text-zinc-200 italic leading-relaxed">
-            {regression.coachPrescription}
-          </p>
-        </div>
+        <p className="text-[11px] text-zinc-400 leading-relaxed">
+          Es una tendencia, no una decisión: la sesión de hoy la fija el estado de readiness del día.
+        </p>
 
-        {/* Action Buttons to execute the recommended workload adjustment */}
+        {/* Navegación */}
         <div className="pt-2 flex flex-wrap items-center gap-3">
-          {regression.fatigueRiskLevel === 'critical_overreaching' && onScheduleDeload && (
-            <button
-              onClick={onScheduleDeload}
-              className="px-4 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-400 text-zinc-950 font-black text-xs uppercase tracking-wider transition shadow-lg shadow-rose-500/20 flex items-center gap-2 cursor-pointer"
-            >
-              <RotateCcw className="w-4 h-4" />
-              <span>Programar descarga</span>
-            </button>
-          )}
 
           {onNavigateTab && (
             <button

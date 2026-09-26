@@ -1009,7 +1009,6 @@ export const HRVLoadOverreachingView: React.FC<HRVLoadOverreachingViewProps> = (
         checkIns={checkIns}
         workouts={workouts}
         profile={profile}
-        onScheduleDeload={onScheduleDeload}
         onNavigateTab={onNavigateTab}
       />
 
