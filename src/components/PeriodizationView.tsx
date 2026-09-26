@@ -13,7 +13,8 @@ import {
   Flag,
   Target
 } from 'lucide-react';
-import { TargetRace, AthleteProfile, Mesocycle, RaceDataField, RaceInfoResult } from '../types';
+import { TargetRace, AthleteProfile, RaceDataField, RaceInfoResult, Workout } from '../types';
+import { MacrocyclePanel } from './MacrocyclePanel';
 import { ApiService } from '../services/api';
 
 interface PeriodizationViewProps {
@@ -21,6 +22,7 @@ interface PeriodizationViewProps {
   secondaryRaces: TargetRace[];
   onSaveSecondaryRaces: (races: TargetRace[]) => void;
   profile: AthleteProfile;
+  workouts: Workout[];
 }
 
 const RACE_FIELD_NAMES: Record<RaceDataField, string> = {
@@ -47,6 +49,7 @@ export const PeriodizationView: React.FC<PeriodizationViewProps> = ({
   secondaryRaces,
   onSaveSecondaryRaces,
   profile,
+  workouts,
 }) => {
   const [showAddRaceModal, setShowAddRaceModal] = useState(false);
   const [newRaceName, setNewRaceName] = useState('');
@@ -56,38 +59,6 @@ export const PeriodizationView: React.FC<PeriodizationViewProps> = ({
   const [newRaceElevation, setNewRaceElevation] = useState<string>('');
   const [newRacePriority, setNewRacePriority] = useState<'B' | 'C'>('B');
   const [isSearchingRace, setIsSearchingRace] = useState(false);
-
-  // Default Mesocycle Road Map towards Transvulcania 2027
-  const mesocyclesData = [
-    {
-      title: 'Fase 1: Base Aeróbica Pura & Erradicación de ADS',
-      duration: 'Semanas 1 - 16',
-      focus: 'Volumen estricto por debajo de tu umbral aeróbico (FC)',
-      description: 'Construcción masiva de capilares y mitocondrias. Si tienes ADS, toda intensidad anaeróbica queda vetada. Fuerza general de core y piernas con peso corporal.',
-      keyWorkouts: ['Rodajes Z1/Z2 de 60-90 min', 'Test de deriva cardíaca mensual', 'Circuito de fuerza Uphill Athlete 2x/sem']
-    },
-    {
-      title: 'Fase 2: Muscular Endurance (ME) & Cuestas Empinadas',
-      duration: 'Semanas 17 - 32',
-      focus: 'Power-hiking en rampas > 25% + Fuerza excéntrica',
-      description: 'Adaptación neuromuscular para las subidas de los volcanes de La Palma sin quemar glucógeno. Step-downs lentos para preparar los cuádriceps contra el daño excéntrico.',
-      keyWorkouts: ['Series ME en cuesta extrema (4x5 min)', 'Tiradas largas con +1.200m D+', 'Zancadas búlgaras con pausa']
-    },
-    {
-      title: 'Fase 3: Específico de Montaña & Descenso de Tazacorte',
-      duration: 'Semanas 33 - 48',
-      focus: 'Tiradas largas con desnivel real (+2.000m D+) y bajadas técnicas',
-      description: 'Simulación del terreno volcánico y el descenso continuo de 2.400m de El Roque a Tazacorte. Calibración del protocolo de nutrición (40-60g carbohidratos/hora) y bastones.',
-      keyWorkouts: ['Tiradas largas de fin de semana (3.5 - 5h)', 'Carrera preparatoria B', 'Entrenamientos en fatiga con bastones']
-    },
-    {
-      title: 'Fase 4: Pico Competitivo & Tapering Pre-Transvulcania',
-      duration: 'Últimas 4 semanas',
-      focus: 'Descenso progresivo de volumen (-40%) manteniendo toques de activación',
-      description: 'Supercompensación. El trabajo ya está hecho. Priorizar sueño y HRV nocturna alta en Suunto para llegar a la línea de salida del Faro de Fuencaliente con los depósitos llenos.',
-      keyWorkouts: ['Rodajes cortos con 4-5 cambios de ritmo vivos', 'Descanso activo', 'Visualización y estrategia de carrera']
-    }
-  ];
 
   // AI Race Search / Enrich
   const handleSearchAndAddRace = async () => {
@@ -200,55 +171,8 @@ export const PeriodizationView: React.FC<PeriodizationViewProps> = ({
         </div>
       </div>
 
-      {/* Mesocycles Road Map */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-lg font-black text-zinc-100 flex items-center space-x-2">
-              <Compass className="w-5 h-5 text-amber-400" />
-              <span>Macrociclo de la Temporada & Mesociclos</span>
-            </h3>
-            <p className="text-xs text-zinc-400">
-              Periodización lineal inversa y específica según la metodología Uphill Athlete
-            </p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {mesocyclesData.map((meso, idx) => (
-            <div
-              key={idx}
-              className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 space-y-3 relative overflow-hidden"
-            >
-              <div className="flex justify-between items-start">
-                <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-zinc-800 text-amber-400 border border-zinc-700">
-                  {meso.duration}
-                </span>
-                <span className="text-xs font-black text-zinc-600">Fase 0{idx + 1}</span>
-              </div>
-
-              <h4 className="text-sm font-black text-zinc-100">{meso.title}</h4>
-
-              <div className="text-xs font-bold text-emerald-400 bg-emerald-950/30 p-2 rounded-lg border border-emerald-900/30">
-                Enfoque: {meso.focus}
-              </div>
-
-              <p className="text-xs text-zinc-400 leading-relaxed">{meso.description}</p>
-
-              <div className="border-t border-zinc-800/80 pt-3">
-                <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block mb-1">
-                  Sesiones Clave:
-                </span>
-                <ul className="text-xs text-zinc-300 space-y-1 list-disc list-inside">
-                  {meso.keyWorkouts.map((k, i) => (
-                    <li key={i}>{k}</li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
+      {/* Plan hasta la carrera: macrociclo real (código) + textos de Miguel */}
+      <MacrocyclePanel targetRace={targetRace} profile={profile} workouts={workouts} />
 
       {/* Secondary Preparation Races (B and C) */}
       <div className="space-y-4">

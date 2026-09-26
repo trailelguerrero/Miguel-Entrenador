@@ -6,6 +6,8 @@ import { buildBrainContext, summarizeWeekWorkouts } from './brain/context';
 import { addPending, isAppliedRule } from './brain/memory';
 import { Navbar } from './components/Navbar';
 import { buildDeload } from './brain/deload';
+import { mergePlanIntoWorkouts } from './brain/planMerge';
+import { PHASE_LABEL, weekOf } from './brain/macrocycle';
 import { resolveIntensityPrescription, measuredAntHr } from './brain/intensity';
 import { SuuntoSyncBar } from './components/SuuntoSyncBar';
 import { ZoneAdviceBanner, ZONE_CHANGE_HOW_TO, describeZoneRecommendation } from './components/ZoneAdviceBanner';
@@ -739,6 +741,9 @@ Tus células y tu sistema nervioso autónomo están pidiendo tregua. No fuerces 
     setIsGeneratingPlan(true);
     try {
       const { monday, fromDate } = planningWindow(localDateKey());
+      // Fase del plan hasta la carrera (si existe): el servidor añade los topes de la semana
+      const macro = StorageService.getMacrocycle();
+      const macroWeek = weekOf(macro, monday);
       // Evidencia nutricional REAL (si no existe, la IA no puede dar cifras)
       const gut = StorageService.getGutProfile();
       const heat = profile.advancedPhysiologicalProfile?.heatTolerance;
@@ -746,7 +751,7 @@ Tus células y tu sistema nervioso autónomo están pidiendo tregua. No fuerces 
         profile,
         targetRace,
         monday,
-        `Base aeróbica estricta y preparación para ${targetRace.name}`,
+        macroWeek ? `${PHASE_LABEL[macroWeek.phase]} hacia ${targetRace.name}` : `Base aeróbica estricta y preparación para ${targetRace.name}`,
         historyDoc,
         coachMemory,
         getBrainContext(),
@@ -756,7 +761,8 @@ Tus células y tu sistema nervioso autónomo están pidiendo tregua. No fuerces 
           sweatRateLph: heat?.sweatRateDocumentedLitersPerHour ?? null,
           sodiumProfile: heat?.sodiumLossProfile ?? null,
         },
-        fromDate
+        fromDate,
+        macro
       );
 
       // Plan rechazado por el contrato (estructura imposible de reparar sin inventar): no se guarda nada
@@ -770,40 +776,18 @@ Tus células y tu sistema nervioso autónomo están pidiendo tregua. No fuerces 
         return;
       }
 
-      // Fechas de la semana (lunes..domingo) en hora local
-      const sunday = addDaysKey(monday, 6);
-      // Fechas fuera de la semana: se usa el día de su posición solo si está libre;
-      // si no, se descarta (antes se amontonaban varias sesiones en el domingo).
-      const usedDates = new Set(plan.workouts.map((w) => w.date).filter((d) => d && d >= monday && d <= sunday));
-      const droppedDates: string[] = [];
-      const newWorkouts: Workout[] = plan.workouts.flatMap((w, index) => {
-        let date = w.date;
-        // Días ya pasados de la semana en curso: no se planifican
-        if (date && date >= monday && date < fromDate) return [];
-        if (!(date && date >= monday && date <= sunday)) {
-          const byPosition = index <= 6 ? addDaysKey(monday, index) : null;
-          if (!byPosition || usedDates.has(byPosition)) {
-            droppedDates.push(w.title || w.date || `sesión ${index + 1}`);
-            return [];
-          }
-          date = byPosition;
-          usedDates.add(date);
-        }
-        return [{ ...w, id: `gen-${date}-${Date.now()}-${index}`, date, completed: false }];
-      });
-
       // Solo se sustituyen sesiones PLANIFICADAS sin completar de esos días.
       // Nunca se borran entrenos hechos ni actividades importadas de Suunto.
-      const newDates = new Set(newWorkouts.map((nw) => nw.date));
-      const kept = workouts.filter(
-        (ex) => ex.completed || !!ex.suuntoWorkoutKey || !newDates.has(ex.date)
-      );
-
-      const combined = [...kept, ...newWorkouts];
-      handleSaveWorkouts(combined);
+      const merged = mergePlanIntoWorkouts(workouts, plan.workouts, monday, fromDate);
+      const newWorkouts = merged.added;
+      const droppedDates = merged.dropped;
+      handleSaveWorkouts(merged.workouts);
 
       // Resumen con la estructura REAL que ha devuelto Miguel
-      const structure = analyzeWeekStructure(newWorkouts, monday, deriveWeeklyStructurePolicy(profile));
+      // Semana completa (lo ya hecho + lo nuevo): en la semana en curso lo hecho también cuenta
+      const structure = analyzeWeekStructure(fromDate > monday ? merged.workouts : newWorkouts, monday, deriveWeeklyStructurePolicy(profile));
+      const wt = (plan as { weekTarget?: { targetHours: number; targetElevationGainM: number } | null }).weekTarget;
+      const targetLine = wt ? ` Tope de la semana según el plan hasta la carrera: ${wt.targetHours} h a pie y ${wt.targetElevationGainM} m de D+.` : '';
       const structureLine = `Estructura: ${structure.midweekPlanned} sesiones entre semana + tirada larga ${structure.longRunDay ? `el ${structure.longRunDay}` : '(no planificada)'}.`;
       const allNotes = [
         ...(plan.validationNotes || []),
@@ -821,7 +805,7 @@ Tus células y tu sistema nervioso autónomo están pidiendo tregua. No fuerces 
 
 ${plan.weekSummary}
 
-${structureLine} Ya puedes ver los entrenamientos en tu calendario.${warningLine}${notesLine}`,
+${structureLine}${targetLine} Ya puedes ver los entrenamientos en tu calendario.${warningLine}${notesLine}`,
         timestamp: new Date().toISOString(),
         contextType: 'general',
       };
@@ -1168,6 +1152,7 @@ ${structureLine} Ya puedes ver los entrenamientos en tu calendario.${warningLine
             secondaryRaces={secondaryRaces}
             onSaveSecondaryRaces={handleSaveSecondaryRaces}
             profile={profile}
+            workouts={workouts}
           />
         )}
 

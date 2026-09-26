@@ -18,7 +18,7 @@ import { ApiError, apiStatus } from './apiStatus';
 import { StorageService } from './storage';
 import { authedFetch } from './session';
 import { localDateKey } from '../utils/trainingLoad';
-import type { RaceInfoResult } from '../types';
+import type { MacrocyclePlan, RaceInfoResult } from '../types';
 import type { EvidenceItem } from '../brain/memory';
 import type { BrainContext, summarizeWeekWorkouts } from '../brain/context';
 import type { ReadinessState } from '../brain/readiness';
@@ -151,7 +151,9 @@ export const ApiService = {
     existingWorkouts?: ReturnType<typeof summarizeWeekWorkouts>,
     nutritionEvidence?: NutritionEvidence,
     /** Semana en curso: primer día a planificar (los anteriores no se tocan). */
-    planFromDate?: string
+    planFromDate?: string,
+    /** Plan largo local (el servidor usa el suyo si lo tiene). */
+    macrocycle?: MacrocyclePlan | null
   ): Promise<{ weekSummary: string; workouts: Workout[]; validationNotes?: string[]; structureIssues?: string[]; status?: 'valid' | 'repaired' | 'rejected'; issues?: string[]; error?: string }> {
     return await apiFetch('/api/generate-plan', {
         athleteProfile,
@@ -164,10 +166,23 @@ export const ApiService = {
         existingWorkouts,
         nutritionEvidence,
         planFromDate,
+        macrocycle: macrocycle ?? undefined,
       }, 'ai', 'Error al generar el plan personalizado', {
         // Plan rechazado por el contrato: no es un fallo de la IA, lo gestiona App (no se guarda)
         allowStatus: [422],
       });
+  },
+
+  /** Crea o rehace el plan hasta la carrera (el código fija cifras; Miguel redacta las fases). */
+  async generateMacrocycle(
+    targetRace: TargetRace,
+    athleteProfile: AthleteProfile,
+    workouts: Workout[],
+    checkIns: DailyCheckIn[],
+    macrocycle: MacrocyclePlan | null
+  ): Promise<{ macrocycle: MacrocyclePlan; aiUsed: boolean; note?: string; source: 'server' | 'client' }> {
+    // Datos del navegador solo como respaldo: con Supabase el servidor usa los suyos
+    return await apiFetch('/api/generate-macrocycle', { targetRace, athleteProfile, workouts, checkIns, macrocycle }, 'ai', 'Error al crear el plan hasta la carrera');
   },
 
   async adaptSession(

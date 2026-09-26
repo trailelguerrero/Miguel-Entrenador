@@ -3,7 +3,8 @@
 // carga (CTL/ATL/TSB, readiness de hoy) se leen y se calculan aquí; lo que manda el
 // navegador solo se usa para lo que el servidor aún no tiene (p. ej. antes de la
 // importación) o no guarda todavía (nutrición, hidratación).
-import type { AthleteHistoryDocument, AthleteProfile, CoachLearnedMemory, DailyCheckIn, TargetRace, Workout } from '../../src/types/index.js';
+import type { AthleteHistoryDocument, AthleteProfile, CoachLearnedMemory, DailyCheckIn, MacrocyclePlan, TargetRace, Workout } from '../../src/types/index.js';
+import { adjustedWeekTarget, describeWeekTarget } from '../../src/brain/macrocycle.js';
 import { resolveIntensityPrescription } from '../../src/brain/intensity.js';
 import { buildBrainContext, summarizeWeekWorkouts } from '../../src/brain/context.js';
 import { storeReady } from '../store/docStore.js';
@@ -51,7 +52,17 @@ export async function withServerData(body: any, route: BrainRoute): Promise<Serv
         out.targetRace = targetRaceS ?? body?.targetRace;
         out.coachMemory = memory;
         out.loadContext = ctx();
-        if (typeof body?.weekStartDate === 'string') out.existingWorkouts = summarizeWeekWorkouts(workouts, body.weekStartDate, resolveIntensityPrescription(profile).antHr ?? undefined);
+        if (typeof body?.weekStartDate === 'string') {
+          out.existingWorkouts = summarizeWeekWorkouts(workouts, body.weekStartDate, resolveIntensityPrescription(profile).antHr ?? undefined);
+          // Objetivo de la semana del macrociclo, ajustado con lo que se hizo la anterior
+          const macro = await getSingleton<MacrocyclePlan>('macrocycle');
+          const adj = macro ? adjustedWeekTarget(macro, body.weekStartDate, workouts, checkIns) : null;
+          if (macro && adj) {
+            out.macrocycle = macro;
+            out.weekTarget = adj.target;
+            out.weekTargetText = describeWeekTarget(adj, macro);
+          }
+        }
         break;
       case 'adapt-session': {
         const c = ctx();

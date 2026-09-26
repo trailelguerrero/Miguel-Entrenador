@@ -12,6 +12,7 @@ export type Collection =
   | 'target_race'
   | 'coach_memory'
   | 'history_md'
+  | 'macrocycle'
   | 'workouts'
   | 'checkins'
   | 'suunto_auth'
