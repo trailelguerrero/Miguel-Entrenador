@@ -106,6 +106,9 @@ export interface Workout {
   suuntoWorkoutKey?: string;
   /** Añadido a mano en la app de Suunto (sin pulsómetro): su TSS es un valor fijo de Suunto, no medido. */
   suuntoManualEntry?: boolean;
+  /** Deporte de Suunto (activityId) y su nombre: distingue actividades a pie de la bici dentro de 'cross_training'. */
+  suuntoActivityId?: number;
+  suuntoSport?: string;
 }
 
 export interface WorkoutFuelingGuideline {

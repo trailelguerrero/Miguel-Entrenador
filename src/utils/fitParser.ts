@@ -16,9 +16,10 @@ export interface ParsedFitResult {
   // % del tiempo por FRECUENCIA CARDÍACA respecto a tus umbrales (no es
   // ZoneSense: el .FIT no trae ZoneSense, así que no se estima).
   hasHeartRate: boolean;
-  timeInAerobicPct: number; // FC <= AeT
-  timeInTransitionPct: number; // AeT < FC <= AnT
-  timeInAnaerobicPct: number; // FC > AnT
+  // null si no hay AeT y AnT MEDIDOS (Suunto o manual): nunca umbrales por defecto
+  timeInAerobicPct: number | null; // FC <= AeT
+  timeInTransitionPct: number | null; // AeT < FC <= AnT
+  timeInAnaerobicPct: number | null; // FC > AnT
   recordsSample: Array<{
     timestamp: string;
     heartRate?: number;
@@ -30,8 +31,9 @@ export interface ParsedFitResult {
 export function parseFitFile(
   fileBuffer: ArrayBuffer,
   fileName: string,
-  aetHr: number = 142,
-  antHr: number = 166
+  /** Umbrales MEDIDOS (resolveIntensityPrescription). Sin ellos no se reparte el tiempo por FC. */
+  aetHr?: number | null,
+  antHr?: number | null,
 ): Promise<ParsedFitResult> {
   return new Promise((resolve, reject) => {
     try {
@@ -107,7 +109,8 @@ export function parseFitFile(
           }
         }
 
-        // Distribución del tiempo por FC respecto a AeT / AnT del perfil
+        // Distribución del tiempo por FC respecto a AeT / AnT del perfil (solo si están medidos)
+        const zonesOk = typeof aetHr === 'number' && aetHr > 0 && typeof antHr === 'number' && antHr > aetHr;
         let aerobicCount = 0;
         let transitionCount = 0;
         let anaerobicCount = 0;
@@ -116,9 +119,10 @@ export function parseFitFile(
         for (const r of records) {
           if (typeof r.heart_rate === 'number') {
             totalHrPoints++;
-            if (r.heart_rate <= aetHr) {
+            if (!zonesOk) continue;
+            if (r.heart_rate <= aetHr!) {
               aerobicCount++;
-            } else if (r.heart_rate <= antHr) {
+            } else if (r.heart_rate <= antHr!) {
               transitionCount++;
             } else {
               anaerobicCount++;
@@ -127,9 +131,10 @@ export function parseFitFile(
         }
 
         const totalPointsSafe = Math.max(1, totalHrPoints);
-        const timeInAerobicPct = Math.round((aerobicCount / totalPointsSafe) * 100);
-        const timeInTransitionPct = Math.round((transitionCount / totalPointsSafe) * 100);
-        const timeInAnaerobicPct = Math.round((anaerobicCount / totalPointsSafe) * 100);
+        const pct = (n: number) => (zonesOk && totalHrPoints > 0 ? Math.round((n / totalPointsSafe) * 100) : null);
+        const timeInAerobicPct = pct(aerobicCount);
+        const timeInTransitionPct = pct(transitionCount);
+        const timeInAnaerobicPct = pct(anaerobicCount);
 
 
         // Sample records for UI display (downsample to ~50-100 points for smooth charts)

@@ -45,6 +45,7 @@ import {
 import { StorageService } from '../services/storage';
 import { computePmcSeries, localDateKey } from '../utils/trainingLoad';
 import { ACWRVisualization } from './ACWRVisualization';
+import { MechanicalLoadCard } from './MechanicalLoadCard';
 import { calculateACWRSummary } from '../utils/acwrCalculations';
 import { HRVLoadOverreachingView } from './HRVLoadOverreachingView';
 import { HRVPredictiveRegressionCard } from './HRVPredictiveRegressionCard';
@@ -852,7 +853,7 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
           {activeMetricsTab === 'acwr' && (
             <div className="flex items-center justify-between bg-zinc-900 border border-zinc-800 p-4 rounded-2xl">
               <span className="text-xs font-bold text-cyan-400 uppercase tracking-wider">
-                Vista Enfocada: Ratio Aguda:Crónica (ACWR 28d) - Tim Gabbett
+                Vista enfocada: carga reciente frente a la previa (ACWR y carga mecánica)
               </span>
               <button 
                 onClick={() => setActiveMetricsTab('all')} 
@@ -864,9 +865,10 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
           )}
           <ACWRVisualization
             workouts={workouts}
-            antHr={profile.antHr}
+            antHr={measuredAntHr(profile)}
             onNavigateTab={onNavigateTab}
           />
+          <MechanicalLoadCard workouts={workouts} />
         </div>
       )}
 

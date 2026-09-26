@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { measuredAntHr } from '../brain/intensity';
+import { measuredAntHr, resolveIntensityPrescription } from '../brain/intensity';
 import { 
   X, 
   Clock, 
@@ -94,7 +94,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
     setIsParsingFit(true);
     try {
       const buffer = await file.arrayBuffer();
-      const result = await parseFitFile(buffer, file.name, profile.aetHr, profile.antHr);
+      const result = await parseFitFile(buffer, file.name, resolveIntensityPrescription(profile).aetHr, resolveIntensityPrescription(profile).antHr);
       setParsedFit(result);
 
       // Auto fill actual metrics from FIT

@@ -122,6 +122,8 @@ export function mapSuuntoWorkouts(rows: SuuntoWorkoutRow[]): Workout[] {
         ? `Actividad añadida a mano en Suunto (${sport}): sin FC; su TSS es el valor fijo que asigna Suunto, no una medida.`
         : `Actividad importada de Suunto (${sport}).`,
       ...(row.isManuallyAdded ? { suuntoManualEntry: true } : {}),
+      ...(row.activityId != null ? { suuntoActivityId: row.activityId } : {}),
+      suuntoSport: sport,
       mainSet: '',
       completed: true,
       actualDurationMin: durationMin,

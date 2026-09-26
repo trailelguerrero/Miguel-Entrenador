@@ -4,6 +4,7 @@ import { describeDataWindows } from '../../src/brain/dataWindows.js';
 import { describeReadiness, evaluateReadiness, strictestReadiness, type ReadinessState } from '../../src/brain/readiness.js';
 import { describeLoadHistory, weeklyLoadThresholds } from '../../src/utils/trainingLoad.js';
 import { tag } from '../../src/brain/provenance.js';
+import { describeMechanicalLoad, type MechanicalLoadSummary } from '../../src/utils/mechanicalLoad.js';
 import { resolveIntensityPrescription } from '../../src/brain/intensity.js';
 import { deriveWeeklyStructurePolicy, describeWeeklyStructurePolicy } from '../../src/utils/weekStructure.js';
 
@@ -57,6 +58,7 @@ export function formatLoadContext(lc: any): string {
     finite(lc.weeklyNonMeasuredTss) ? ` (${tag('estimated')} ${lc.weeklyNonMeasuredTss} de ellos NO medidos: estimados por la app o asignados por Suunto)` : ''
   }`);
   if (lc.loadHistory) lines.push(`- ${tag('derived')} ${describeLoadHistory(lc.loadHistory)}`);
+  if (isMechanicalLoad(lc.mechanicalLoad)) lines.push(`- ${tag('derived')} ${describeMechanicalLoad(lc.mechanicalLoad)}`);
   for (const c of lc.recentCheckIns || []) {
     lines.push(`- ${c.date}: ${c.fromSuunto ? `${tag('real')} (Suunto)` : `${tag('real')} (declarado por el atleta)`} HRV ${c.hrvRmssd} ms (referencia ${c.hrvBaseline} ms), sueño ${c.sleepHours} h${c.napMinutes ? ` (+ ${c.napMinutes} min que Suunto marcó como siesta; puede ser parte de la noche, no se suman)` : ''}${c.recoveryPct != null ? `, Recovery Suunto ${c.recoveryPct}%` : ''}, semáforo ${tag('derived')} ${c.status}`);
   }
@@ -66,6 +68,12 @@ export function formatLoadContext(lc: any): string {
   else if (lc.todayReadiness) lines.push('- Estado de readiness de hoy: no verificable (la app no envió los datos del check-in). No supongas un nivel ni unos límites.');
   lines.push(`- ${describeDataWindows()}`);
   return lines.join('\n');
+}
+
+/** Carga mecánica recibida: solo se describe si tiene la forma esperada. */
+function isMechanicalLoad(m: any): m is MechanicalLoadSummary {
+  const ok = (x: any) => x && typeof x.last7 === 'number' && Number.isFinite(x.last7);
+  return !!m && ok(m.descent) && ok(m.ascent) && ok(m.km) && ok(m.hours) && typeof m.comparable === 'boolean';
 }
 
 const finite = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);

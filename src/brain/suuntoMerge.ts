@@ -67,6 +67,8 @@ export function mergeSuuntoWorkouts(current: Workout[], suuntoIn: Workout[], aet
     actualTss: sw.actualTss,
     tss: sw.tss,
     suuntoManualEntry: sw.suuntoManualEntry,
+    suuntoActivityId: sw.suuntoActivityId,
+    suuntoSport: sw.suuntoSport,
   });
 
   for (const sw of suuntoWorkouts) {

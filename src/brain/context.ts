@@ -16,6 +16,7 @@ import {
 import { resolveIntensityPrescription } from './intensity.js';
 import { evaluateReadiness, type ReadinessState, type TodayReadinessInputs } from './readiness.js';
 import { deriveCheckIn } from '../utils/readiness.js';
+import { computeMechanicalLoad, type MechanicalLoadSummary } from '../utils/mechanicalLoad.js';
 
 export interface BrainCheckInSummary {
   date: string;
@@ -40,6 +41,8 @@ export interface BrainContext {
   /** Parte del TSS de 7 días que no es medida (estimada por la app o asignada por Suunto). */
   weeklyNonMeasuredTss?: number;
   loadHistory: LoadHistoryInfo;
+  /** Carga mecánica a pie (D−, D+, km, horas): descriptiva, no decide. */
+  mechanicalLoad?: MechanicalLoadSummary;
   recentCheckIns: BrainCheckInSummary[];
   /** Estado de hoy según el motor de readiness (sin check-in: solo con la carga → 'unknown' o más estricto). */
   todayReadiness: ReadinessState | null;
@@ -103,6 +106,7 @@ export function buildBrainContext(
     weeklyTss,
     weeklyNonMeasuredTss: week.nonMeasuredTss,
     loadHistory: getLoadHistoryInfo(workouts, antHr, today),
+    mechanicalLoad: computeMechanicalLoad(workouts, today),
     recentCheckIns: sorted.slice(-7).map((c) => ({
       date: c.date,
       hrvRmssd: c.hrvRmssd,
