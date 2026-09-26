@@ -1,14 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { BookOpen, Upload, Trash2, RefreshCw, KeyRound, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { BookOpen, Upload, Trash2, RefreshCw, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { ApiService, KnowledgeService, type KnowledgeDocument, type KnowledgeStatus } from '../services/api';
-import { AppSecret } from '../services/appSecret';
 
 const MAX_CHARS = 200_000;
 
 export const KnowledgeLibraryView: React.FC = () => {
   const [status, setStatus] = useState<KnowledgeStatus | null>(null);
-  const [secret, setSecret] = useState(AppSecret.get);
-  const [remember, setRemember] = useState(AppSecret.isRemembered);
   const [documents, setDocuments] = useState<KnowledgeDocument[] | null>(null);
   const [title, setTitle] = useState('');
   const [source, setSource] = useState('');
@@ -38,8 +35,7 @@ export const KnowledgeLibraryView: React.FC = () => {
 
   const loadDocuments = () =>
     run(async () => {
-      AppSecret.set(secret, remember);
-      setDocuments(await KnowledgeService.list(secret));
+      setDocuments(await KnowledgeService.list());
     });
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -54,28 +50,27 @@ export const KnowledgeLibraryView: React.FC = () => {
 
   const handleIngest = () =>
     run(async () => {
-      AppSecret.set(secret, remember);
-      const result = await KnowledgeService.ingest(secret, { title: title.trim(), text, source: source.trim() || undefined });
+      const result = await KnowledgeService.ingest({ title: title.trim(), text, source: source.trim() || undefined });
       setNotice(
         `"${title.trim()}" guardado en ${result.chunks} fragmento(s)${result.replaced ? ` (sustituye a la versión anterior)` : ''}.`,
       );
       setTitle('');
       setSource('');
       setText('');
-      setDocuments(await KnowledgeService.list(secret));
+      setDocuments(await KnowledgeService.list());
     });
 
   const handleDelete = (docTitle: string) => {
     if (!confirm(`¿Borrar "${docTitle}" de la Biblioteca de Miguel? No se puede deshacer.`)) return;
     run(async () => {
-      const deleted = await KnowledgeService.remove(secret, docTitle);
+      const deleted = await KnowledgeService.remove(docTitle);
       setNotice(`"${docTitle}" borrado (${deleted} fragmento(s)).`);
-      setDocuments(await KnowledgeService.list(secret));
+      setDocuments(await KnowledgeService.list());
     });
   };
 
   const tooLong = text.length > MAX_CHARS;
-  const canIngest = !busy && !!secret && !!title.trim() && !!text.trim() && !tooLong;
+  const canIngest = !busy && !!title.trim() && !!text.trim() && !tooLong;
 
   return (
     <div className="space-y-6">
@@ -107,40 +102,16 @@ export const KnowledgeLibraryView: React.FC = () => {
         )}
       </div>
 
-      <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 space-y-3">
-        <label className="flex items-center space-x-2 text-xs font-bold text-zinc-300">
-          <KeyRound className="w-4 h-4 text-amber-400" />
-          <span>Clave de la biblioteca (INGEST_SECRET)</span>
-        </label>
-        <div className="flex gap-2">
-          <input
-            type="password"
-            value={secret}
-            onChange={(e) => setSecret(e.target.value)}
-            placeholder="La misma que pusiste en Vercel"
-            autoComplete="off"
-            className="flex-1 min-w-0 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100"
-          />
-          <button
-            onClick={loadDocuments}
-            disabled={busy || !secret}
-            className="px-4 py-2 rounded-xl bg-zinc-800 text-zinc-100 text-xs font-bold disabled:opacity-40 flex items-center space-x-1.5"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${busy ? 'animate-spin' : ''}`} />
-            <span>Ver documentos</span>
-          </button>
-        </div>
-        <label className="flex items-center space-x-2 text-[11px] text-zinc-400">
-          <input
-            type="checkbox"
-            checked={remember}
-            onChange={(e) => {
-              setRemember(e.target.checked);
-              AppSecret.set(secret, e.target.checked);
-            }}
-          />
-          <span>Recordar en este dispositivo (si no, se olvida al cerrar la pestaña). También sirve para guardar y cargar conversaciones.</span>
-        </label>
+      <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 flex items-center justify-between gap-3">
+        <span className="text-xs text-zinc-400">Protegida con la sesión de la app: no hace falta escribir ninguna clave.</span>
+        <button
+          onClick={loadDocuments}
+          disabled={busy}
+          className="shrink-0 px-4 py-2 rounded-xl bg-zinc-800 text-zinc-100 text-xs font-bold disabled:opacity-40 flex items-center space-x-1.5"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${busy ? 'animate-spin' : ''}`} />
+          <span>Ver documentos</span>
+        </button>
       </div>
 
       {error && (

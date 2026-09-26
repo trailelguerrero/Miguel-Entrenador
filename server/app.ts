@@ -1,7 +1,11 @@
-import express, { NextFunction, Request, Response } from 'express';
-import { timingSafeEqual } from 'node:crypto';
+import express, { Request, Response } from 'express';
 import { AiError, aiConfigStatus, classifyAiError, generateText, GenerateOptions, modelFor, parseModelJson, searchWithGemini } from './ai.js';
 import { registerSuuntoRoutes } from './suunto-routes.js';
+import { registerSuuntoSyncRoutes } from './suunto-sync.js';
+import { registerDataRoutes } from './data-routes.js';
+import { serverData } from './brain/serverData.js';
+import { storeReady } from './store/docStore.js';
+import { SESSION_DAYS, createSessionToken, isAuthenticated, loginSecrets, requireSession, secretMatches, sessionCookie } from './auth.js';
 import { sanitizeEvidenceItems } from '../src/brain/memory.js';
 // Cerebro de Miguel en el servidor: prompts (texto), contexto (hechos→texto) y decisión (validación en código)
 import {
@@ -25,7 +29,6 @@ import { KnowledgeError } from './rag/supabase.js';
 import { getConversation, listConversations, parseIncomingMessages, saveConversation } from './rag/chatStore.js';
 import {
   KnowledgeMatch,
-  checkIngestSecret,
   deleteDocument,
   ingestDocument,
   knowledgeConfigStatus,
@@ -42,47 +45,25 @@ const app = express();
 
 app.use(express.json({ limit: '25mb' }));
 
-// Clave de la app: con APP_SECRET (o, si no, INGEST_SECRET) en Vercel, las rutas
-// que usan la IA o tus datos exigen la cabecera x-app-secret. Sin ninguna de las
-// dos variables siguen abiertas (como antes) y /api/health lo avisa.
-// Sin esto, quien conozca la URL gasta tu cuota de IA y puede preguntarle a
-// Miguel por tus conversaciones guardadas.
-const PROTECTED_ROUTES = [
-  '/api/chat',
-  '/api/generate-plan',
-  '/api/adapt-session',
-  '/api/analyze-workout',
-  '/api/coach-memory',
-  '/api/race-info',
-  '/api/parse-markdown-history',
-  '/api/health/ai-test',
-];
+// Sesión de la app (Fase B): TODA /api/* exige sesión salvo salud, login y cron.
+// Cerrada por defecto: sin APP_SECRET/INGEST_SECRET responde 503.
+app.use(requireSession);
 
-/** Claves válidas: APP_SECRET y/o INGEST_SECRET (la misma que ya usa la biblioteca). */
-export function appSecrets(): string[] {
-  return [process.env.APP_SECRET, process.env.INGEST_SECRET].filter((s): s is string => !!s);
-}
+app.post('/api/auth/login', (req: Request, res: Response) => {
+  if (!loginSecrets().length) return res.status(503).json({ error: 'La app no tiene clave configurada.', code: 'AUTH_NOT_CONFIGURED' });
+  const key = typeof req.body?.key === 'string' ? req.body.key.trim() : '';
+  if (!secretMatches(key)) return res.status(401).json({ error: 'Clave incorrecta.', code: 'AUTH_BAD_KEY' });
+  res.setHeader('Set-Cookie', sessionCookie(req, createSessionToken()));
+  res.json({ ok: true, days: SESSION_DAYS });
+});
 
-export function isProtectedRoute(path: string): boolean {
-  return PROTECTED_ROUTES.some((p) => path === p || path.startsWith(`${p}/`));
-}
+app.post('/api/auth/logout', (req: Request, res: Response) => {
+  res.setHeader('Set-Cookie', sessionCookie(req, null));
+  res.json({ ok: true });
+});
 
-export function appSecretMatches(provided: string | undefined, expected: string): boolean {
-  const a = Buffer.from(provided ?? '');
-  const b = Buffer.from(expected);
-  return a.length === b.length && timingSafeEqual(a, b);
-}
-
-app.use((req: Request, res: Response, next: NextFunction) => {
-  const secrets = appSecrets();
-  if (!secrets.length || !isProtectedRoute(req.path)) return next();
-  const provided = req.get('x-app-secret');
-  if (secrets.some((s) => appSecretMatches(provided, s))) return next();
-  res.status(401).json({
-    error: 'Falta la clave de la app o no es correcta.',
-    code: 'APP_AUTH',
-    hint: 'Escribe la clave de la app (el valor de APP_SECRET o INGEST_SECRET en Vercel) cuando la app te la pida.',
-  });
+app.get('/api/auth/status', (req: Request, res: Response) => {
+  res.json({ configured: loginSecrets().length > 0, authenticated: loginSecrets().length > 0 && isAuthenticated(req) });
 });
 
 // Llama a la IA y, si respondió el respaldo (Gemini en vez de Experiential),
@@ -109,13 +90,16 @@ function sendAiError(res: Response, route: string, err: unknown) {
 }
 
 // Estado de la configuración (no gasta tokens): la app lo consulta al abrirse.
-app.get('/api/health', (_req: Request, res: Response) => {
+app.get('/api/health', async (_req: Request, res: Response) => {
+  const dataStore = await storeReady().catch(() => false);
   res.json({
     ok: true,
     ai: aiConfigStatus(),
     knowledge: knowledgeConfigStatus(),
-    // false = las rutas de IA están abiertas a cualquiera que conozca la URL
-    apiProtected: appSecrets().length > 0,
+    // false = falta la clave: la API está cerrada (503) hasta configurarla
+    apiProtected: loginSecrets().length > 0,
+    // true = los datos del atleta viven en Supabase (Fase B)
+    dataStore,
     suuntoMcpUrl: process.env.SUUNTO_MCP_URL || 'https://mcp-ten-kappa.vercel.app',
   });
 });
@@ -196,7 +180,6 @@ function sendKnowledgeError(res: Response, route: string, err: unknown) {
 // cabecera x-ingest-secret = INGEST_SECRET.
 app.post('/api/knowledge/ingest', async (req: Request, res: Response) => {
   try {
-    checkIngestSecret(req.get('x-ingest-secret'));
     const input = parseIngestInput(req.body);
     const result = await ingestDocument(input);
     res.json({ ok: true, title: input.title, ...result });
@@ -207,7 +190,6 @@ app.post('/api/knowledge/ingest', async (req: Request, res: Response) => {
 
 app.get('/api/knowledge/documents', async (req: Request, res: Response) => {
   try {
-    checkIngestSecret(req.get('x-ingest-secret'));
     res.json({ documents: await listDocuments() });
   } catch (err) {
     sendKnowledgeError(res, '/api/knowledge/documents', err);
@@ -216,7 +198,6 @@ app.get('/api/knowledge/documents', async (req: Request, res: Response) => {
 
 app.delete('/api/knowledge/documents', async (req: Request, res: Response) => {
   try {
-    checkIngestSecret(req.get('x-ingest-secret'));
     const title = typeof req.body?.title === 'string' ? req.body.title.trim() : '';
     if (!title) throw new KnowledgeError('KB_INPUT', 'Falta el título del documento a borrar.', 'Envía JSON con "title".', 400);
     res.json({ ok: true, deleted: await deleteDocument(title) });
@@ -229,7 +210,6 @@ app.delete('/api/knowledge/documents', async (req: Request, res: Response) => {
 // en Supabase" en el chat. No hay ruta para borrarlas. Misma clave que la biblioteca.
 app.post('/api/conversations/save', async (req: Request, res: Response) => {
   try {
-    checkIngestSecret(req.get('x-ingest-secret'));
     const messages = parseIncomingMessages(req.body?.messages);
     const result = await saveConversation(req.body?.sessionId, messages);
     // Memoria de conversaciones: si falla, los mensajes ya están guardados y el
@@ -251,7 +231,6 @@ app.post('/api/conversations/save', async (req: Request, res: Response) => {
 
 app.get('/api/conversations', async (req: Request, res: Response) => {
   try {
-    checkIngestSecret(req.get('x-ingest-secret'));
     res.json({ conversations: await listConversations() });
   } catch (err) {
     sendKnowledgeError(res, '/api/conversations', err);
@@ -260,7 +239,6 @@ app.get('/api/conversations', async (req: Request, res: Response) => {
 
 app.get('/api/conversations/:id', async (req: Request, res: Response) => {
   try {
-    checkIngestSecret(req.get('x-ingest-secret'));
     res.json({ sessionId: req.params.id, messages: await getConversation(req.params.id) });
   } catch (err) {
     sendKnowledgeError(res, '/api/conversations/:id', err);
@@ -268,7 +246,7 @@ app.get('/api/conversations/:id', async (req: Request, res: Response) => {
 });
 
 // 1. Interactive Chat with Miguel
-app.post('/api/chat', async (req: Request, res: Response) => {
+app.post('/api/chat', serverData('chat'), async (req: Request, res: Response) => {
   try {
     const conversation = buildChatConversation(req.body);
     // Se busca con lo que escribió el atleta, no con `conversation`: esta lleva
@@ -296,7 +274,7 @@ app.post('/api/chat', async (req: Request, res: Response) => {
 });
 
 // 2. Generate Plan / Microcycle Workouts
-app.post('/api/generate-plan', async (req: Request, res: Response) => {
+app.post('/api/generate-plan', serverData('generate-plan'), async (req: Request, res: Response) => {
   try {
     const { athleteProfile, weekStartDate, nutritionEvidence } = req.body;
     if (typeof weekStartDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(weekStartDate)) {
@@ -340,7 +318,7 @@ app.post('/api/generate-plan', async (req: Request, res: Response) => {
 });
 
 // 3. Adapt Session in Real-Time based on Morning HRV & Sleep
-app.post('/api/adapt-session', async (req: Request, res: Response) => {
+app.post('/api/adapt-session', serverData('adapt-session'), async (req: Request, res: Response) => {
   try {
     const { athleteProfile } = req.body;
     // Estado y límites del motor determinista (del cliente, o desde el check-in)
@@ -364,7 +342,7 @@ app.post('/api/adapt-session', async (req: Request, res: Response) => {
 });
 
 // 4. Workout Debrief & FIT Analysis by Miguel (with Continuous Learning)
-app.post('/api/analyze-workout', async (req: Request, res: Response) => {
+app.post('/api/analyze-workout', serverData('analyze-workout'), async (req: Request, res: Response) => {
   try {
     const { coachMemory } = req.body;
     const prompt = buildAnalyzePrompt(req.body);
@@ -384,7 +362,7 @@ app.post('/api/analyze-workout', async (req: Request, res: Response) => {
 });
 
 // 5. Extract Learned Insight from Conversation / Note
-app.post('/api/coach-memory/extract-insight', async (req: Request, res: Response) => {
+app.post('/api/coach-memory/extract-insight', serverData('memory'), async (req: Request, res: Response) => {
   try {
     const { noteText, currentMemory } = req.body;
 
@@ -408,7 +386,7 @@ app.post('/api/coach-memory/extract-insight', async (req: Request, res: Response
 });
 
 // 5b. Evidencias de una conversación con Miguel (quedan PENDIENTES hasta que el atleta las confirme)
-app.post('/api/coach-memory/extract-chat-evidence', async (req: Request, res: Response) => {
+app.post('/api/coach-memory/extract-chat-evidence', serverData('memory'), async (req: Request, res: Response) => {
   try {
     const { messages, currentMemory } = req.body;
     const turns = (Array.isArray(messages) ? messages : []).slice(-30);
@@ -511,5 +489,7 @@ app.post('/api/parse-markdown-history', async (req: Request, res: Response) => {
 });
 
 registerSuuntoRoutes(app);
+registerSuuntoSyncRoutes(app);
+registerDataRoutes(app);
 
 export default app;

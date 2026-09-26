@@ -38,6 +38,7 @@ import {
 } from './sampleData';
 import { computePmcSeries, localDateKey } from '../utils/trainingLoad';
 import { rebaseSuuntoCheckIn } from '../utils/readiness';
+import { mergeSuuntoCheckIns, mergeSuuntoWorkouts, sportGroup } from '../brain/suuntoMerge';
 import { applyEvidence, refreshMemory, type EvidenceContext, type EvidenceItem } from '../brain/memory';
 
 const STORAGE_KEYS = {
@@ -63,14 +64,47 @@ const STORAGE_KEYS = {
   WUT_CHECKS: 'uphill_coach_wut_checks',
 };
 
-// Initial target race as specified by user: Transvulcania 2027
-/** Deporte de una sesión, para saber si un entreno de Suunto completa lo planificado. */
-export function sportGroup(type: Workout['type'] | undefined): 'run' | 'strength' | 'other' {
-  if (type === 'strength_core') return 'strength';
-  if (type === 'easy_run' || type === 'intensity_run' || type === 'long_mountain_run' || type === 'muscular_endurance' || type === 'hill_intervals' || type === 'drift_test') return 'run';
-  return 'other';
+/** Deporte de una sesión (src/brain/suuntoMerge.ts). */
+export { sportGroup };
+
+/**
+ * Datos que viven en el servidor (Fase B). Cada escritura en el navegador (que hace
+ * de caché) avisa al módulo de sincronización (src/services/remoteData.ts), que la
+ * sube al servidor. Mientras se aplica lo que llega del servidor, no se avisa.
+ */
+export interface ServerSnapshot {
+  profile: AthleteProfile | null;
+  targetRace: TargetRace | null;
+  coachMemory: CoachLearnedMemory | null;
+  historyMd: AthleteHistoryDocument | null;
+  workouts: Workout[];
+  checkIns: DailyCheckIn[];
+  suunto: Pick<SuuntoIntegrationConfig, 'connected' | 'lastSync' | 'syncStatus' | 'lastSyncMessage' | 'totalActivitiesSynced'>;
+  imported: boolean;
+  serverTime: string;
 }
 
+export type RemoteKind = 'profile' | 'targetRace' | 'coachMemory' | 'historyMd' | 'workouts' | 'checkIns';
+const REMOTE_KIND: Record<string, RemoteKind> = {
+  [STORAGE_KEYS.PROFILE]: 'profile',
+  [STORAGE_KEYS.TARGET_RACE]: 'targetRace',
+  [STORAGE_KEYS.COACH_MEMORY]: 'coachMemory',
+  [STORAGE_KEYS.ATHLETE_HISTORY_MD]: 'historyMd',
+  [STORAGE_KEYS.WORKOUTS]: 'workouts',
+  [STORAGE_KEYS.DAILY_CHECKINS]: 'checkIns',
+};
+const SAMPLE_WORKOUT_IDS = new Set(SAMPLE_TEST_WORKOUTS.map((w) => w.id));
+let remoteHook: ((kind: RemoteKind) => void) | null = null;
+let remoteMuted = 0;
+
+function writeTracked(key: string, value: string | null): void {
+  if (value === null) localStorage.removeItem(key);
+  else localStorage.setItem(key, value);
+  const kind = REMOTE_KIND[key];
+  if (kind && remoteHook && remoteMuted === 0) remoteHook(kind);
+}
+
+// Initial target race as specified by user: Transvulcania 2027
 export const DEFAULT_TARGET_RACE: TargetRace = {
   id: 'transvulcania-2027',
   name: 'Transvulcania Ultramarathon 2027',
@@ -343,6 +377,69 @@ function emptyGutProfile(): GutTrainingProfile {
 }
 
 export const StorageService = {
+  /** Registra quién sube al servidor las escrituras (null = solo este navegador). */
+  setRemoteHook(fn: ((kind: RemoteKind) => void) | null): void {
+    remoteHook = fn;
+  },
+
+  /** Guarda en este navegador (caché) el estado que devuelve el servidor. */
+  applyServerSnapshot(snap: ServerSnapshot): void {
+    this.withoutRemote(() => {
+      if (snap.profile) writeTracked(STORAGE_KEYS.PROFILE, JSON.stringify(snap.profile));
+      if (snap.targetRace) writeTracked(STORAGE_KEYS.TARGET_RACE, JSON.stringify(snap.targetRace));
+      if (snap.coachMemory) writeTracked(STORAGE_KEYS.COACH_MEMORY, JSON.stringify(snap.coachMemory));
+      writeTracked(STORAGE_KEYS.ATHLETE_HISTORY_MD, snap.historyMd ? JSON.stringify(snap.historyMd) : null);
+      writeTracked(STORAGE_KEYS.WORKOUTS, JSON.stringify(snap.workouts));
+      writeTracked(STORAGE_KEYS.DAILY_CHECKINS, JSON.stringify(snap.checkIns));
+      const prev = this.getSuuntoConfig();
+      this.saveSuuntoConfig({
+        ...prev,
+        ...snap.suunto,
+        auth: undefined,
+        serverManaged: true,
+      });
+    });
+  },
+
+  /** Datos de este navegador para la subida única al servidor. */
+  exportForServer(): {
+    profile: AthleteProfile | null;
+    targetRace: TargetRace | null;
+    coachMemory: CoachLearnedMemory | null;
+    historyMd: AthleteHistoryDocument | null;
+    workouts: Workout[];
+    checkIns: DailyCheckIn[];
+    suuntoAuth: SuuntoIntegrationConfig['auth'] | null;
+  } {
+    const has = (k: string) => localStorage.getItem(k) !== null;
+    return {
+      profile: has(STORAGE_KEYS.PROFILE) ? this.getProfile() : null,
+      targetRace: has(STORAGE_KEYS.TARGET_RACE) ? this.getTargetRace() : null,
+      coachMemory: has(STORAGE_KEYS.COACH_MEMORY) ? this.getCoachMemory() : null,
+      historyMd: this.getAthleteHistory(),
+      // Sin los entrenos de ejemplo del modo prueba
+      workouts: this.getWorkouts().filter((w) => !SAMPLE_WORKOUT_IDS.has(w.id) && !w.id.startsWith('test-w-')),
+      checkIns: this.getCheckIns().filter((c) => !c.isSample),
+      suuntoAuth: this.getSuuntoConfig().auth ?? null,
+    };
+  },
+
+  /** ¿Hay datos del atleta en este navegador que subir? */
+  hasLocalAthleteData(): boolean {
+    const e = this.exportForServer();
+    return !!(e.profile || e.coachMemory || e.historyMd || e.workouts.length || e.checkIns.length || e.suuntoAuth);
+  },
+
+  /** Ejecuta fn sin avisar al servidor (para guardar en caché lo que viene de él). */
+  withoutRemote<T>(fn: () => T): T {
+    remoteMuted++;
+    try {
+      return fn();
+    } finally {
+      remoteMuted--;
+    }
+  },
+
   getProfile(): AthleteProfile {
     try {
       const stored = localStorage.getItem(STORAGE_KEYS.PROFILE);
@@ -357,14 +454,14 @@ export const StorageService = {
 
   saveProfile(profile: AthleteProfile): void {
     const previousBaseline = this.getProfile().baselineHrv;
-    localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(profile));
+    writeTracked(STORAGE_KEYS.PROFILE, JSON.stringify(profile));
     // Si cambia la HRV de referencia, los check-ins de Suunto se recalculan con ella
     if (profile.baselineHrv && profile.baselineHrv !== previousBaseline) {
       try {
         const raw = JSON.parse(localStorage.getItem(STORAGE_KEYS.DAILY_CHECKINS) || '[]');
         if (Array.isArray(raw)) {
           const rebased = raw.map((c: DailyCheckIn) => rebaseSuuntoCheckIn(c, profile.baselineHrv as number));
-          localStorage.setItem(STORAGE_KEYS.DAILY_CHECKINS, JSON.stringify(rebased));
+          writeTracked(STORAGE_KEYS.DAILY_CHECKINS, JSON.stringify(rebased));
         }
       } catch {
         // check-ins corruptos: se dejan como están
@@ -386,7 +483,7 @@ export const StorageService = {
   },
 
   saveTargetRace(race: TargetRace): void {
-    localStorage.setItem(STORAGE_KEYS.TARGET_RACE, JSON.stringify(race));
+    writeTracked(STORAGE_KEYS.TARGET_RACE, JSON.stringify(race));
   },
 
   getSecondaryRaces(): TargetRace[] {
@@ -414,7 +511,7 @@ export const StorageService = {
   },
 
   saveWorkouts(workouts: Workout[]): void {
-    localStorage.setItem(STORAGE_KEYS.WORKOUTS, JSON.stringify(workouts));
+    writeTracked(STORAGE_KEYS.WORKOUTS, JSON.stringify(workouts));
   },
 
   addOrUpdateWorkout(workout: Workout): void {
@@ -455,7 +552,7 @@ export const StorageService = {
     } else {
       list.unshift(checkIn);
     }
-    localStorage.setItem(STORAGE_KEYS.DAILY_CHECKINS, JSON.stringify(list));
+    writeTracked(STORAGE_KEYS.DAILY_CHECKINS, JSON.stringify(list));
   },
 
   /** Integra los datos de una sincronización con Suunto sin pisar lo que el
@@ -474,63 +571,8 @@ export const StorageService = {
     if (suuntoWorkouts.length > 0 && this.isTestDataActive()) {
       this.clearOnlySampleData();
     }
-    const workouts = this.getWorkouts();
-    const byKey = new Map(workouts.filter((w) => w.suuntoWorkoutKey).map((w) => [w.suuntoWorkoutKey as string, w]));
-    let addedWorkouts = 0;
-    let completedPlanned = 0;
-
-    // Datos medidos por Suunto (se copian siempre, también al re-sincronizar,
-    // para recoger cambios como un TSS o una duración editados en Suunto).
-    const measured = (sw: Workout) => ({
-      completed: true,
-      suuntoWorkoutKey: sw.suuntoWorkoutKey,
-      date: sw.date,
-      actualDurationMin: sw.actualDurationMin,
-      actualDistanceKm: sw.actualDistanceKm,
-      actualElevationGainM: sw.actualElevationGainM,
-      actualElevationLossM: sw.actualElevationLossM,
-      actualAvgHr: sw.actualAvgHr,
-      actualMaxHr: sw.actualMaxHr,
-      actualTss: sw.actualTss,
-      tss: sw.tss,
-      suuntoManualEntry: sw.suuntoManualEntry,
-    });
-
-    for (const sw of suuntoWorkouts) {
-      if (!sw.suuntoWorkoutKey) continue;
-      const existing = byKey.get(sw.suuntoWorkoutKey);
-      if (existing) {
-        Object.assign(existing, measured(sw), {
-          zoneSenseBreakdown: sw.zoneSenseBreakdown ?? existing.zoneSenseBreakdown,
-        });
-        // Entreno creado por la importación: versiones anteriores le ponían un
-        // objetivo ZoneSense ficticio ("DFA a1 > 0.75") a cualquier actividad.
-        if (existing.id === `suunto-${sw.suuntoWorkoutKey}`) {
-          existing.zoneSenseTarget = undefined;
-          // Actividad importada: su tipo lo decide lo que pasó (p. ej. carrera con intensidad)
-          existing.type = sw.type;
-        }
-        continue;
-      }
-      // Solo completa la sesión planificada de ese día si es del mismo deporte:
-      // un pilates o una salida en bici no cuentan como las series que tocaban.
-      const planned = workouts.find(
-        (w) => w.date === sw.date && !w.completed && !w.suuntoWorkoutKey && w.type !== 'rest' && sportGroup(w.type) === sportGroup(sw.type),
-      );
-      if (planned) {
-        Object.assign(planned, measured(sw), {
-          zoneSenseBreakdown: sw.zoneSenseBreakdown ?? planned.zoneSenseBreakdown,
-          intensityFactor: undefined,
-        });
-        byKey.set(sw.suuntoWorkoutKey, planned);
-        completedPlanned++;
-      } else {
-        workouts.push(sw);
-        byKey.set(sw.suuntoWorkoutKey, sw);
-        addedWorkouts++;
-      }
-    }
-    this.saveWorkouts(workouts);
+    const w = mergeSuuntoWorkouts(this.getWorkouts(), suuntoWorkouts);
+    this.saveWorkouts(w.workouts);
 
     let stored: DailyCheckIn[] = [];
     try {
@@ -539,24 +581,11 @@ export const StorageService = {
     } catch {
       stored = [];
     }
-    const testDataActive = this.isTestDataActive();
-    const byDate = new Map(stored.map((c) => [c.date, c]));
-    let checkInsAdded = 0;
     // Todos los check-ins de Suunto contra la HRV de referencia del perfil
-    const profileBaseline = this.getProfile().baselineHrv || 0;
-    for (const rawCi of suuntoCheckIns) {
-      const existing = byDate.get(rawCi.date);
-      // Lo MEDIDO (HRV, sueño, FC mínima, Recovery) lo pone Suunto, también si ese día ya
-      // había un check-in manual; lo que solo sabes tú (dolor y estrés) se conserva.
-      const subjective = existing && !testDataActive ? { muscleSoreness: existing.muscleSoreness, stressLevel: existing.stressLevel } : {};
-      const ci = rebaseSuuntoCheckIn({ ...rawCi, ...subjective }, profileBaseline);
-      if (!existing) checkInsAdded++;
-      byDate.set(ci.date, ci);
-    }
-    const merged = [...byDate.values()].sort((a, b) => b.date.localeCompare(a.date));
-    localStorage.setItem(STORAGE_KEYS.DAILY_CHECKINS, JSON.stringify(merged));
+    const c = mergeSuuntoCheckIns(stored, suuntoCheckIns, this.getProfile().baselineHrv || 0, !this.isTestDataActive());
+    writeTracked(STORAGE_KEYS.DAILY_CHECKINS, JSON.stringify(c.checkIns));
 
-    return { addedWorkouts, completedPlanned, checkInsAdded };
+    return { addedWorkouts: w.addedWorkouts, completedPlanned: w.completedPlanned, checkInsAdded: c.checkInsAdded };
   },
 
   getTodayCheckIn(): DailyCheckIn | undefined {
@@ -623,7 +652,7 @@ Puedes revisar tus umbrales (AeT y AnT) en tu perfil, registrar tu test de deriv
       const cfg = JSON.parse(stored) as SuuntoIntegrationConfig;
       // Versiones anteriores marcaban connected=true con solo escribir credenciales;
       // ahora solo está conectado si hay tokens OAuth reales.
-      return { ...cfg, connected: !!cfg.auth?.accessToken };
+      return { ...cfg, connected: cfg.serverManaged ? !!cfg.connected : !!cfg.auth?.accessToken };
     } catch {
       return DEFAULT_SUUNTO_CONFIG;
     }
@@ -656,11 +685,11 @@ Puedes revisar tus umbrales (AeT y AnT) en tu perfil, registrar tu test de deriv
   },
 
   saveAthleteHistory(doc: AthleteHistoryDocument): void {
-    localStorage.setItem(STORAGE_KEYS.ATHLETE_HISTORY_MD, JSON.stringify(doc));
+    writeTracked(STORAGE_KEYS.ATHLETE_HISTORY_MD, JSON.stringify(doc));
   },
 
   clearAthleteHistory(): void {
-    localStorage.removeItem(STORAGE_KEYS.ATHLETE_HISTORY_MD);
+    writeTracked(STORAGE_KEYS.ATHLETE_HISTORY_MD, null);
   },
 
   getCoachMemory(): CoachLearnedMemory {
@@ -677,7 +706,7 @@ Puedes revisar tus umbrales (AeT y AnT) en tu perfil, registrar tu test de deriv
   },
 
   saveCoachMemory(memory: CoachLearnedMemory): void {
-    localStorage.setItem(STORAGE_KEYS.COACH_MEMORY, JSON.stringify(memory));
+    writeTracked(STORAGE_KEYS.COACH_MEMORY, JSON.stringify(memory));
   },
 
   /** Aplica evidencias (análisis de sesión, nota del atleta, chat confirmado). El estado lo calcula src/brain/memory.ts. */
@@ -1027,7 +1056,7 @@ Puedes revisar tus umbrales (AeT y AnT) en tu perfil, registrar tu test de deriv
     const real = this.getCheckIns().filter((c) => !c.isSample);
     const realDates = new Set(real.map((c) => c.date));
     const samples = SAMPLE_DAILY_CHECKINS.filter((c) => !realDates.has(c.date)).map((c) => ({ ...c, isSample: true }));
-    localStorage.setItem(STORAGE_KEYS.DAILY_CHECKINS, JSON.stringify([...real, ...samples].sort((a, b) => b.date.localeCompare(a.date))));
+    writeTracked(STORAGE_KEYS.DAILY_CHECKINS, JSON.stringify([...real, ...samples].sort((a, b) => b.date.localeCompare(a.date))));
     this.setTestDataActive(true);
   },
 
@@ -1061,7 +1090,7 @@ Puedes revisar tus umbrales (AeT y AnT) en tu perfil, registrar tu test de deriv
       : // Datos de prueba cargados con una versión anterior (sin marca): se conservan los
         // de Suunto y el de hoy; el resto no se puede distinguir de los de ejemplo.
         all.filter((c) => c.source === 'suunto' || c.date === today);
-    localStorage.setItem(STORAGE_KEYS.DAILY_CHECKINS, JSON.stringify(userCheckIns));
+    writeTracked(STORAGE_KEYS.DAILY_CHECKINS, JSON.stringify(userCheckIns));
     // Gut training de ejemplo: fuera si no lo has cambiado
     if (localStorage.getItem(STORAGE_KEYS.GUT_PROFILE) === JSON.stringify(SAMPLE_GUT_PROFILE)) localStorage.removeItem(STORAGE_KEYS.GUT_PROFILE);
     // Resto de registros de ejemplo que no has cambiado
@@ -1085,7 +1114,7 @@ Puedes revisar tus umbrales (AeT y AnT) en tu perfil, registrar tu test de deriv
     this.saveWorkouts([]); // empty array
     this.saveWeightHistory([]);
     this.saveHydrationTests([]);
-    localStorage.setItem(STORAGE_KEYS.DAILY_CHECKINS, JSON.stringify([]));
+    writeTracked(STORAGE_KEYS.DAILY_CHECKINS, JSON.stringify([]));
     localStorage.removeItem(STORAGE_KEYS.GUT_PROFILE);
     localStorage.removeItem(STORAGE_KEYS.PMC_DATA);
     localStorage.removeItem(STORAGE_KEYS.WEEKLY_SUMMARIES);
@@ -1169,7 +1198,7 @@ Puedes revisar tus umbrales (AeT y AnT) en tu perfil, registrar tu test de deriv
         countSummary.workouts = data.workouts.length;
       }
       if (Array.isArray(data.dailyCheckIns)) {
-        localStorage.setItem(STORAGE_KEYS.DAILY_CHECKINS, JSON.stringify(data.dailyCheckIns));
+        writeTracked(STORAGE_KEYS.DAILY_CHECKINS, JSON.stringify(data.dailyCheckIns));
         countSummary.checkIns = data.dailyCheckIns.length;
       }
       if (Array.isArray(data.chatMessages)) {
@@ -1182,7 +1211,7 @@ Puedes revisar tus umbrales (AeT y AnT) en tu perfil, registrar tu test de deriv
         this.saveMacrocycle(data.macrocycle);
       }
       if (data.athleteHistoryMd) {
-        localStorage.setItem(STORAGE_KEYS.ATHLETE_HISTORY_MD, data.athleteHistoryMd);
+        writeTracked(STORAGE_KEYS.ATHLETE_HISTORY_MD, data.athleteHistoryMd);
       }
       if (data.coachMemory) {
         this.saveCoachMemory(data.coachMemory);

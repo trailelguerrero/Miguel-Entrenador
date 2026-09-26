@@ -83,9 +83,12 @@ Si el proyecto `miguel` ya existe (ya está creado: https://miguel-seven-sage.ve
 | `SUUNTO_MCP_URL` | `https://mcp-ten-kappa.vercel.app` | ❌ No. Es el valor por defecto; solo cámbiala si algún día mueves el servidor MCP de Suunto. |
 | `AI_PROVIDER`, `EXPERIENTIAL_*`, `AI_FALLBACK` | Ver la sección 5 | ❌ No. Solo si quieres usar Claude (u otro modelo) en lugar de Gemini. |
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `INGEST_SECRET`, `EMBEDDING_PROVIDER`… | Ver la sección 10 | ❌ No. Solo para la Biblioteca de Miguel y guardar las conversaciones. |
-| `APP_SECRET` | Un secreto largo inventado por ti (40+ caracteres). | ⚠️ Muy recomendable. Sin él (ni `INGEST_SECRET`), cualquiera que conozca la URL puede usar a Miguel y gastar tu cuota de IA. |
+| `APP_SECRET` | Un secreto largo inventado por ti (40+ caracteres). | ✅ Sí (o `INGEST_SECRET`). **Sin ninguna de las dos la API está cerrada** y la app no funciona. |
+| `CRON_SECRET` | Otro secreto largo inventado por ti. | ⚠️ Recomendable. Activa la sincronización diaria con Suunto (sección 11). |
+| `SESSION_SECRET` | Otro secreto largo. | ❌ No. Firma las sesiones; cambiarlo **cierra la sesión en todos tus dispositivos**. |
+| `TOKEN_ENCRYPTION_KEY` | Otro secreto largo. | ❌ No, pero recomendable. Cifra los tokens de Suunto guardados en Supabase. Sin ella se usa `APP_SECRET`/`INGEST_SECRET` (cambiar esa clave obliga a reconectar Suunto). |
 
-> **Clave de la app.** Si hay `APP_SECRET` o `INGEST_SECRET` en Vercel, el chat, los planes, la adaptación, los análisis, las notas, la búsqueda de carreras y el historial .md exigen esa clave. La primera vez la app te la pide y la guarda en el dispositivo (vale cualquiera de las dos). Si ya usas la biblioteca con `INGEST_SECRET`, no necesitas `APP_SECRET`. Sin ninguna de las dos, el indicador de la IA avisa de que está abierta.
+> **Clave de la app y sesión.** La API está **cerrada por defecto**: todo (IA, tus datos, Suunto, biblioteca) exige sesión. La primera vez en cada dispositivo la app te pide la clave (`APP_SECRET` o `INGEST_SECRET`, vale cualquiera). El servidor responde con una **sesión de 90 días** (cookie HttpOnly): la clave **no se guarda** en el navegador. Para cerrar la sesión en todos los dispositivos, cambia `SESSION_SECRET` (o, si no lo tienes, `APP_SECRET`) y haz **Redeploy**.
 
 > Las variables **no se aplican solas** a lo que ya está desplegado. Después de añadirlas o cambiarlas tienes que redesplegar (paso 3.3).
 
@@ -218,7 +221,7 @@ El texto entre comillas es el nombre que hay que corregir.
 
 ## 6. Conectar tu cuenta Suunto
 
-Se hace **desde la propia app**, una vez en cada navegador o dispositivo:
+Se hace **desde la propia app**. Con Supabase configurado (sección 11), **una sola vez**: los tokens se guardan cifrados en el servidor y todos tus dispositivos ven lo mismo. Sin Supabase, una vez en cada navegador:
 
 1. Abre la app (tu URL de Vercel).
 2. Ve a la pestaña **Suunto & ZoneSense → Conexión Suunto & Claude MCP**. También puedes ir a **Historial → Extracción Suunto Cloud**.
@@ -226,7 +229,7 @@ Se hace **desde la propia app**, una vez en cada navegador o dispositivo:
 4. Se abre la página de Suunto: inicia sesión con **tu usuario y contraseña de Suunto** y acepta el acceso.
 5. Vuelves a la app. Se sincroniza sola la primera vez.
 
-A partir de ahí, pulsa **Sincronizar** cuando quieras traer datos nuevos. Cada sincronización:
+A partir de ahí, con Supabase el servidor sincroniza **solo cada mañana** (cron, sección 11) y **al abrir la app** si hace más de 3 horas de la última vez. Pulsa **Sincronizar** cuando quieras traer datos nuevos al momento. Cada sincronización:
 
 - Trae los entrenos de los **últimos 365 días** (con ellos se calculan CTL/ATL/TSB; si Suunto tiene historial anterior, los valores pueden diferir) y el sueño/HRV de los **últimos 28 días**, el máximo que permite Suunto para esos datos.
 - **Entrenos:**
@@ -242,7 +245,7 @@ A partir de ahí, pulsa **Sincronizar** cuando quieras traer datos nuevos. Cada 
 
 Si la conexión caduca, la app te avisa ("Reconecta Suunto") y el estado pasa a "No conectado". Solo tienes que pulsar **Conectar Suunto** otra vez e iniciar sesión.
 
-Los tokens de Suunto se guardan **solo en tu navegador**. Si borras los datos del navegador o usas otro dispositivo, tendrás que conectar de nuevo.
+Con Supabase, los tokens de Suunto se guardan **cifrados en el servidor** (tabla `athlete_docs`); el navegador nunca los ve. Sin Supabase se guardan en el navegador y, si lo borras o usas otro dispositivo, tendrás que conectar de nuevo.
 
 ### Desconectar Suunto
 
@@ -253,7 +256,7 @@ Puedes desconectar tu cuenta cuando quieras desde cualquiera de estos sitios:
 - **Suunto & ZoneSense** → pestaña "Conexión Suunto & Claude MCP" → **Desconectar**.
 
 **Qué hace:**
-- Borra los tokens de conexión con Suunto de este navegador. El indicador de Suunto pasa a gris ("No conectado").
+- Borra los tokens de conexión con Suunto (del servidor o, sin Supabase, de este navegador). El indicador de Suunto pasa a gris ("No conectado").
 - **Se conservan** los entrenos ya importados, los check-ins y tu perfil.
 - Para volver a conectar, pulsa **Conectar Suunto** otra vez.
 
@@ -407,8 +410,9 @@ El banner desaparece solo con la siguiente respuesta correcta. También puedes c
 | La app muestra datos de ejemplo | Datos de prueba activos | Pulsa **Datos Prueba** en la barra superior para limpiarlos; tus entrenos reales se conservan |
 | "Biblioteca desactivada: falta …" | Faltan variables de Supabase o de embeddings | Sección 10.2 y **Redeploy** |
 | "Parece que falta el esquema: ejecuta scripts/init.sql" | No se ejecutó el SQL en Supabase | Sección 10.1 |
-| "Clave de la biblioteca incorrecta" | La clave escrita no coincide con `INGEST_SECRET` | Copia el mismo valor que pusiste en Vercel |
-| "Falta la clave de la app o no es correcta" (`APP_AUTH`) | Hay `APP_SECRET`/`INGEST_SECRET` en Vercel y el dispositivo no tiene la clave | Escribe el valor de `APP_SECRET` (o `INGEST_SECRET`) cuando la app lo pida |
+| La app pide la clave (`AUTH_REQUIRED`) | Este dispositivo no tiene sesión o caducó (90 días) | Escribe el valor de `APP_SECRET` (o `INGEST_SECRET`) |
+| "La app no tiene clave configurada: la API está cerrada" (`AUTH_NOT_CONFIGURED`) | No hay `APP_SECRET` ni `INGEST_SECRET` en Vercel | Añade una (3.2) y haz **Redeploy** |
+| "Sin conexión: no se ha guardado" | Cambiaste algo sin conexión o el servidor falló | Vuelve a hacerlo con conexión; al volver, la app recarga lo guardado en el servidor |
 | Miguel no cita documentos que sí están en la biblioteca | Se cambió de proveedor/modelo de embeddings, o el umbral es alto | Vuelve a subir los documentos (10.5) o baja `KNOWLEDGE_MATCH_THRESHOLD` |
 
 ---
@@ -459,7 +463,7 @@ Marca **Production**, **Preview** y **Development** y haz **Redeploy** (3.3).
 ### 10.4 Subir documentos
 
 1. **Coach → Biblioteca de Miguel**.
-2. Escribe la clave (`INGEST_SECRET`) y pulsa **Ver documentos**. Marca **Recordar en este dispositivo** para no tener que escribirla cada vez (solo en tu móvil/ordenador personal).
+2. Pulsa **Ver documentos** (usa la sesión de la app: no hace falta escribir ninguna clave).
 3. Pon un **título**, opcionalmente la **fuente**, y carga un archivo `.md`/`.txt` o pega el texto. Pulsa **Guardar en la biblioteca**.
    - Máximo 200.000 caracteres por documento: los libros largos, en partes ("Libro X – parte 1", "parte 2"…).
    - Subir otra vez un documento con el **mismo título lo sustituye** (no se duplica).
@@ -508,3 +512,32 @@ Lo que no esté guardado en Supabase (mensajes solo en el móvil) no se recuerda
 
 - **Supabase**: el plan gratuito (0 €) basta de sobra: un mensaje ocupa ~1–2 KB, un intercambio vectorizado ~8–10 KB y un documento largo (200.000 caracteres) ~2–3 MB. La pega del plan gratuito es que **pausa el proyecto tras unos 7 días sin actividad**: la biblioteca y las conversaciones dejan de responder (el chat sigue funcionando sin ellas) hasta que lo reactivas con un botón en el panel de Supabase; no se pierde nada. Precios actuales: supabase.com/pricing.
 - **Embeddings (Google, con tu `GEMINI_API_KEY`)**: un embedding pequeño por mensaje del chat y uno por intercambio al guardar; céntimos al mes con un uso normal, dentro del nivel gratuito en muchos casos.
+
+---
+
+## 11. Tus datos en el servidor (Supabase como fuente de verdad)
+
+Con Supabase configurado (sección 10), **tus datos viven en el servidor**: perfil, entrenos, check-ins, memoria de Miguel, carrera objetivo, historial .md y la conexión con Suunto. Ventajas: ves lo mismo en el móvil y en el ordenador, Miguel razona con esos datos (no con lo que tenga guardado un navegador) y Suunto se sincroniza solo.
+
+Todavía se quedan en el navegador (llegarán en una segunda entrega): gut training, peso, hidratación y el chat (el chat se guarda en Supabase con **Guardar**, sección 10.6).
+
+### 11.1 Activarlo (una vez)
+
+1. **Supabase → SQL Editor:** vuelve a ejecutar **todo** [`scripts/init.sql`](scripts/init.sql). Crea la tabla nueva `athlete_docs` (no toca lo que ya tienes).
+2. **Vercel → Environment Variables:** añade `CRON_SECRET` (y, si quieres, `TOKEN_ENCRYPTION_KEY` y `SESSION_SECRET`; ver 3.2). **Redeploy.**
+3. Abre la app. Te pide la clave (una vez por dispositivo) y aparece el aviso **"Tus datos ahora se guardan en el servidor"**:
+   - **Subir mis datos** (en el dispositivo donde tienes tus datos): sube todo, incluida la conexión con Suunto, así que **no hace falta reconectar Suunto**. Si un registro ya existe en el servidor, gana el más reciente; lo que midió Suunto (TSS, FC, HRV…) lo pone siempre Suunto, y tu dolor y estrés se conservan.
+   - **Usar solo lo del servidor** (en los demás dispositivos): sustituye lo de ese navegador por lo del servidor.
+4. Compruébalo en `https://<tu-app>/api/health`: `"dataStore": true`.
+
+### 11.2 Sincronización con Suunto
+
+- **Cada mañana** a las 07:00 UTC (9:00 en Madrid en verano, 8:00 en invierno) Vercel llama a `/api/cron/suunto-sync` con `CRON_SECRET`. Sin `CRON_SECRET`, no hay sincronización diaria (el resto funciona).
+- **Al abrir la app**, si la última sincronización tiene más de 3 horas.
+- **Botón Sincronizar**, cuando quieras.
+
+### 11.3 Sin conexión
+
+- La app muestra lo último que cargó (caché de lectura).
+- **Los cambios necesitan conexión.** Si cambias algo sin conexión, sale el aviso **"Sin conexión: no se ha guardado"** y, al volver la conexión, la app recarga lo que hay en el servidor. Nada se pierde en silencio.
+

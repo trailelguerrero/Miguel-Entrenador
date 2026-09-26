@@ -136,9 +136,8 @@ const round1 = (n: number) => Math.round(n * 10) / 10;
  * Si se pasa daysToShow, devuelve solo los últimos N días (pero calculados
  * con todo el historial, que es lo que da el CTL correcto).
  */
-export function computePmcSeries(workouts: Workout[], antHr?: number, daysToShow?: number): PMCDataPoint[] {
+export function computePmcSeries(workouts: Workout[], antHr?: number, daysToShow?: number, today: string = localDateKey()): PMCDataPoint[] {
   const map = buildDailyLoadMap(workouts, antHr);
-  const today = localDateKey();
   const dates = [...map.keys()].filter((d) => d <= today).sort();
   if (dates.length === 0) return [];
 
@@ -231,11 +230,11 @@ export interface LoadHistoryInfo {
  * así que con menos de 42 días el CTL está infravalorado frente al de Suunto,
  * que puede tener historial anterior.
  */
-export function getLoadHistoryInfo(workouts: Workout[], antHr?: number): LoadHistoryInfo {
+export function getLoadHistoryInfo(workouts: Workout[], antHr?: number, today: string = localDateKey()): LoadHistoryInfo {
   const dates = [...buildDailyLoadMap(workouts, antHr).keys()].sort();
   if (dates.length === 0) return { startDate: null, days: 0, status: 'none' };
   const start = parseDateKey(dates[0]);
-  const days = Math.round((parseDateKey(localDateKey()).getTime() - start.getTime()) / 86400000) + 1;
+  const days = Math.round((parseDateKey(today).getTime() - start.getTime()) / 86400000) + 1;
   return { startDate: dates[0], days, status: days >= CTL_DAYS ? 'stabilized' : 'warming_up' };
 }
 

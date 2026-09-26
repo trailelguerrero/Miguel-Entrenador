@@ -16,5 +16,11 @@
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/suunto-sync",
+      "schedule": "0 7 * * *"
+    }
   ]
 }

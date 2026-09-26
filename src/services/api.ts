@@ -16,7 +16,7 @@ import {
 
 import { ApiError, apiStatus } from './apiStatus';
 import { StorageService } from './storage';
-import { AppSecret } from './appSecret';
+import { authedFetch } from './session';
 import { localDateKey } from '../utils/trainingLoad';
 import type { RaceInfoResult } from '../types';
 import type { EvidenceItem } from '../brain/memory';
@@ -49,14 +49,12 @@ async function apiFetch(
   kind: 'ai' | 'suunto',
   fallbackMessage: string,
   options: { allowStatus?: number[] } = {},
-  retried = false,
 ): Promise<any> {
   let res: Response;
   try {
-    const secret = AppSecret.get();
-    res = await fetch(path, {
+    res = await authedFetch(path, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...(secret ? { 'x-app-secret': secret } : {}) },
+      headers: { 'Content-Type': 'application/json' },
       // Fecha y zona horaria del ATLETA: el servidor (UTC en Vercel) no debe usar la suya
       body: JSON.stringify(body && typeof body === 'object' && !Array.isArray(body) ? { ...body, athleteToday: localDateKey(), athleteTimezone: athleteTimezone() } : body),
     });
@@ -83,17 +81,6 @@ async function apiFetch(
     throw err;
   }
   apiStatus.reportBackendUp();
-
-  // El servidor exige la clave de la app (APP_SECRET / INGEST_SECRET): se pide una vez y se reintenta
-  if (res.status === 401 && data.code === 'APP_AUTH' && !retried && typeof window !== 'undefined') {
-    const typed = window.prompt(
-      `${AppSecret.get() ? 'La clave de la app no es correcta.' : 'La app está protegida con clave.'}\n\nEscribe la clave de la app (el valor de APP_SECRET o, si no la tienes, INGEST_SECRET en Vercel). Se guardará en este dispositivo.`,
-    );
-    if (typed && typed.trim()) {
-      AppSecret.set(typed.trim(), true);
-      return apiFetch(path, body, kind, fallbackMessage, options, true);
-    }
-  }
 
   if (!res.ok && !options.allowStatus?.includes(res.status)) {
     const err = new ApiError(data.code || `HTTP_${res.status}`, data.error || data.message || fallbackMessage, data.hint);
@@ -370,13 +357,13 @@ export interface KnowledgeDocument {
   createdAt: string;
 }
 
-/** Llamada a la Biblioteca de Miguel con la clave INGEST_SECRET en la cabecera. */
-async function knowledgeFetch(path: string, secret: string, method: 'GET' | 'POST' | 'DELETE', body?: unknown): Promise<any> {
+/** Llamada a la Biblioteca de Miguel y a las conversaciones (con la sesión de la app). */
+async function knowledgeFetch(path: string, method: 'GET' | 'POST' | 'DELETE', body?: unknown): Promise<any> {
   let res: Response;
   try {
-    res = await fetch(path, {
+    res = await authedFetch(path, {
       method,
-      headers: { 'x-ingest-secret': secret, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+      headers: body ? { 'Content-Type': 'application/json' } : {},
       body: body ? JSON.stringify(body) : undefined,
     });
   } catch {
@@ -390,14 +377,14 @@ async function knowledgeFetch(path: string, secret: string, method: 'GET' | 'POS
 }
 
 export const KnowledgeService = {
-  async list(secret: string): Promise<KnowledgeDocument[]> {
-    return (await knowledgeFetch('/api/knowledge/documents', secret, 'GET')).documents ?? [];
+  async list(): Promise<KnowledgeDocument[]> {
+    return (await knowledgeFetch('/api/knowledge/documents', 'GET')).documents ?? [];
   },
-  async ingest(secret: string, doc: { title: string; text: string; source?: string }): Promise<{ chunks: number; replaced: number }> {
-    return await knowledgeFetch('/api/knowledge/ingest', secret, 'POST', doc);
+  async ingest(doc: { title: string; text: string; source?: string }): Promise<{ chunks: number; replaced: number }> {
+    return await knowledgeFetch('/api/knowledge/ingest', 'POST', doc);
   },
-  async remove(secret: string, title: string): Promise<number> {
-    return (await knowledgeFetch('/api/knowledge/documents', secret, 'DELETE', { title })).deleted ?? 0;
+  async remove(title: string): Promise<number> {
+    return (await knowledgeFetch('/api/knowledge/documents', 'DELETE', { title })).deleted ?? 0;
   },
 };
 
@@ -419,11 +406,10 @@ export function isSavableMessage(m: ChatMessage): boolean {
 export const ConversationService = {
   /** Guarda los mensajes aún no guardados en `sessionId` (o en una conversación nueva). */
   async save(
-    secret: string,
     sessionId: string | null,
     messages: ChatMessage[],
   ): Promise<{ sessionId: string; saved: number; clientIds: string[]; memoryIndexed: number; memoryWarning?: string }> {
-    return await knowledgeFetch('/api/conversations/save', secret, 'POST', {
+    return await knowledgeFetch('/api/conversations/save', 'POST', {
       sessionId,
       messages: messages.map((m) => ({
         clientId: m.id,
@@ -435,13 +421,13 @@ export const ConversationService = {
     });
   },
 
-  async list(secret: string): Promise<ConversationSummary[]> {
-    return (await knowledgeFetch('/api/conversations', secret, 'GET')).conversations ?? [];
+  async list(): Promise<ConversationSummary[]> {
+    return (await knowledgeFetch('/api/conversations', 'GET')).conversations ?? [];
   },
 
   /** Mensajes de una conversación, ya en el formato del chat de la app. */
-  async load(secret: string, sessionId: string): Promise<ChatMessage[]> {
-    const data = await knowledgeFetch(`/api/conversations/${encodeURIComponent(sessionId)}`, secret, 'GET');
+  async load(sessionId: string): Promise<ChatMessage[]> {
+    const data = await knowledgeFetch(`/api/conversations/${encodeURIComponent(sessionId)}`, 'GET');
     return (data.messages ?? []).map((m: any) => ({
       id: m.clientId,
       role: m.role,

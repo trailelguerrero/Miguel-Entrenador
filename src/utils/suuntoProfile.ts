@@ -1,4 +1,4 @@
-import { AthleteProfile, SUUNTO_PROFILE_FIELDS, SuuntoProfileField, SuuntoProfileSuggestion } from '../types';
+import { AthleteProfile, SUUNTO_PROFILE_FIELDS, SuuntoProfileField, SuuntoProfileSuggestion } from '../types/index.js';
 
 // Perfil automático desde Suunto: Suunto rellena sus campos salvo los que el
 // atleta haya cambiado a mano (esos quedan como 'manual' y no se pisan).

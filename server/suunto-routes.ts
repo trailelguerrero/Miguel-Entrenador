@@ -8,14 +8,18 @@
 // no tiene que configurar nada en Suunto ni copiar tokens a mano, y esta app no
 // necesita ninguna credencial de Suunto.
 //
-// Los tokens se guardan en el navegador del usuario (localStorage) y viajan en
-// cada petición de sync; el servidor no guarda estado (serverless).
+// Fase B: con Supabase configurado los tokens se guardan CIFRADOS en el servidor
+// (athlete_docs) y el servidor sincroniza (botón, al abrir la app y cron diario);
+// el navegador no los ve. Sin Supabase, modo antiguo: tokens en el navegador.
 import type { Express, Request, Response } from 'express';
 import { createHash, randomBytes } from 'node:crypto';
 import type { SuuntoAuth } from '../src/types/index.js';
 import { deriveProfileFromSuunto } from './suunto-profile.js';
 import { computeWatchZoneAdvice } from './zone-advice.js';
 import { DATA_WINDOWS } from '../src/brain/dataWindows.js';
+import type { SuuntoPayload } from '../src/brain/suuntoMerge.js';
+import { storeReady } from './store/docStore.js';
+import { saveSuuntoAuth, saveSuuntoStatus } from './store/athleteData.js';
 import { mapSuuntoCheckIns, mapSuuntoWorkouts, SuuntoRecoveryDay, SuuntoSleepSession, SuuntoWorkoutRow } from './suunto-map.js';
 
 const MCP_URL = (process.env.SUUNTO_MCP_URL || 'https://mcp-ten-kappa.vercel.app').replace(/\/+$/, '');
@@ -25,7 +29,7 @@ const MAX_SYNC_DAYS = DATA_WINDOWS.sleepRecovery; // límite de la 247 Data API 
 const WORKOUT_HISTORY_DAYS = DATA_WINDOWS.workouts; // CTL necesita meses de historial
 const PROFILE_WORKOUT_DAYS = DATA_WINDOWS.profileEvidence; // ventana de workouts para el perfil
 
-class ReconnectNeededError extends Error {}
+export class ReconnectNeededError extends Error {}
 
 function base64Url(buf: Buffer): string {
   return buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -135,6 +139,73 @@ function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** Descarga de Suunto: workouts (365 días), sueño y recovery (28 días), perfil y aviso de zonas. */
+export async function fetchSuuntoData(inputAuth: SuuntoAuth, days?: number) {
+  let auth = inputAuth;
+  let refreshed = false;
+  if (auth.expiresAt - 60 < Math.floor(Date.now() / 1000)) {
+    auth = await refreshAuth(auth);
+    refreshed = true;
+  }
+
+  const rangeDays = Math.min(Math.max(Number(days) || MAX_SYNC_DAYS, 1), MAX_SYNC_DAYS);
+  // 'to' = mañana: incluye todo lo de hoy (Suunto filtra por timestamp < to).
+  const to = isoDate(new Date(Date.now() + 24 * 3600 * 1000));
+  const from = isoDate(new Date(Date.now() - (rangeDays - 1) * 24 * 3600 * 1000));
+
+  // Workouts: 365 días (historial completo para CTL/ATL/TSB). El perfil
+  // (día de tirada larga, FC máx…) usa los últimos 90. Sueño/recovery: máx. 28 días.
+  const historyFrom = isoDate(new Date(Date.now() - (WORKOUT_HISTORY_DAYS - 1) * 24 * 3600 * 1000));
+  const profileFromMs = Date.now() - PROFILE_WORKOUT_DAYS * 24 * 3600 * 1000;
+  const fetchWorkouts = async (token: string) => {
+    try {
+      return await callMcpTool(token, 'suunto_list_workouts_summary', { from: historyFrom, to });
+    } catch (err) {
+      // MCP antiguo (máx. 28 días en este tool): se usa el rango corto
+      if (err instanceof ReconnectNeededError || !/rango máximo/i.test((err as Error).message)) throw err;
+      return callMcpTool(token, 'suunto_list_workouts_summary', { from, to });
+    }
+  };
+  const fetchAll = (token: string) =>
+    Promise.all([
+      fetchWorkouts(token),
+      callMcpTool(token, 'suunto_get_sleep', { from, to }),
+      callMcpTool(token, 'suunto_get_recovery', { from, to }),
+    ]);
+
+  let results: unknown[];
+  try {
+    results = await fetchAll(auth.accessToken);
+  } catch (err) {
+    if (!(err instanceof ReconnectNeededError) || refreshed) throw err;
+    auth = await refreshAuth(auth);
+    refreshed = true;
+    results = await fetchAll(auth.accessToken);
+  }
+
+  const [workoutRows, sleepRows, recoveryRows] = results as [SuuntoWorkoutRow[], SuuntoSleepSession[], SuuntoRecoveryDay[]];
+  const allWorkoutRows = Array.isArray(workoutRows) ? workoutRows : [];
+  const sleepList = Array.isArray(sleepRows) ? sleepRows : [];
+  const workouts = mapSuuntoWorkouts(allWorkoutRows);
+  const profileFromSuunto = deriveProfileFromSuunto(
+    allWorkoutRows.filter((w) => w.startTime >= profileFromMs),
+    sleepList,
+  );
+  const checkIns = mapSuuntoCheckIns(
+    sleepList,
+    Array.isArray(recoveryRows) ? recoveryRows : [],
+    profileFromSuunto.values.baselineHrv,
+  );
+  const oldest = workouts.reduce<string | null>((min, w) => (!min || w.date < min ? w.date : min), null);
+
+  return {
+    auth,
+    refreshed,
+    message: `Sincronizado con Suunto: ${workouts.length} entrenamientos (${oldest ?? historyFrom} → hoy) y ${checkIns.length} días de sueño/HRV (${from} → hoy).`,
+    payload: { workouts, checkIns, profileFromSuunto, watchZoneAdvice: computeWatchZoneAdvice(allWorkoutRows) } as SuuntoPayload,
+  };
+}
+
 export function registerSuuntoRoutes(app: Express) {
   // 1. Arranca el login: registra esta app como cliente OAuth del MCP y
   //    redirige al usuario a Suunto (vía el /authorize del MCP).
@@ -201,8 +272,13 @@ export function registerSuuntoRoutes(app: Express) {
         client_id: pending.clientId,
       });
 
-      const authJson = JSON.stringify(auth).replace(/</g, '\\u003c');
       res.setHeader('Set-Cookie', oauthCookie('', 0, secure));
+      if (await storeReady().catch(() => false)) {
+        await saveSuuntoAuth(auth);
+        await saveSuuntoStatus({ syncStatus: 'pending', lastSyncMessage: 'Cuenta Suunto conectada. Sincronizando…' });
+        return res.redirect(302, '/?suunto=connected');
+      }
+      const authJson = JSON.stringify(auth).replace(/</g, '\\u003c');
       res.type('html').send(`<!doctype html><meta charset="utf-8"><title>Suunto conectado</title>
 <body style="font-family:system-ui;background:#0c0a09;color:#e7e5e4;padding:24px">Suunto conectado. Volviendo a la app…
 <script>
@@ -238,72 +314,13 @@ export function registerSuuntoRoutes(app: Express) {
     }
 
     try {
-      let auth = inputAuth;
-      let refreshed = false;
-      if (auth.expiresAt - 60 < Math.floor(Date.now() / 1000)) {
-        auth = await refreshAuth(auth);
-        refreshed = true;
-      }
-
-      const rangeDays = Math.min(Math.max(Number(days) || MAX_SYNC_DAYS, 1), MAX_SYNC_DAYS);
-      // 'to' = mañana: incluye todo lo de hoy (Suunto filtra por timestamp < to).
-      const to = isoDate(new Date(Date.now() + 24 * 3600 * 1000));
-      const from = isoDate(new Date(Date.now() - (rangeDays - 1) * 24 * 3600 * 1000));
-
-      // Workouts: 365 días (historial completo para CTL/ATL/TSB). El perfil
-      // (día de tirada larga, FC máx…) usa los últimos 90. Sueño/recovery: máx. 28 días.
-      const historyFrom = isoDate(new Date(Date.now() - (WORKOUT_HISTORY_DAYS - 1) * 24 * 3600 * 1000));
-      const profileFromMs = Date.now() - PROFILE_WORKOUT_DAYS * 24 * 3600 * 1000;
-      const fetchWorkouts = async (token: string) => {
-        try {
-          return await callMcpTool(token, 'suunto_list_workouts_summary', { from: historyFrom, to });
-        } catch (err) {
-          // MCP antiguo (máx. 28 días en este tool): se usa el rango corto
-          if (err instanceof ReconnectNeededError || !/rango máximo/i.test((err as Error).message)) throw err;
-          return callMcpTool(token, 'suunto_list_workouts_summary', { from, to });
-        }
-      };
-      const fetchAll = (token: string) =>
-        Promise.all([
-          fetchWorkouts(token),
-          callMcpTool(token, 'suunto_get_sleep', { from, to }),
-          callMcpTool(token, 'suunto_get_recovery', { from, to }),
-        ]);
-
-      let results: unknown[];
-      try {
-        results = await fetchAll(auth.accessToken);
-      } catch (err) {
-        if (!(err instanceof ReconnectNeededError) || refreshed) throw err;
-        auth = await refreshAuth(auth);
-        refreshed = true;
-        results = await fetchAll(auth.accessToken);
-      }
-
-      const [workoutRows, sleepRows, recoveryRows] = results as [SuuntoWorkoutRow[], SuuntoSleepSession[], SuuntoRecoveryDay[]];
-      const allWorkoutRows = Array.isArray(workoutRows) ? workoutRows : [];
-      const sleepList = Array.isArray(sleepRows) ? sleepRows : [];
-      const workouts = mapSuuntoWorkouts(allWorkoutRows);
-      const profileFromSuunto = deriveProfileFromSuunto(
-        allWorkoutRows.filter((w) => w.startTime >= profileFromMs),
-        sleepList,
-      );
-      const checkIns = mapSuuntoCheckIns(
-        sleepList,
-        Array.isArray(recoveryRows) ? recoveryRows : [],
-        profileFromSuunto.values.baselineHrv,
-      );
-      const oldest = workouts.reduce<string | null>((min, w) => (!min || w.date < min ? w.date : min), null);
-
+      const r = await fetchSuuntoData(inputAuth, days);
       res.json({
         success: true,
-        message: `Sincronizado con Suunto: ${workouts.length} entrenamientos (${oldest ?? historyFrom} → hoy) y ${checkIns.length} días de sueño/HRV (${from} → hoy).`,
-        workouts,
-        checkIns,
+        message: r.message,
+        ...r.payload,
         lastSync: new Date().toISOString(),
-        newAuth: refreshed ? auth : undefined,
-        profileFromSuunto,
-        watchZoneAdvice: computeWatchZoneAdvice(allWorkoutRows),
+        newAuth: r.refreshed ? r.auth : undefined,
       });
     } catch (err: any) {
       if (err instanceof ReconnectNeededError) {
