@@ -158,15 +158,16 @@ test('#15/C35. HRV con 3 noches → datos insuficientes; y nunca autoriza subir 
 test('#16. Sin HRV el panel HRV-carga no dice "estable" ni recomienda descarga', () => {
   const s = calculateHRVLoadCorrelation([], [], { baselineHrv: 45 } as any);
   assert.equal(s.currentStatus, 'insufficient_data');
-  assert.equal(s.isDeloadRecommended, false);
   assert.match(s.statusLabel, /Sin datos de HRV/);
-  assert.equal(s.fatigueRecoveryStatus, 'Sin datos de HRV');
+  assert.equal(s.loadRecoveryTrendLabel, 'Sin datos de HRV');
 });
 
 test('#17. ACWR sin carga → "sin carga", sin zonas ni riesgos ficticios', () => {
   const a = calculateACWRSummary([]);
   assert.match(a.zoneLabel, /Sin carga/);
-  assert.doesNotMatch(a.coachTacticalAdvice, /Sweet|ALERTA|2x|%/);
+  assert.equal(a.zone, 'insufficient_data');
+  assert.equal(a.currentAcwr, 0);
+  assert.doesNotMatch(a.description, /Sweet|ALERTA|2x|%/);
 });
 
 // ── Historial, carreras, nutrición, zona horaria ──────────────────────────

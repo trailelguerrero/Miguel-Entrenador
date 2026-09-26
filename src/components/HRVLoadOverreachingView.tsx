@@ -134,9 +134,9 @@ export const HRVLoadOverreachingView: React.FC<HRVLoadOverreachingViewProps> = (
       {/* Ambient background glow */}
       <div 
         className={`absolute top-0 right-0 w-96 h-96 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20 opacity-20 ${
-          summary.currentStatus === 'non_functional_overreaching' ? 'bg-rose-500' :
-          summary.currentStatus === 'functional_overreaching' ? 'bg-amber-500' :
-          summary.currentStatus === 'recovery_deload' ? 'bg-cyan-500' : 'bg-emerald-500'
+          summary.currentStatus === 'high_load_low_hrv' ? 'bg-rose-500' :
+          summary.currentStatus === 'high_load_hrv_below_ref' ? 'bg-amber-500' :
+          summary.currentStatus === 'low_load_hrv_recovered' ? 'bg-cyan-500' : 'bg-emerald-500'
         }`} 
       />
 
@@ -155,7 +155,7 @@ export const HRVLoadOverreachingView: React.FC<HRVLoadOverreachingViewProps> = (
 
           <h3 className="text-xl sm:text-2xl font-black text-zinc-100 flex items-center gap-2.5">
             <Activity className="w-6 h-6 text-rose-400 shrink-0" />
-            <span>Monitor de Sobre-esfuerzo: HRV 7d vs Carga Semanal</span>
+            <span>HRV 7d frente a carga semanal</span>
           </h3>
           <p className="text-xs text-zinc-400 mt-1 max-w-2xl leading-relaxed">
             Correlaciona la <strong>media móvil de 7 días del HRV rMSSD</strong> nocturno con la <strong>carga acumulada de entrenamiento</strong> para identificar a tiempo desacoples del sistema nervioso autónomo y prevenir el sobre-esfuerzo no funcional (NFOR).
@@ -239,7 +239,7 @@ export const HRVLoadOverreachingView: React.FC<HRVLoadOverreachingViewProps> = (
           <div className="flex items-center justify-between border-b border-zinc-800/80 pb-2.5">
             <span className="font-bold text-rose-400 text-sm flex items-center gap-2">
               <Zap className="w-4 h-4" />
-              Ciencia del Desacople HRV 7d vs Carga (Plews & Buchheit, 2013)
+              HRV 7d frente a carga (Plews & Buchheit)
             </span>
             <button 
               onClick={() => setShowScienceGuide(false)}
@@ -253,24 +253,24 @@ export const HRVLoadOverreachingView: React.FC<HRVLoadOverreachingViewProps> = (
             <div className="space-y-2">
               <strong className="text-zinc-100 block">¿Por qué usar la Media Móvil de 7 días?</strong>
               <p>
-                El valor puntual de HRV diario tiene ruido agudo (afectado por cenas tardías, hidratación, calor o estrés laboral). La <strong>media móvil de 7 días</strong> (Buchheit, 2014; Altini, 2018) suaviza las oscilaciones diarias y refleja el verdadero tono autonómico basal del sistema parasimpático.
+                El valor puntual de HRV diario tiene ruido agudo (afectado por cenas tardías, hidratación, calor o estrés laboral). La <strong>media móvil de 7 días</strong> (Buchheit, 2014; Altini, 2018) suaviza las oscilaciones diarias y muestra mejor la tendencia.
               </p>
               <p>
-                <strong>Banda de Normalidad SWC (Smallest Worthwhile Change):</strong> Se define como tu Línea Base ({summary.baselineHrv} ms) &plusmn; 0.5 &times; Desviación Típica ({summary.swcLower} - {summary.swcUpper} ms). Permanecer dentro de esta banda confirma adaptación positiva al estímulo.
+                <strong>Banda de Normalidad SWC (Smallest Worthwhile Change):</strong> Se define como tu Línea Base ({summary.baselineHrv} ms) &plusmn; 0.5 &times; Desviación Típica ({summary.swcLower} - {summary.swcUpper} ms). Es tu rango habitual; salir de él es un dato a mirar junto con sueño, dolor y sensaciones.
               </p>
             </div>
 
             <div className="space-y-2">
-              <strong className="text-zinc-100 block">Patrones Clínicos de Sobre-esfuerzo:</strong>
+              <strong className="text-zinc-100 block">Patrones que describe la app (no son diagnósticos):</strong>
               <div className="space-y-1.5 text-[11px]">
                 <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-300">
-                  <strong>Adaptación Óptima:</strong> Carga semanal alta con HRV 7d estable dentro o por encima de la banda SWC.
+                  <strong>HRV en tu banda:</strong> la HRV media de 7 días está dentro de tu rango habitual.
                 </div>
                 <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300">
-                  <strong>Carga alta asumida:</strong> carga semanal por encima de lo habitual con la HRV media de 7 días algo por debajo de tu referencia.
+                  <strong>Carga alta + HRV algo baja:</strong> carga semanal por encima de lo habitual con la HRV media de 7 días algo por debajo de tu referencia.
                 </div>
                 <div className="p-2 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-300">
-                  <strong>Fatiga acumulada:</strong> carga semanal muy alta con la HRV media de 7 días por debajo de tu banda normal ({summary.swcLower} ms). Es una tendencia a vigilar, no un diagnóstico; lo que toca hacer hoy lo decide el semáforo del día.
+                  <strong>Carga muy alta + HRV baja:</strong> carga semanal muy alta con la HRV media de 7 días por debajo de tu banda normal ({summary.swcLower} ms). Es una tendencia, no un diagnóstico; lo que toca hacer hoy lo decide el estado de readiness.
                 </div>
               </div>
             </div>
@@ -360,12 +360,12 @@ export const HRVLoadOverreachingView: React.FC<HRVLoadOverreachingViewProps> = (
               {summary.statusLabel}
             </div>
             <div className="text-xs text-zinc-400 mt-1 line-clamp-1">
-              {summary.riskAssessment}
+              {summary.trendSummary}
             </div>
           </div>
 
           <div className="pt-2.5 border-t border-zinc-800/80 text-[11px] text-zinc-400 flex items-center justify-between">
-            <span>Tono vagal:</span>
+            <span>HRV frente a referencia:</span>
             <span className={`font-bold font-mono ${summary.statusColor}`}>
               {summary.currentHrv7d < summary.swcLower ? 'Suprimido' : 'Preservado'}
             </span>
@@ -375,16 +375,16 @@ export const HRVLoadOverreachingView: React.FC<HRVLoadOverreachingViewProps> = (
         {/* Card 4: Overreaching Episodes Count */}
         <div className="bg-zinc-950/80 border border-zinc-800 rounded-3xl p-5 flex flex-col justify-between space-y-3">
           <div className="flex items-center justify-between text-xs text-zinc-400">
-            <span className="font-bold uppercase tracking-wider text-[10px]">Días en Sobre-esfuerzo</span>
-            <span className={`p-1.5 rounded-xl ${summary.overreachingDaysCount > 0 ? 'bg-rose-500/10 text-rose-400' : 'bg-emerald-500/10 text-emerald-400'}`}>
+            <span className="font-bold uppercase tracking-wider text-[10px]">Días carga muy alta + HRV baja</span>
+            <span className={`p-1.5 rounded-xl ${summary.highLoadLowHrvDays > 0 ? 'bg-rose-500/10 text-rose-400' : 'bg-emerald-500/10 text-emerald-400'}`}>
               <Flame className="w-4 h-4" />
             </span>
           </div>
 
           <div>
             <div className="flex items-baseline space-x-1.5">
-              <span className={`text-3xl font-black font-mono ${summary.overreachingDaysCount > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
-                {summary.overreachingDaysCount}
+              <span className={`text-3xl font-black font-mono ${summary.highLoadLowHrvDays > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                {summary.highLoadLowHrvDays}
               </span>
               <span className="text-xs text-zinc-400 font-bold">días</span>
             </div>
@@ -394,43 +394,14 @@ export const HRVLoadOverreachingView: React.FC<HRVLoadOverreachingViewProps> = (
           </div>
 
           <div className="pt-2.5 border-t border-zinc-800/80 text-[11px] text-zinc-400 flex items-center justify-between">
-            <span>Episodios de fatiga acumulada:</span>
-            <span className={`font-bold font-mono ${summary.overreachingEpisodes.length > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
-              {summary.overreachingEpisodes.length} detectados
+            <span>Periodos (≥ 2 días seguidos):</span>
+            <span className={`font-bold font-mono ${summary.highLoadLowHrvEpisodes.length > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+              {summary.highLoadLowHrvEpisodes.length} detectados
             </span>
           </div>
         </div>
 
       </div>
-
-      {/* Overreaching Active Alert Banner if flagged */}
-      {summary.isDeloadRecommended && (
-        <div className="p-4 rounded-2xl bg-rose-950/30 border border-rose-500/40 text-xs text-rose-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg animate-in fade-in">
-          <div className="flex items-start sm:items-center gap-3">
-            <div className="p-2 rounded-xl bg-rose-500/20 text-rose-400 shrink-0">
-              <AlertTriangle className="w-5 h-5" />
-            </div>
-            <div>
-              <strong className="text-rose-100 text-sm block">
-                ¡Alerta de Sobre-esfuerzo No Funcional Detectado!
-              </strong>
-              <p className="text-rose-300 text-xs mt-0.5 leading-relaxed">
-                Tu media móvil de HRV 7d ({summary.currentHrv7d} ms) se encuentra significativamente por debajo de tu límite de asimilación ({summary.swcLower} ms) con una carga sostenida de {summary.currentWeeklyTss} TSS.
-              </p>
-            </div>
-          </div>
-
-          {onScheduleDeload && (
-            <button
-              onClick={onScheduleDeload}
-              className="shrink-0 px-4 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-400 text-zinc-950 font-black text-xs transition shadow-lg shadow-rose-950/40 cursor-pointer flex items-center justify-center gap-1.5"
-            >
-              <RotateCcw className="w-4 h-4" />
-              <span>Programar Descarga Inmediata (-45%)</span>
-            </button>
-          )}
-        </div>
-      )}
 
       {/* Main Dual-Axis Interactive Chart */}
       <div className="bg-zinc-950 p-5 rounded-3xl border border-zinc-800 space-y-4">
@@ -516,7 +487,7 @@ export const HRVLoadOverreachingView: React.FC<HRVLoadOverreachingViewProps> = (
 
               {/* 2. Highlighted Overreaching (NFOR) Shaded Vertical Windows */}
               {summary.series.map((p, i) => {
-                if (!p.isOverreaching) return null;
+                if (!p.isHighLoadLowHrv) return null;
                 const x = getX(i, summary.series.length);
                 const colW = innerW / summary.series.length;
 
@@ -641,7 +612,7 @@ export const HRVLoadOverreachingView: React.FC<HRVLoadOverreachingViewProps> = (
                 const yHrv = getYHrv(p.hrv7dAvg);
                 const isHovered = hoveredPoint?.date === p.date;
 
-                const nodeColor = p.isOverreaching
+                const nodeColor = p.isHighLoadLowHrv
                   ? '#f43f5e'
                   : p.hrv7dAvg >= summary.baselineHrv
                   ? '#10b981'
@@ -720,16 +691,16 @@ export const HRVLoadOverreachingView: React.FC<HRVLoadOverreachingViewProps> = (
               <div className="flex items-center gap-2">
                 <span className="font-bold text-zinc-100 font-mono text-sm">{hoveredPoint.date}</span>
                 <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                  hoveredPoint.status === 'non_functional_overreaching' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' :
-                  hoveredPoint.status === 'functional_overreaching' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' :
-                  hoveredPoint.status === 'recovery_deload' ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30' :
+                  hoveredPoint.status === 'high_load_low_hrv' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' :
+                  hoveredPoint.status === 'high_load_hrv_below_ref' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' :
+                  hoveredPoint.status === 'low_load_hrv_recovered' ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30' :
                   hoveredPoint.status === 'insufficient_data' ? 'bg-zinc-700/40 text-zinc-300 border border-zinc-600' :
                   'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                 }`}>
-                  {hoveredPoint.status === 'non_functional_overreaching' ? 'Fatiga acumulada' :
-                   hoveredPoint.status === 'functional_overreaching' ? 'Carga alta asumida' :
+                  {hoveredPoint.status === 'high_load_low_hrv' ? 'Carga muy alta + HRV baja' :
+                   hoveredPoint.status === 'high_load_hrv_below_ref' ? 'Carga alta + HRV algo baja' :
                    hoveredPoint.status === 'insufficient_data' ? 'Sin datos de HRV' :
-                   hoveredPoint.status === 'recovery_deload' ? 'Descarga / recuperación' : 'Estable'}
+                   hoveredPoint.status === 'low_load_hrv_recovered' ? 'Carga baja + HRV en referencia' : 'Estable'}
                 </span>
               </div>
               <span className="text-zinc-400 text-[11px] block">
@@ -785,11 +756,11 @@ export const HRVLoadOverreachingView: React.FC<HRVLoadOverreachingViewProps> = (
               </h5>
             </div>
             <span className={`text-xs font-bold font-mono px-2 py-0.5 rounded-lg ${
-              summary.fatigueRecoveryIndex >= 70 ? 'bg-emerald-500/20 text-emerald-400' :
-              summary.fatigueRecoveryIndex >= 45 ? 'bg-amber-500/20 text-amber-400' :
+              summary.loadRecoveryTrendScore >= 70 ? 'bg-emerald-500/20 text-emerald-400' :
+              summary.loadRecoveryTrendScore >= 45 ? 'bg-amber-500/20 text-amber-400' :
               'bg-rose-500/20 text-rose-400'
             }`}>
-              {summary.fatigueRecoveryIndex}/100
+              {summary.loadRecoveryTrendScore}/100
             </span>
           </div>
 
@@ -797,17 +768,17 @@ export const HRVLoadOverreachingView: React.FC<HRVLoadOverreachingViewProps> = (
             <div className="w-full bg-zinc-900 h-3 rounded-full overflow-hidden border border-zinc-800 p-0.5">
               <div 
                 className={`h-full rounded-full transition-all duration-700 ${
-                  summary.fatigueRecoveryIndex >= 70 ? 'bg-gradient-to-r from-emerald-500 to-cyan-400' :
-                  summary.fatigueRecoveryIndex >= 45 ? 'bg-gradient-to-r from-amber-500 to-emerald-400' :
+                  summary.loadRecoveryTrendScore >= 70 ? 'bg-gradient-to-r from-emerald-500 to-cyan-400' :
+                  summary.loadRecoveryTrendScore >= 45 ? 'bg-gradient-to-r from-amber-500 to-emerald-400' :
                   'bg-gradient-to-r from-rose-600 to-amber-500'
                 }`}
-                style={{ width: `${summary.fatigueRecoveryIndex}%` }}
+                style={{ width: `${summary.loadRecoveryTrendScore}%` }}
               />
             </div>
             <div className="flex justify-between text-[10px] text-zinc-500 font-mono">
-              <span>0 (Desacople Crítico)</span>
-              <span className="text-zinc-300 font-bold">{summary.fatigueRecoveryStatus}</span>
-              <span>100 (Supercompensación)</span>
+              <span>0</span>
+              <span className="text-zinc-300 font-bold">{summary.loadRecoveryTrendLabel}</span>
+              <span>100</span>
             </div>
           </div>
 
@@ -886,20 +857,20 @@ export const HRVLoadOverreachingView: React.FC<HRVLoadOverreachingViewProps> = (
                 <CheckCircle2 className="w-4 h-4" />
                 Cuadrante I: Alta Carga + Alta Recuperación
               </span>
-              <span className="text-[10px] font-mono text-emerald-500 font-bold">SUPERCOMPENSACIÓN</span>
+              <span className="text-[10px] font-mono text-emerald-500 font-bold">CARGA ALTA · HRV OK</span>
             </div>
             <p className="text-[11px] text-zinc-400 leading-relaxed">
-              Carga semanal elevada ({summary.currentLoadThresholds ? <>&gt; {summary.currentLoadThresholds.high} TSS hoy, +10 % sobre tu CTL×7; cada semana se evalúa con su propio CTL</> : 'sin CTL aún'}) con sistema nervioso parasimpático en estado óptimo (HRV &ge; {summary.swcLower} ms). Máxima adaptación celular y biogénesis mitocondrial.
+              Carga semanal elevada ({summary.currentLoadThresholds ? <>&gt; {summary.currentLoadThresholds.high} TSS hoy, +10 % sobre tu CTL×7; cada semana se evalúa con su propio CTL</> : 'sin CTL aún'}) con la HRV media en tu referencia o por encima (≥ 95 %).
             </p>
             <div className="pt-2 flex flex-wrap gap-2">
-              {summary.weeklyQuadrants.filter(w => w.quadrant === 'supercompensation').map(w => (
+              {summary.weeklyQuadrants.filter(w => w.quadrant === 'high_load_high_hrv').map(w => (
                 <div key={w.id} className="px-2.5 py-1 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs font-mono flex items-center gap-1.5">
                   <span className="font-bold text-emerald-300">{w.name}:</span>
                   <span className="text-zinc-200">{w.weeklyTss} TSS • {w.avgHrv7d} ms</span>
                   {w.isCurrentWeek && <span className="text-[9px] bg-emerald-500 text-zinc-950 font-black px-1.5 py-0.2 rounded-full">Actual</span>}
                 </div>
               ))}
-              {summary.weeklyQuadrants.filter(w => w.quadrant === 'supercompensation').length === 0 && (
+              {summary.weeklyQuadrants.filter(w => w.quadrant === 'high_load_high_hrv').length === 0 && (
                 <span className="text-[11px] text-zinc-600 italic">Ninguna semana en este cuadrante actualmente</span>
               )}
             </div>
@@ -912,20 +883,20 @@ export const HRVLoadOverreachingView: React.FC<HRVLoadOverreachingViewProps> = (
                 <AlertTriangle className="w-4 h-4" />
                 Cuadrante II: Alta Carga + Baja Recuperación
               </span>
-              <span className="text-[10px] font-mono text-rose-500 font-bold">FATIGA ACUMULADA</span>
+              <span className="text-[10px] font-mono text-rose-500 font-bold">CARGA ALTA · HRV BAJA</span>
             </div>
             <p className="text-[11px] text-zinc-400 leading-relaxed">
-              Carga semanal elevada con HRV 7d suprimida (&lt; {summary.swcLower} ms). Desacople autonómico: el atleta absorbe daño sin capacidad biológica para asimilarlo.
+              Carga semanal por encima de lo habitual con la HRV media de 7 días por debajo de tu referencia.
             </p>
             <div className="pt-2 flex flex-wrap gap-2">
-              {summary.weeklyQuadrants.filter(w => w.quadrant === 'overreaching').map(w => (
+              {summary.weeklyQuadrants.filter(w => w.quadrant === 'high_load_low_hrv').map(w => (
                 <div key={w.id} className="px-2.5 py-1 rounded-xl bg-rose-500/10 border border-rose-500/30 text-xs font-mono flex items-center gap-1.5">
                   <span className="font-bold text-rose-300">{w.name}:</span>
                   <span className="text-zinc-200">{w.weeklyTss} TSS • {w.avgHrv7d} ms</span>
                   {w.isCurrentWeek && <span className="text-[9px] bg-rose-500 text-zinc-950 font-black px-1.5 py-0.2 rounded-full">Actual</span>}
                 </div>
               ))}
-              {summary.weeklyQuadrants.filter(w => w.quadrant === 'overreaching').length === 0 && (
+              {summary.weeklyQuadrants.filter(w => w.quadrant === 'high_load_low_hrv').length === 0 && (
                 <span className="text-[11px] text-zinc-600 italic">Ninguna semana en este cuadrante actualmente</span>
               )}
             </div>
@@ -938,20 +909,20 @@ export const HRVLoadOverreachingView: React.FC<HRVLoadOverreachingViewProps> = (
                 <Flame className="w-4 h-4" />
                 Cuadrante III: Baja Carga + Baja Recuperación
               </span>
-              <span className="text-[10px] font-mono text-amber-500 font-bold">ESTRÉS EXTRADEPORTIVO</span>
+              <span className="text-[10px] font-mono text-amber-500 font-bold">CARGA BAJA · HRV BAJA</span>
             </div>
             <p className="text-[11px] text-zinc-400 leading-relaxed">
-              Carga baja pero HRV deprimida. Indica fatiga residual persistente, déficit calórico, poco sueño, estrés mental o procesos inflamatorios/infecciosos.
+              Carga baja con la HRV media por debajo de tu referencia. La HRV también baja por sueño, estrés, calor, alcohol o enfermedad: la app no puede saber cuál.
             </p>
             <div className="pt-2 flex flex-wrap gap-2">
-              {summary.weeklyQuadrants.filter(w => w.quadrant === 'systemic_fatigue').map(w => (
+              {summary.weeklyQuadrants.filter(w => w.quadrant === 'low_load_low_hrv').map(w => (
                 <div key={w.id} className="px-2.5 py-1 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs font-mono flex items-center gap-1.5">
                   <span className="font-bold text-amber-300">{w.name}:</span>
                   <span className="text-zinc-200">{w.weeklyTss} TSS • {w.avgHrv7d} ms</span>
                   {w.isCurrentWeek && <span className="text-[9px] bg-amber-500 text-zinc-950 font-black px-1.5 py-0.2 rounded-full">Actual</span>}
                 </div>
               ))}
-              {summary.weeklyQuadrants.filter(w => w.quadrant === 'systemic_fatigue').length === 0 && (
+              {summary.weeklyQuadrants.filter(w => w.quadrant === 'low_load_low_hrv').length === 0 && (
                 <span className="text-[11px] text-zinc-600 italic">Ninguna semana en este cuadrante actualmente</span>
               )}
             </div>
@@ -964,20 +935,20 @@ export const HRVLoadOverreachingView: React.FC<HRVLoadOverreachingViewProps> = (
                 <RotateCcw className="w-4 h-4" />
                 Cuadrante IV: Baja Carga + Alta Recuperación
               </span>
-              <span className="text-[10px] font-mono text-cyan-500 font-bold">DESCARGA & FRESCURA</span>
+              <span className="text-[10px] font-mono text-cyan-500 font-bold">CARGA BAJA · HRV OK</span>
             </div>
             <p className="text-[11px] text-zinc-400 leading-relaxed">
-              Carga reducida (&lt; 250 TSS) con HRV alta (&gt; {summary.baselineHrv} ms). Estado ideal de *tapering* pre-competición o semana de asimilación activa.
+              Carga por debajo de lo habitual con la HRV media en tu referencia o por encima (≥ 95 % de {summary.baselineHrv} ms).
             </p>
             <div className="pt-2 flex flex-wrap gap-2">
-              {summary.weeklyQuadrants.filter(w => w.quadrant === 'deload_freshness').map(w => (
+              {summary.weeklyQuadrants.filter(w => w.quadrant === 'low_load_high_hrv').map(w => (
                 <div key={w.id} className="px-2.5 py-1 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-xs font-mono flex items-center gap-1.5">
                   <span className="font-bold text-cyan-300">{w.name}:</span>
                   <span className="text-zinc-200">{w.weeklyTss} TSS • {w.avgHrv7d} ms</span>
                   {w.isCurrentWeek && <span className="text-[9px] bg-cyan-500 text-zinc-950 font-black px-1.5 py-0.2 rounded-full">Actual</span>}
                 </div>
               ))}
-              {summary.weeklyQuadrants.filter(w => w.quadrant === 'deload_freshness').length === 0 && (
+              {summary.weeklyQuadrants.filter(w => w.quadrant === 'low_load_high_hrv').length === 0 && (
                 <span className="text-[11px] text-zinc-600 italic">Ninguna semana en este cuadrante actualmente</span>
               )}
             </div>
@@ -987,20 +958,20 @@ export const HRVLoadOverreachingView: React.FC<HRVLoadOverreachingViewProps> = (
       </div>
 
       {/* Identified Overreaching Episodes Table / Breakdown */}
-      {summary.overreachingEpisodes.length > 0 && (
+      {summary.highLoadLowHrvEpisodes.length > 0 && (
         <div className="bg-zinc-950 p-5 rounded-3xl border border-zinc-800 space-y-3">
           <div className="flex items-center justify-between border-b border-zinc-800/80 pb-2.5">
             <div className="flex items-center gap-2">
               <ShieldAlert className="w-4 h-4 text-rose-400" />
               <h5 className="text-xs font-bold text-zinc-200 uppercase tracking-wider">
-                Periodos Críticos de Sobre-esfuerzo Registrados en la Ventana ({summary.overreachingEpisodes.length})
+                Periodos de carga muy alta con HRV baja en la ventana ({summary.highLoadLowHrvEpisodes.length})
               </h5>
             </div>
             <span className="text-[11px] text-zinc-400 font-mono">Detección Automática</span>
           </div>
 
           <div className="space-y-2.5">
-            {summary.overreachingEpisodes.map((ep) => (
+            {summary.highLoadLowHrvEpisodes.map((ep) => (
               <div 
                 key={ep.id}
                 className="bg-zinc-900/90 border border-rose-500/30 p-3.5 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs"
@@ -1009,11 +980,11 @@ export const HRVLoadOverreachingView: React.FC<HRVLoadOverreachingViewProps> = (
                   <div className="flex items-center gap-2">
                     <span className="font-mono font-bold text-rose-300">{ep.startDate} ➔ {ep.endDate}</span>
                     <span className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-400 text-[10px] font-bold">
-                      {ep.durationDays} días de desacople
+                      {ep.durationDays} días
                     </span>
                   </div>
                   <p className="text-zinc-300 text-[11px] leading-relaxed">
-                    {ep.diagnosis}
+                    {ep.description}
                   </p>
                 </div>
 
@@ -1026,14 +997,6 @@ export const HRVLoadOverreachingView: React.FC<HRVLoadOverreachingViewProps> = (
                     <span className="text-zinc-500 block text-[10px]">HRV Mínima</span>
                     <span className="text-rose-400 font-bold">{ep.minHrv} ms</span>
                   </div>
-                  {onScheduleDeload && (
-                    <button
-                      onClick={onScheduleDeload}
-                      className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[11px] font-bold transition cursor-pointer"
-                    >
-                      Descarga
-                    </button>
-                  )}
                 </div>
               </div>
             ))}
@@ -1052,49 +1015,26 @@ export const HRVLoadOverreachingView: React.FC<HRVLoadOverreachingViewProps> = (
 
       {/* Coach Miguel Tactical Verdict Box */}
       <div className={`rounded-3xl border p-6 flex flex-col md:flex-row items-start justify-between gap-5 shadow-lg ${
-        summary.currentStatus === 'non_functional_overreaching' ? 'bg-rose-950/20 border-rose-500/30 text-rose-200' :
-        summary.currentStatus === 'functional_overreaching' ? 'bg-amber-950/20 border-amber-500/30 text-amber-200' :
-        summary.currentStatus === 'recovery_deload' ? 'bg-cyan-950/20 border-cyan-500/30 text-cyan-200' : 'bg-emerald-950/20 border-emerald-500/30 text-emerald-200'
+        summary.currentStatus === 'high_load_low_hrv' ? 'bg-rose-950/20 border-rose-500/30 text-rose-200' :
+        summary.currentStatus === 'high_load_hrv_below_ref' ? 'bg-amber-950/20 border-amber-500/30 text-amber-200' :
+        summary.currentStatus === 'low_load_hrv_recovered' ? 'bg-cyan-950/20 border-cyan-500/30 text-cyan-200' : 'bg-emerald-950/20 border-emerald-500/30 text-emerald-200'
       }`}>
         <div className="space-y-2.5 max-w-3xl">
           <div className="flex items-center gap-2">
             <Heart className={`w-5 h-5 shrink-0 ${summary.statusColor}`} />
             <h4 className="text-sm font-bold tracking-wide uppercase">
-              Evaluación Autonómica del Coach Miguel:
+              Qué muestra la tendencia HRV / carga:
             </h4>
           </div>
 
           <p className="text-xs sm:text-sm text-zinc-200 leading-relaxed">
-            {summary.coachVerdict}
+            {summary.description}
           </p>
 
-          {/* Actionable points */}
-          <div className="pt-2">
-            <span className="text-[11px] font-bold text-zinc-300 block mb-1 uppercase tracking-wider">
-              Instrucciones directas para los próximos días:
-            </span>
-            <ul className="space-y-1 text-xs text-zinc-300">
-              {summary.actionableRecommendations.map((rec, idx) => (
-                <li key={idx} className="flex items-center gap-2">
-                  <CheckCircle2 className={`w-3.5 h-3.5 shrink-0 ${summary.statusColor}`} />
-                  <span>{rec}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
         </div>
 
         {/* Action Buttons */}
         <div className="flex flex-col gap-2 shrink-0 self-stretch sm:self-auto sm:min-w-[200px]">
-          {summary.isDeloadRecommended && onScheduleDeload ? (
-            <button
-              onClick={onScheduleDeload}
-              className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-2xl bg-rose-500 hover:bg-rose-400 text-zinc-950 font-black text-xs shadow-xl shadow-rose-500/20 transition cursor-pointer"
-            >
-              <RotateCcw className="w-4 h-4" />
-              <span>Programar Descarga Z1</span>
-            </button>
-          ) : (
             <button
               onClick={() => onNavigateTab?.('calendar')}
               className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-2xl bg-zinc-800 hover:bg-zinc-700 text-zinc-100 font-bold text-xs border border-zinc-700 transition cursor-pointer"
@@ -1102,7 +1042,6 @@ export const HRVLoadOverreachingView: React.FC<HRVLoadOverreachingViewProps> = (
               <Calendar className="w-4 h-4 text-emerald-400" />
               <span>Ver Calendario de Sesiones</span>
             </button>
-          )}
 
           <button
             onClick={() => onNavigateTab?.('zonesense')}

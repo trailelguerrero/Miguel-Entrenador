@@ -103,3 +103,57 @@ test('windowLoad separa la parte no medida', () => {
   assert.equal(w.tss, 50 + calculateWorkoutTss(60).tss);
   assert.equal(w.nonMeasuredTss, calculateWorkoutTss(60).tss);
 });
+
+// ── Fase 2: las métricas describen, solo readiness decide ────────────────
+import { readFileSync } from 'node:fs';
+import { describeTsb, describeRampRate } from '../src/utils/pmcCalculations.js';
+import { calculateACWRSummary } from '../src/utils/acwrCalculations.js';
+import { calculateHRVLoadCorrelation } from '../src/utils/hrvLoadCalculations.js';
+import { localDateKey } from '../src/utils/trainingLoad.js';
+
+test('PMC / ACWR / HRV-carga no llevan recomendaciones de acción', () => {
+  for (const f of ['src/utils/pmcCalculations.ts', 'src/utils/acwrCalculations.ts', 'src/utils/hrvLoadCalculations.ts']) {
+    const src = readFileSync(f, 'utf8');
+    assert.doesNotMatch(src, /actionRecommendation|coachTacticalAdvice|actionableSteps|recommendedDeload|actionableRecommendations|isDeloadRecommended|injuryRisk/, f);
+    assert.doesNotMatch(src, /Peak Form|Supercompensaci|Sweet Spot|non_functional_overreaching|mitocondrial/i, f);
+  }
+  const t = describeTsb(-35) as any;
+  assert.equal(t.zone, 'very_negative');
+  assert.equal(t.actionRecommendation, undefined);
+  assert.doesNotMatch(t.description, /descarga|descanso|48-72/i);
+  assert.doesNotMatch(describeRampRate(12).description, /lesi|riesgo/i);
+});
+
+const today = localDateKey();
+const daily = (fromDaysAgo: number, toDaysAgo: number, tss: number) => {
+  const out: any[] = [];
+  for (let i = fromDaysAgo; i >= toDaysAgo; i--) {
+    const date = addDaysKey(today, -i);
+    out.push({ id: `w${date}`, date, title: 'r', type: 'easy_run', completed: true, suuntoWorkoutKey: `k${date}`, actualTss: tss });
+  }
+  return out;
+};
+
+test('ACWR desacoplado: la crónica NO incluye los 7 días agudos', () => {
+  // Solo carga en los últimos 7 días: acoplado daría 4,0; desacoplado no hay crónica
+  const onlyRecent = calculateACWRSummary(daily(6, 0, 60));
+  assert.equal(onlyRecent.zone, 'insufficient_data');
+  assert.equal(onlyRecent.currentAcwr, 0);
+  // Carga constante → ratio 1
+  const steady = calculateACWRSummary(daily(70, 0, 50));
+  assert.equal(steady.currentAcwr, 1);
+  assert.equal(steady.zone, 'similar');
+  assert.match(steady.description, /1,00 veces la media de las 4 semanas previas/);
+  // Doble carga los últimos 7 días → 2
+  const spike = calculateACWRSummary([...daily(70, 7, 50), ...daily(6, 0, 100)]);
+  assert.equal(spike.currentAcwr, 2);
+  assert.equal(spike.zone, 'very_high');
+});
+
+test('HRV-carga: estados descriptivos, sin recomendar descarga', () => {
+  const s = calculateHRVLoadCorrelation(daily(40, 0, 50), [], {} as any) as any;
+  assert.equal(s.currentStatus, 'insufficient_data');
+  assert.equal(s.isDeloadRecommended, undefined);
+  assert.equal(s.actionableRecommendations, undefined);
+  assert.equal(typeof s.loadRecoveryTrendScore, 'number');
+});

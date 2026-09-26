@@ -16,24 +16,29 @@ export interface TSSCalculationResult {
   formulaExplanation: string;
 }
 
-export interface TSBZoneDiagnosis {
-  zone: 'danger' | 'overload' | 'maintenance' | 'race_ready' | 'detraining';
+/**
+ * Descripción NEUTRA del TSB: solo dice qué relación hay entre carga reciente
+ * (ATL) y crónica (CTL). No diagnostica ni recomienda: la decisión del día es
+ * del motor de readiness (src/brain/readiness.ts).
+ */
+export interface TSBDescription {
+  zone: 'very_negative' | 'negative' | 'neutral' | 'positive' | 'very_positive';
   label: string;
   rangeDescription: string;
   textColor: string;
   bgColor: string;
   borderColor: string;
-  scientificExplanation: string;
-  actionRecommendation: string;
+  description: string;
 }
 
-export interface RampRateDiagnosis {
+/** Descripción neutra del cambio semanal de CTL (sin juicio de riesgo ni recomendación). */
+export interface RampRateDescription {
   rate: number;
-  status: 'recovery' | 'maintenance' | 'optimal' | 'high' | 'excessive';
+  status: 'falling' | 'stable' | 'rising' | 'fast_rising' | 'very_fast_rising';
   label: string;
   textColor: string;
   badgeColor: string;
-  recommendation: string;
+  description: string;
 }
 
 /**
@@ -123,133 +128,74 @@ export function calculateWorkoutTss(
   };
 }
 
-/**
- * Orientative reading of Training Stress Balance (TSB) using the commonly
- * cited Friel/Coggan bands (general guidance, not validated for this athlete).
- */
-export function getTsbZoneDiagnosis(tsb: number): TSBZoneDiagnosis {
+/** Cortes de referencia (bandas de Friel/Coggan, orientativas: no validadas para este atleta). */
+export function describeTsb(tsb: number): TSBDescription {
+  const t = Math.round(tsb * 10) / 10;
   if (tsb < -30) {
     return {
-      zone: 'danger',
-      label: 'Fatiga muy alta (TSB muy negativo)',
+      zone: 'very_negative',
+      label: 'Carga reciente muy por encima de la crónica',
       rangeDescription: 'TSB < -30',
       textColor: 'text-rose-400',
       bgColor: 'bg-rose-950/40',
       borderColor: 'border-rose-500/40',
-      scientificExplanation: 'La fatiga aguda (ATL) supera a la forma física (CTL) en más de 30 puntos: acumulas mucha más carga reciente de la habitual.',
-      actionRecommendation: 'Microciclo de descarga inmediato (-40% a -50% de volumen) o descanso pasivo de 48-72h antes de cualquier trabajo de intensidad.',
+      description: `TSB ${t}: la carga de los últimos días (ATL) supera en más de 30 puntos a la carga habitual (CTL). Es un dato; el estado de hoy lo decide el motor de readiness.`,
     };
   }
-
-  if (tsb >= -30 && tsb < -10) {
+  if (tsb < -10) {
     return {
-      zone: 'overload',
-      label: 'Sobrecarga Funcional Óptima (Fase de Carga)',
+      zone: 'negative',
+      label: 'Carga reciente por encima de la crónica',
       rangeDescription: '-30 ≤ TSB < -10',
       textColor: 'text-amber-400',
       bgColor: 'bg-amber-950/40',
       borderColor: 'border-amber-500/40',
-      scientificExplanation: 'Zona óptima de estímulo adaptativo según el modelo de Friel. El atleta acumula fatiga controlada que generará supercompensación aeróbica mitocondrial.',
-      actionRecommendation: 'Continúa con el plan previsto. Monitorea la HRV matutina y prioriza la ingesta de hidratos y el descanso nocturno.',
+      description: `TSB ${t}: la carga de los últimos días (ATL) es mayor que la carga habitual (CTL).`,
     };
   }
-
-  if (tsb >= -10 && tsb <= 5) {
+  if (tsb <= 5) {
     return {
-      zone: 'maintenance',
-      label: 'Zona Neutra / Asimilación y Mantenimiento',
+      zone: 'neutral',
+      label: 'Carga reciente similar a la crónica',
       rangeDescription: '-10 ≤ TSB ≤ +5',
       textColor: 'text-emerald-400',
       bgColor: 'bg-emerald-950/40',
       borderColor: 'border-emerald-500/40',
-      scientificExplanation: 'Equilibrio fisiológico entre carga y recuperación. Fase ideal para consolidar adaptaciones de fuerza o testear ritmo y nutrición sin fatiga residual.',
-      actionRecommendation: 'Ideal para semanas intermedias, transición entre mesociclos o rodajes de asimilación.',
+      description: `TSB ${t}: la carga de los últimos días (ATL) está cerca de la carga habitual (CTL).`,
     };
   }
-
-  if (tsb > 5 && tsb <= 25) {
+  if (tsb <= 25) {
     return {
-      zone: 'race_ready',
-      label: 'Zona de Máximo Rendimiento / Competición (Peak Form)',
+      zone: 'positive',
+      label: 'Carga reciente por debajo de la crónica',
       rangeDescription: '+5 < TSB ≤ +25',
       textColor: 'text-cyan-400',
       bgColor: 'bg-cyan-950/40',
       borderColor: 'border-cyan-500/40',
-      scientificExplanation: 'Tapering óptimo completado. La fatiga acumulada (ATL) se ha disipado casi por completo mientras el estado de forma (CTL) se mantiene elevado. Máxima potencia mitocondrial y frescura neuromuscular.',
-      actionRecommendation: 'Estado óptimo para competir (ej. Transvulcania 73K). Mantén activaciones neuromusculares muy breves de alta cadencia.',
+      description: `TSB ${t}: la carga de los últimos días (ATL) es menor que la carga habitual (CTL).`,
     };
   }
-
   return {
-    zone: 'detraining',
-    label: 'Desentrenamiento / Pérdida de Fitness',
+    zone: 'very_positive',
+    label: 'Carga reciente muy por debajo de la crónica',
     rangeDescription: 'TSB > +25',
     textColor: 'text-zinc-400',
     bgColor: 'bg-zinc-900/60',
     borderColor: 'border-zinc-700/40',
-    scientificExplanation: 'El reposo o la inactividad han sido excesivos. Aunque la frescura es máxima, el estado de forma crónico (CTL) decae a un ritmo aproximado del 2.4% diario.',
-    actionRecommendation: 'Reinicia progresivamente los microciclos de volumen aeróbico Z1/Z2 para restablecer la densidad mitocondrial.',
+    description: `TSB ${t}: la carga de los últimos días (ATL) es más de 25 puntos menor que la carga habitual (CTL).`,
   };
 }
 
 /**
- * Returns Ramp Rate diagnosis (weekly change in CTL points).
- * Standard guidelines from Joe Friel & TrainingPeaks:
- * - Optimal: +3 to +7 CTL points per week
- * - High: +8 to +10 CTL points per week (monitor closely)
- * - Excessive: > +10 CTL points per week (drastic spike in injury risk)
+ * Cambio semanal del CTL descrito sin juicio. Cortes orientativos (guía habitual
+ * de Friel/TrainingPeaks: +3 a +7 CTL/semana), no validados para este atleta.
  */
-export function getRampRateDiagnosis(weeklyCtlChange: number): RampRateDiagnosis {
-  if (weeklyCtlChange < 0) {
-    return {
-      rate: weeklyCtlChange,
-      status: 'recovery',
-      label: `${weeklyCtlChange} CTL/sem (Descarga)`,
-      textColor: 'text-cyan-400',
-      badgeColor: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30',
-      recommendation: 'Semana de asimilación/descarga. Fisiológicamente necesaria para permitir la regeneración de tejidos y glucógeno.',
-    };
-  }
-
-  if (weeklyCtlChange <= 2) {
-    return {
-      rate: weeklyCtlChange,
-      status: 'maintenance',
-      label: `+${weeklyCtlChange} CTL/sem (Mantenimiento)`,
-      textColor: 'text-zinc-300',
-      badgeColor: 'bg-zinc-800 text-zinc-300 border-zinc-700',
-      recommendation: 'Carga constante. El fitness se mantiene estable sin generar fatiga residual apreciable.',
-    };
-  }
-
-  if (weeklyCtlChange <= 7) {
-    return {
-      rate: weeklyCtlChange,
-      status: 'optimal',
-      label: `+${weeklyCtlChange} CTL/sem (Rampa Óptima)`,
-      textColor: 'text-emerald-400',
-      badgeColor: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
-      recommendation: 'Tasa de rampa fisiológicamente ideal (+3 a +7/semana). Adaptación mitocondrial segura sin sobrecargar ligamentos ni tendones.',
-    };
-  }
-
-  if (weeklyCtlChange <= 10) {
-    return {
-      rate: weeklyCtlChange,
-      status: 'high',
-      label: `+${weeklyCtlChange} CTL/sem (Rampa Elevada)`,
-      textColor: 'text-amber-400',
-      badgeColor: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
-      recommendation: 'Progresión en el límite superior recomendado. Mantén control estricto de la variabilidad cardíaca (HRV) y descanso nocturno.',
-    };
-  }
-
-  return {
-    rate: weeklyCtlChange,
-    status: 'excessive',
-    label: `+${weeklyCtlChange} CTL/sem (Rampa Excesiva > +10)`,
-    textColor: 'text-rose-400',
-    badgeColor: 'bg-rose-500/10 text-rose-400 border-rose-500/30',
-    recommendation: 'Incremento excesivamente rápido de la carga (> 10 CTL/semana). Los estudios demuestran un incremento exponencial en el riesgo de tendinopatías y roturas musculares.',
-  };
+export function describeRampRate(weeklyCtlChange: number): RampRateDescription {
+  const r = weeklyCtlChange;
+  const sign = r > 0 ? `+${r}` : `${r}`;
+  if (r < 0) return { rate: r, status: 'falling', label: `${sign} CTL/sem (bajando)`, textColor: 'text-cyan-400', badgeColor: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30', description: 'La carga crónica baja esta semana.' };
+  if (r <= 2) return { rate: r, status: 'stable', label: `${sign} CTL/sem (estable)`, textColor: 'text-zinc-300', badgeColor: 'bg-zinc-800 text-zinc-300 border-zinc-700', description: 'La carga crónica se mantiene.' };
+  if (r <= 7) return { rate: r, status: 'rising', label: `${sign} CTL/sem (subiendo)`, textColor: 'text-emerald-400', badgeColor: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30', description: 'La carga crónica sube dentro de la guía habitual (+3 a +7/semana).' };
+  if (r <= 10) return { rate: r, status: 'fast_rising', label: `${sign} CTL/sem (subida rápida)`, textColor: 'text-amber-400', badgeColor: 'bg-amber-500/10 text-amber-400 border-amber-500/30', description: 'La carga crónica sube por encima de la guía habitual (+3 a +7/semana).' };
+  return { rate: r, status: 'very_fast_rising', label: `${sign} CTL/sem (subida muy rápida)`, textColor: 'text-rose-400', badgeColor: 'bg-rose-500/10 text-rose-400 border-rose-500/30', description: 'La carga crónica sube más de 10 puntos en una semana.' };
 }

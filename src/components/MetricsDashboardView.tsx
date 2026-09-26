@@ -39,8 +39,8 @@ import {
 } from '../types';
 import { ReportPdfModal } from './ReportPdfModal';
 import { 
-  getTsbZoneDiagnosis, 
-  getRampRateDiagnosis
+  describeTsb, 
+  describeRampRate
 } from '../utils/pmcCalculations';
 import { StorageService } from '../services/storage';
 import { computePmcSeries, localDateKey } from '../utils/trainingLoad';
@@ -97,8 +97,8 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
     ? calculatedPmcSeries[calculatedPmcSeries.length - 1] 
     : { ctl: 0, atl: 0, tsb: 0, tss: 0, mountainTss: 0, rampRate: 0 };
 
-  const tsbDiagnosis = getTsbZoneDiagnosis(latestPmc.tsb);
-  const rampRateDiagnosis = getRampRateDiagnosis(latestPmc.rampRate || 0);
+  const tsbDiagnosis = describeTsb(latestPmc.tsb);
+  const rampRateDiagnosis = describeRampRate(latestPmc.rampRate || 0);
 
   // Total TSS in the displayed period
   const totalPeriodTss = calculatedPmcSeries.reduce((sum: number, p: PMCDataPoint) => sum + p.tss, 0);
@@ -512,9 +512,9 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
             </div>
           </div>
           <div className="pt-2 border-t border-zinc-800/80 text-[11px] text-zinc-400 flex items-center justify-between">
-            <span>Riesgo sobreentrenamiento:</span>
+            <span>Lectura:</span>
             <span className={`font-bold font-mono ${acwrSummary.zoneColor}`}>
-              {acwrSummary.injuryRiskPctFormatted}
+              {acwrSummary.shortLabel}
             </span>
           </div>
         </div>
@@ -868,7 +868,6 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
           <ACWRVisualization
             workouts={workouts}
             antHr={profile.antHr}
-            onScheduleDeload={onScheduleDeload}
             onNavigateTab={onNavigateTab}
           />
         </div>
@@ -880,7 +879,7 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
           <div className="flex items-center justify-between bg-zinc-900 border border-zinc-800 p-4 rounded-2xl">
             <span className="text-xs font-bold text-rose-400 uppercase tracking-wider flex items-center gap-2">
               <Layers className="w-4 h-4" />
-              Desglose Clínico Detallado: Matriz de 4 Cuadrantes & Registro de Episodios
+              Detalle: matriz de 4 cuadrantes carga / HRV y periodos
             </span>
           </div>
           <HRVLoadOverreachingView

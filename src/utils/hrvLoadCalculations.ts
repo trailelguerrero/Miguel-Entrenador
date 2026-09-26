@@ -1,36 +1,23 @@
 /**
- * 7-Day Rolling HRV rMSSD vs Weekly Training Load Correlation Engine
- * 
- * Based on sports science research by:
- * - Dr. Daniel Plews & Dr. Martin Buchheit (2013-2017, Sports Medicine):
- *   "Training adaptation and heart rate variability in elite endurance athletes"
- * - Marco Altini, PhD (HRV4Training):
- *   "Smallest Worthwhile Change (SWC) and normal values in nocturnal rMSSD tracking"
- * - Training for the Uphill Athlete (Kilgore, Johnston, Jornet):
- *   "Monitoring autonomic nervous system fatigue and cardiac drift in mountain ultrarunners"
- * 
- * Physiological Framework:
- * 1. Daily HRV fluctuates with acute stressors (hydration, digestion, sleep timing).
- *    The 7-day rolling average (HRV 7d MA) filters out noise and reveals true systemic autonomic adaptation.
- * 2. When plotted against Weekly Training Load (7d rolling TSS / volume):
- *    - Optimal Adaptation: High/increasing load + HRV 7d within or above the normal SWC band.
- *    - Functional Overreaching (FOR): Acute high load + transient moderate dip (< 3 days), rebounding quickly.
- *    - 'non_functional_overreaching' (shown as "fatiga acumulada", not a clinical diagnosis): very high weekly load + HRV 7d below the SWC band
- *      below the Smallest Worthwhile Change (SWC) threshold (< -10% to -15% of baseline) for 3+ consecutive days.
- *    - Deload / Supercompensation: Load drops (-40% to -50%) + HRV 7d rebounds above baseline.
+ * HRV nocturna (media de 7 días) frente a la carga semanal: PATRONES DESCRIPTIVOS.
+ *
+ * Referencias: Plews & Buchheit (media móvil de rMSSD), Altini (SWC = referencia
+ * ± 0,5 DE). Aquí solo se describe qué combinación hay (carga alta/baja frente a
+ * HRV dentro/fuera de tu banda normal). No es un diagnóstico clínico ni una
+ * recomendación: qué hacer hoy lo decide el motor de readiness (src/brain/readiness.ts).
  */
 
 import { Workout, DailyCheckIn, AthleteProfile } from '../types';
 import { measuredAntHr } from '../brain/intensity.js';
 import { buildDailyLoadSeries, buildCtlByDate, weeklyLoadThresholds, WeeklyLoadThresholds } from './trainingLoad';
 
-export type OverreachingType = 
-  | 'insufficient_data' // sin HRV medida en la ventana: no hay tendencia (nunca "estable")
-  | 'optimal_adaptation'
-  | 'functional_overreaching'
-  | 'non_functional_overreaching'
-  | 'recovery_deload'
-  | 'undertraining';
+export type HrvLoadPattern = 
+  | 'insufficient_data'        // sin HRV medida en la ventana: no hay tendencia (nunca "estable")
+  | 'hrv_in_band'              // HRV media dentro de tu banda normal
+  | 'high_load_hrv_below_ref'  // carga alta + HRV media algo por debajo de tu referencia
+  | 'high_load_low_hrv'        // carga muy alta + HRV media bajo tu banda normal
+  | 'low_load_hrv_recovered'   // carga baja + HRV media en/por encima de tu referencia
+  | 'low_load_low_hrv';        // carga baja + HRV media bajo tu banda normal
 
 export interface HRVLoadDataPoint {
   date: string;
@@ -46,13 +33,13 @@ export interface HRVLoadDataPoint {
   weeklyKm: number;           // 7-day rolling sum of km
   weeklyHours: number;        // 7-day rolling sum of training hours
   restingHr: number;          // Nocturnal resting HR (bpm)
-  status: OverreachingType;
-  isOverreaching: boolean;    // true if NFOR or high strain
+  status: HrvLoadPattern;
+  isHighLoadLowHrv: boolean;    // patrón carga muy alta + HRV bajo la banda
   isSuppressed: boolean;      // HRV 7d below SWC lower band
   workoutTitles: string[];
 }
 
-export interface OverreachingEpisode {
+export interface HighLoadLowHrvEpisode {
   id: string;
   startDate: string;
   endDate: string;
@@ -60,9 +47,7 @@ export interface OverreachingEpisode {
   avgHrv: number;
   minHrv: number;
   peakWeeklyTss: number;
-  severity: 'moderate' | 'critical';
-  diagnosis: string;
-  recommendedDeload: string;
+  description: string;
 }
 
 export interface WeeklyQuadrantPoint {
@@ -73,7 +58,7 @@ export interface WeeklyQuadrantPoint {
   weeklyTss: number;
   avgHrv7d: number;
   restingHrAvg: number;
-  quadrant: 'supercompensation' | 'overreaching' | 'systemic_fatigue' | 'deload_freshness';
+  quadrant: 'high_load_high_hrv' | 'high_load_low_hrv' | 'low_load_low_hrv' | 'low_load_high_hrv';
   quadrantLabel: string;
   badgeColor: string;
   isCurrentWeek: boolean;
@@ -93,14 +78,14 @@ export interface WeeklyHrvLoadBlock {
   minHrv: number;
   restingHrAvg: number;
   hrvDeltaPct: number;
-  status: 'optimal' | 'functional_overreaching' | 'non_functional_overreaching' | 'deload' | 'insufficient_data';
+  status: 'optimal' | 'high_load_hrv_below_ref' | 'high_load_low_hrv' | 'deload' | 'insufficient_data';
   statusLabel: string;
   badgeBg: string;
   badgeText: string;
   badgeBorder: string;
-  isOverreaching: boolean;
+  isHighLoadLowHrv: boolean;
   isCurrentWeek: boolean;
-  coachVerdict: string;
+  description: string;
 }
 
 export interface HRVLoadSummary {
@@ -121,21 +106,20 @@ export interface HRVLoadSummary {
   restingHr7dAvg: number;
   restingHrDelta: number;
   hrvCvPct: number;           // Coefficient of variation of HRV (last 7d)
-  fatigueRecoveryIndex: number; // 0-100 score: Autonomic Coupling Index
-  fatigueRecoveryStatus: string;
-  currentStatus: OverreachingType;
+  /** Índice PROPIO de la app (fórmula no validada), 0-100: solo una tendencia orientativa. */
+  loadRecoveryTrendScore: number;
+  loadRecoveryTrendLabel: string;
+  currentStatus: HrvLoadPattern;
   statusLabel: string;
   statusColor: string;
   statusBgColor: string;
   statusBorderColor: string;
-  riskAssessment: string;
-  isDeloadRecommended: boolean;
-  overreachingDaysCount: number;
-  overreachingEpisodes: OverreachingEpisode[];
+  trendSummary: string;
+  highLoadLowHrvDays: number;
+  highLoadLowHrvEpisodes: HighLoadLowHrvEpisode[];
   weeklyQuadrants: WeeklyQuadrantPoint[];
   weeklyBlocks: WeeklyHrvLoadBlock[];
-  coachVerdict: string;
-  actionableRecommendations: string[];
+  description: string;
   series: HRVLoadDataPoint[];
 }
 
@@ -258,21 +242,21 @@ export function calculateHRVLoadCorrelation(
     const isVeryHighLoad = !!thr && weeklyTss > thr.veryHigh;
     const isLowLoad = !!thr && weeklyTss < thr.low;
 
-    let status: OverreachingType = 'optimal_adaptation';
+    let status: HrvLoadPattern = 'hrv_in_band';
 
     // Gravedad coherente: la fatiga acumulada exige MÁS carga que la carga alta asumida
     if (hrvCount === 0) {
       status = 'insufficient_data';
     } else if (isVeryHighLoad && isSuppressed) {
-      status = 'non_functional_overreaching';
+      status = 'high_load_low_hrv';
     } else if (isHighLoad && hrv7dAvg > 0 && hrv7dAvg <= baselineHrv) {
-      status = 'functional_overreaching';
+      status = 'high_load_hrv_below_ref';
     } else if (isLowLoad && hrv7dAvg >= baselineHrv) {
-      status = 'recovery_deload';
+      status = 'low_load_hrv_recovered';
     } else if (isLowLoad && isSuppressed) {
-      status = 'undertraining';
+      status = 'low_load_low_hrv';
     } else {
-      status = 'optimal_adaptation';
+      status = 'hrv_in_band';
     }
 
     const [yy, mm, dd] = cur.date.split('-').map(Number);
@@ -294,7 +278,7 @@ export function calculateHRVLoadCorrelation(
       weeklyHours,
       restingHr: Number.isNaN(cur.restingHr) ? 0 : cur.restingHr,
       status,
-      isOverreaching: status === 'non_functional_overreaching',
+      isHighLoadLowHrv: status === 'high_load_low_hrv',
       isSuppressed,
       workoutTitles: cur.titles,
     });
@@ -318,13 +302,13 @@ export function calculateHRVLoadCorrelation(
   const hrvDeltaFromBaselinePct = baselineHrv > 0 && latest.hrv7dAvg > 0 ? Math.round(((latest.hrv7dAvg - baselineHrv) / baselineHrv) * 100) : 0;
 
   // Detect continuous overreaching episodes
-  const overreachingEpisodes: OverreachingEpisode[] = [];
+  const highLoadLowHrvEpisodes: HighLoadLowHrvEpisode[] = [];
   let currentEpisodeStart: HRVLoadDataPoint | null = null;
   let episodePoints: HRVLoadDataPoint[] = [];
 
   for (let i = 0; i < displaySeries.length; i++) {
     const pt = displaySeries[i];
-    if (pt.isOverreaching) {
+    if (pt.isHighLoadLowHrv) {
       if (!currentEpisodeStart) currentEpisodeStart = pt;
       episodePoints.push(pt);
     } else {
@@ -332,9 +316,8 @@ export function calculateHRVLoadCorrelation(
         const peakTss = Math.max(...episodePoints.map(p => p.weeklyTss));
         const minHrv = Math.min(...episodePoints.map(p => p.hrv7dAvg));
         const avgHrv = Math.round((episodePoints.reduce((acc, p) => acc + p.hrv7dAvg, 0) / episodePoints.length) * 10) / 10;
-        const severity = episodePoints.length >= 4 || minHrv < baselineHrv * 0.82 ? 'critical' : 'moderate';
 
-        overreachingEpisodes.push({
+        highLoadLowHrvEpisodes.push({
           id: `ep-${currentEpisodeStart.date}`,
           startDate: currentEpisodeStart.date,
           endDate: episodePoints[episodePoints.length - 1].date,
@@ -342,11 +325,7 @@ export function calculateHRVLoadCorrelation(
           avgHrv,
           minHrv,
           peakWeeklyTss: peakTss,
-          severity,
-          diagnosis: severity === 'critical'
-            ? 'Sobre-esfuerzo prolongado: desacople parasimpático agudo con caída persistente >15% de HRV bajo pico de carga.'
-            : 'Fase de sobrecarga funcional al límite: fatiga autonómica moderada.',
-          recommendedDeload: 'Reducción de volumen al 50% con 3 días regenerativos Z1 sub-130 bpm.',
+          description: `${episodePoints.length} días seguidos con carga muy alta y la HRV media por debajo de tu banda normal (mínimo ${minHrv} ms).`,
         });
       }
       currentEpisodeStart = null;
@@ -359,9 +338,8 @@ export function calculateHRVLoadCorrelation(
     const peakTss = Math.max(...episodePoints.map(p => p.weeklyTss));
     const minHrv = Math.min(...episodePoints.map(p => p.hrv7dAvg));
     const avgHrv = Math.round((episodePoints.reduce((acc, p) => acc + p.hrv7dAvg, 0) / episodePoints.length) * 10) / 10;
-    const severity = episodePoints.length >= 4 || minHrv < baselineHrv * 0.82 ? 'critical' : 'moderate';
 
-    overreachingEpisodes.push({
+    highLoadLowHrvEpisodes.push({
       id: `ep-${currentEpisodeStart.date}`,
       startDate: currentEpisodeStart.date,
       endDate: episodePoints[episodePoints.length - 1].date,
@@ -369,65 +347,57 @@ export function calculateHRVLoadCorrelation(
       avgHrv,
       minHrv,
       peakWeeklyTss: peakTss,
-      severity,
-      diagnosis: 'Episodio Activo: El sistema nervioso autónomo acumula varios días consecutivos sin capacidad de restablecer el tono vagal mientras la carga semanal se mantiene alta.',
-      recommendedDeload: 'Activar microciclo de descarga inmediato.',
+      description: `En curso: ${episodePoints.length} días seguidos con carga muy alta y la HRV media por debajo de tu banda normal.`,
     });
   }
 
-  const overreachingDaysCount = displaySeries.filter(p => p.isOverreaching).length;
-  // Sin HRV no se recomienda nada (antes 0 ms < banda → "descarga recomendada")
-  const isDeloadRecommended = latest.status === 'non_functional_overreaching' || (latest.hrv7dAvg > 0 && latest.hrv7dAvg < swcLower);
-
-  // Format status UI styling & Coach Miguel's verdict
-  let statusLabel = 'Tendencia estable';
+  const highLoadLowHrvDays = displaySeries.filter(p => p.isHighLoadLowHrv).length;
+  let statusLabel = 'HRV en tu banda normal';
   let statusColor = 'text-emerald-400';
   let statusBgColor = 'bg-emerald-500/10';
   let statusBorderColor = 'border-emerald-500/30';
-  let riskAssessment = 'Sin señales de fatiga acumulada en la tendencia';
-  let coachVerdict = '';
-  const actionableRecommendations: string[] = [];
-  // Esto es la TENDENCIA de 7 días (carga frente a HRV), no un diagnóstico clínico:
-  // qué hacer HOY lo decide el motor de readiness (semáforo del día).
-  const TODAY_RULE = 'Qué sesión hacer hoy lo decide el semáforo del día (check-in y motor de readiness).';
+  let trendSummary = 'HRV media dentro de tu banda normal';
+  let description = '';
+  // Solo descripción de la tendencia de 7 días: qué hacer HOY lo decide el motor de readiness.
+  const TODAY_RULE = 'Es una tendencia, no una decisión: la sesión de hoy la fija el estado de readiness.';
 
   if (latest.status === 'insufficient_data') {
     statusLabel = 'Sin datos de HRV';
     statusColor = 'text-zinc-300';
     statusBgColor = 'bg-zinc-700/30';
     statusBorderColor = 'border-zinc-600';
-    riskAssessment = 'No hay HRV medida en los últimos 7 días: no se puede leer la tendencia';
-    coachVerdict = `Sin HRV de los últimos 7 días no puedo decirte si la carga (${latest.weeklyTss} TSS esta semana) te está pasando factura. Sincroniza Suunto. ${TODAY_RULE}`;
-    actionableRecommendations.push('Sincroniza Suunto (HRV nocturna) para poder leer la tendencia.');
-  } else if (latest.status === 'non_functional_overreaching') {
-    statusLabel = 'Tendencia: fatiga acumulada';
+    trendSummary = 'No hay HRV medida en los últimos 7 días: no se puede leer la tendencia';
+    description = `Carga de ${latest.weeklyTss} TSS esta semana; sin HRV de los últimos 7 días no hay tendencia que describir. Sincroniza Suunto.`;
+  } else if (latest.status === 'high_load_low_hrv') {
+    statusLabel = 'Carga muy alta + HRV baja';
     statusColor = 'text-rose-400';
     statusBgColor = 'bg-rose-500/10';
     statusBorderColor = 'border-rose-500/30';
-    riskAssessment = 'Carga alta con la HRV media por debajo de tu banda normal';
-    coachVerdict = `Tu HRV media de 7 días está en ${latest.hrv7dAvg} ms (${hrvDeltaFromBaselinePct}% frente a tu referencia de ${baselineHrv} ms) con una carga semanal alta de ${latest.weeklyTss} TSS. Esta combinación, si se mantiene, es compatible con fatiga acumulada: conviene bajar la carga unos días y vigilar si la HRV se recupera. ${TODAY_RULE}`;
-    actionableRecommendations.push('Baja la carga unos días (rodajes con la FC por debajo de tu umbral aeróbico, sin series) y vigila si la HRV media vuelve a tu banda normal.');
-    actionableRecommendations.push('Si además hay dolor, mal sueño o bajo rendimiento durante varios días, consúltalo con un profesional sanitario.');
-  } else if (latest.status === 'functional_overreaching') {
-    statusLabel = 'Tendencia: carga alta asumida';
+    trendSummary = 'Carga muy alta con la HRV media por debajo de tu banda normal';
+    description = `HRV media de 7 días ${latest.hrv7dAvg} ms (${hrvDeltaFromBaselinePct}% frente a tu referencia de ${baselineHrv} ms) con ${latest.weeklyTss} TSS esta semana, por encima de tu carga habitual. ${TODAY_RULE}`;
+  } else if (latest.status === 'high_load_hrv_below_ref') {
+    statusLabel = 'Carga alta + HRV algo baja';
     statusColor = 'text-amber-400';
     statusBgColor = 'bg-amber-500/10';
     statusBorderColor = 'border-amber-500/30';
-    riskAssessment = 'Carga por encima de lo habitual con la HRV media algo baja';
-    coachVerdict = `Llevas ${latest.weeklyTss} TSS esta semana y tu HRV media de 7 días (${latest.hrv7dAvg} ms) está algo por debajo de tu referencia, aún dentro de tu banda normal. Es un estímulo fuerte: planifica algo más suave en los próximos días. ${TODAY_RULE}`;
-    actionableRecommendations.push('Mantén los rodajes por debajo de tu umbral aeróbico (FC) y reserva la intensidad para cuando el semáforo del día esté en verde.');
-  } else if (latest.status === 'recovery_deload') {
-    statusLabel = 'Tendencia: descarga y recuperación';
+    trendSummary = 'Carga por encima de lo habitual con la HRV media algo por debajo de tu referencia';
+    description = `${latest.weeklyTss} TSS esta semana y HRV media de 7 días ${latest.hrv7dAvg} ms, algo por debajo de tu referencia (${baselineHrv} ms) pero dentro de tu banda normal. ${TODAY_RULE}`;
+  } else if (latest.status === 'low_load_hrv_recovered') {
+    statusLabel = 'Carga baja + HRV en referencia';
     statusColor = 'text-cyan-400';
     statusBgColor = 'bg-cyan-500/10';
     statusBorderColor = 'border-cyan-500/30';
-    riskAssessment = 'Carga baja con la HRV media recuperada';
-    coachVerdict = `La carga semanal ha bajado a ${latest.weeklyTss} TSS y tu HRV media de 7 días ha subido a ${latest.hrv7dAvg} ms: la tendencia indica recuperación. ${TODAY_RULE}`;
-    actionableRecommendations.push('Buen momento para retomar la progresión de forma gradual.');
+    trendSummary = 'Carga baja con la HRV media en tu referencia o por encima';
+    description = `La carga semanal es baja (${latest.weeklyTss} TSS) y la HRV media de 7 días está en ${latest.hrv7dAvg} ms. ${TODAY_RULE}`;
+  } else if (latest.status === 'low_load_low_hrv') {
+    statusLabel = 'Carga baja + HRV baja';
+    statusColor = 'text-amber-400';
+    statusBgColor = 'bg-amber-500/10';
+    statusBorderColor = 'border-amber-500/30';
+    trendSummary = 'Carga baja con la HRV media por debajo de tu banda normal';
+    description = `La carga semanal es baja (${latest.weeklyTss} TSS) y aun así la HRV media de 7 días (${latest.hrv7dAvg} ms) está bajo tu banda normal (${swcLower} ms). ${TODAY_RULE}`;
   } else {
-    riskAssessment = 'HRV media dentro de tu banda normal';
-    coachVerdict = `Con ${latest.weeklyTss} TSS esta semana, tu HRV media de 7 días (${latest.hrv7dAvg} ms) está dentro de tu banda normal (${swcLower} - ${swcUpper} ms): no hay señales de fatiga acumulada. ${TODAY_RULE}`;
-    actionableRecommendations.push('Sigue con la estructura del plan y el check-in de cada mañana.');
+    description = `Con ${latest.weeklyTss} TSS esta semana, tu HRV media de 7 días (${latest.hrv7dAvg} ms) está dentro de tu banda normal (${swcLower} - ${swcUpper} ms). ${TODAY_RULE}`;
   }
 
   // Resting HR 7d and Delta
@@ -447,29 +417,27 @@ export function calculateHRVLoadCorrelation(
     ? Math.round((Math.sqrt(variance7d) / mean7dDailyHrv) * 1000) / 10 
     : 0;
 
-  // Fatigue vs Recovery Autonomic Coupling Index (0 - 100)
-  // High load + High HRV = Supercompensation (>75)
-  // High load + Depressed HRV = Severe Overreaching (<35)
-  // Low load + Elevated HRV = Deload / Recovery (65-80)
+  // Índice propio de la app (0-100, fórmula no validada): HRV frente a referencia,
+  // penalizado por carga por encima de lo habitual y FC de reposo elevada.
   const hrvScore = Math.max(0, Math.min(100, 50 + (baselineHrv > 0 && latest.hrv7dAvg > 0 ? ((latest.hrv7dAvg - baselineHrv) / baselineHrv) * 120 : 0)));
   const latestThr = latest.loadThresholds;
   const loadPenalty = latestThr && latest.weeklyTss > latestThr.high ? ((latest.weeklyTss - latestThr.high) / 15) : 0;
   const restingHrPenalty = restingHrDelta > 2 ? (restingHrDelta * 3) : 0;
   const rawCouplingIndex = Math.round(hrvScore - (latest.hrv7dAvg < swcLower ? loadPenalty * 1.5 : loadPenalty * 0.5) - restingHrPenalty);
-  const fatigueRecoveryIndex = Math.max(12, Math.min(98, rawCouplingIndex));
+  const loadRecoveryTrendScore = Math.max(12, Math.min(98, rawCouplingIndex));
 
   // Índice ORIENTATIVO de la app (no validado): sin HRV no hay lectura
-  let fatigueRecoveryStatus: string;
+  let loadRecoveryTrendLabel: string;
   if (!(latest.hrv7dAvg > 0)) {
-    fatigueRecoveryStatus = 'Sin datos de HRV';
-  } else if (fatigueRecoveryIndex >= 75) {
-    fatigueRecoveryStatus = 'Índice alto: buena respuesta a la carga';
-  } else if (fatigueRecoveryIndex >= 55) {
-    fatigueRecoveryStatus = 'Índice medio: carga y recuperación equilibradas';
-  } else if (fatigueRecoveryIndex >= 38) {
-    fatigueRecoveryStatus = 'Índice bajo: la carga pesa más que la recuperación';
+    loadRecoveryTrendLabel = 'Sin datos de HRV';
+  } else if (loadRecoveryTrendScore >= 75) {
+    loadRecoveryTrendLabel = 'Índice alto: HRV alta para la carga que llevas';
+  } else if (loadRecoveryTrendScore >= 55) {
+    loadRecoveryTrendLabel = 'Índice medio';
+  } else if (loadRecoveryTrendScore >= 38) {
+    loadRecoveryTrendLabel = 'Índice bajo: HRV baja para la carga que llevas';
   } else {
-    fatigueRecoveryStatus = 'Índice muy bajo: tendencia de fatiga acumulada';
+    loadRecoveryTrendLabel = 'Índice muy bajo: carga alta y HRV bajo tu banda';
   }
 
   // Weekly Quadrants (Last 4 Weeks Analysis)
@@ -487,7 +455,7 @@ export function calculateHRVLoadCorrelation(
       const restingHrAvg = avgPositive(weekSlice.map(p => p.restingHr), 0);
       const isCurrentWeek = w === 3;
 
-      let quadrant: 'supercompensation' | 'overreaching' | 'systemic_fatigue' | 'deload_freshness';
+      let quadrant: WeeklyQuadrantPoint['quadrant'];
       let quadrantLabel: string;
       let badgeColor: string;
 
@@ -496,20 +464,20 @@ export function calculateHRVLoadCorrelation(
       const isHighRecovery = avgHrv7d >= baselineHrv * 0.95;
 
       if (isHighLoad && isHighRecovery) {
-        quadrant = 'supercompensation';
-        quadrantLabel = 'Alta Carga + Alta Recuperación (Asimilación Óptima)';
+        quadrant = 'high_load_high_hrv';
+        quadrantLabel = 'Carga alta + HRV en referencia';
         badgeColor = 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30';
       } else if (isHighLoad && !isHighRecovery) {
-        quadrant = 'overreaching';
-        quadrantLabel = 'Alta Carga + Baja Recuperación (Sobre-esfuerzo)';
+        quadrant = 'high_load_low_hrv';
+        quadrantLabel = 'Carga alta + HRV baja';
         badgeColor = 'bg-rose-500/20 text-rose-400 border-rose-500/30';
       } else if (!isHighLoad && !isHighRecovery) {
-        quadrant = 'systemic_fatigue';
-        quadrantLabel = 'Baja Carga + Baja Recuperación (Estrés Extradeportivo / Fatiga)';
+        quadrant = 'low_load_low_hrv';
+        quadrantLabel = 'Carga baja + HRV baja';
         badgeColor = 'bg-amber-500/20 text-amber-400 border-amber-500/30';
       } else {
-        quadrant = 'deload_freshness';
-        quadrantLabel = 'Baja Carga + Alta Recuperación (Fase de Descarga / Frescura)';
+        quadrant = 'low_load_high_hrv';
+        quadrantLabel = 'Carga baja + HRV en referencia';
         badgeColor = 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30';
       }
 
@@ -559,13 +527,13 @@ export function calculateHRVLoadCorrelation(
       const weekWorkouts = workouts.filter(wo => wo.completed && wo.date >= startDateStr && wo.date <= endDateStr);
       const elevationGainM = weekWorkouts.reduce((acc, wo) => acc + (wo.actualElevationGainM || 0), 0);
 
-      let status: 'optimal' | 'functional_overreaching' | 'non_functional_overreaching' | 'deload' | 'insufficient_data';
+      let status: 'optimal' | 'high_load_hrv_below_ref' | 'high_load_low_hrv' | 'deload' | 'insufficient_data';
       let statusLabel: string;
       let badgeBg: string;
       let badgeText: string;
       let badgeBorder: string;
-      let coachVerdict: string;
-      let isOverreaching = false;
+      let description: string;
+      let isHighLoadLowHrv = false;
 
       const bThr = weekSlice[weekSlice.length - 1].loadThresholds;
       if (!(avgHrv > 0)) {
@@ -574,36 +542,36 @@ export function calculateHRVLoadCorrelation(
         badgeBg = 'bg-zinc-700/40';
         badgeText = 'text-zinc-300';
         badgeBorder = 'border-zinc-600';
-        coachVerdict = `Carga ${weeklyTss} TSS; sin HRV medida esa semana no hay lectura de la tendencia.`;
+        description = `Carga ${weeklyTss} TSS; sin HRV medida esa semana no hay lectura de la tendencia.`;
       } else if (bThr && weeklyTss > bThr.veryHigh && avgHrv > 0 && avgHrv < swcLower) {
-        status = 'non_functional_overreaching';
-        statusLabel = 'Fatiga acumulada';
+        status = 'high_load_low_hrv';
+        statusLabel = 'Carga muy alta + HRV baja';
         badgeBg = 'bg-rose-500/20';
         badgeText = 'text-rose-400';
         badgeBorder = 'border-rose-500/40';
-        isOverreaching = true;
-        coachVerdict = `Carga muy alta (${weeklyTss} TSS) con la HRV media (${avgHrv} ms) por debajo de tu banda normal (${swcLower} ms): compatible con fatiga acumulada.`;
+        isHighLoadLowHrv = true;
+        description = `Carga muy alta (${weeklyTss} TSS) con la HRV media (${avgHrv} ms) por debajo de tu banda normal (${swcLower} ms): por debajo de tu banda.`;
       } else if (bThr && weeklyTss > bThr.high && avgHrv > 0 && avgHrv < baselineHrv) {
-        status = 'functional_overreaching';
-        statusLabel = 'Carga alta asumida';
+        status = 'high_load_hrv_below_ref';
+        statusLabel = 'Carga alta + HRV algo baja';
         badgeBg = 'bg-amber-500/20';
         badgeText = 'text-amber-400';
         badgeBorder = 'border-amber-500/40';
-        coachVerdict = `Carga alta (${weeklyTss} TSS) con la HRV media algo por debajo de tu referencia: estímulo fuerte, conviene algo más suave después.`;
+        description = `Carga alta (${weeklyTss} TSS) con la HRV media algo por debajo de tu referencia.`;
       } else if (bThr && weeklyTss < bThr.low && avgHrv >= baselineHrv * 0.96) {
         status = 'deload';
-        statusLabel = 'Descarga / recuperación';
+        statusLabel = 'Carga baja + HRV en referencia';
         badgeBg = 'bg-cyan-500/20';
         badgeText = 'text-cyan-400';
         badgeBorder = 'border-cyan-500/40';
-        coachVerdict = `Carga baja (${weeklyTss} TSS) con la HRV media recuperada.`;
+        description = `Carga baja (${weeklyTss} TSS) con la HRV media en tu referencia.`;
       } else {
         status = 'optimal';
-        statusLabel = 'Estable';
+        statusLabel = 'HRV en tu banda';
         badgeBg = 'bg-emerald-500/20';
         badgeText = 'text-emerald-400';
         badgeBorder = 'border-emerald-500/40';
-        coachVerdict = `Carga ${weeklyTss} TSS con la HRV media (${avgHrv} ms) en tu banda normal.`;
+        description = `Carga ${weeklyTss} TSS con la HRV media (${avgHrv} ms) en tu banda normal.`;
       }
 
       weeklyBlocks.push({
@@ -625,9 +593,9 @@ export function calculateHRVLoadCorrelation(
         badgeBg,
         badgeText,
         badgeBorder,
-        isOverreaching,
+        isHighLoadLowHrv,
         isCurrentWeek,
-        coachVerdict,
+        description,
       });
     }
   }
@@ -650,21 +618,19 @@ export function calculateHRVLoadCorrelation(
     restingHr7dAvg,
     restingHrDelta,
     hrvCvPct,
-    fatigueRecoveryIndex,
-    fatigueRecoveryStatus,
+    loadRecoveryTrendScore,
+    loadRecoveryTrendLabel,
     currentStatus: latest.status,
     statusLabel,
     statusColor,
     statusBgColor,
     statusBorderColor,
-    riskAssessment,
-    isDeloadRecommended,
-    overreachingDaysCount,
-    overreachingEpisodes,
+    trendSummary,
+    highLoadLowHrvDays,
+    highLoadLowHrvEpisodes,
     weeklyQuadrants,
     weeklyBlocks,
-    coachVerdict,
-    actionableRecommendations,
+    description,
     series: displaySeries,
   };
 }

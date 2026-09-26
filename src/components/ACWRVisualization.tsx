@@ -2,7 +2,6 @@ import React, { useState, useMemo } from 'react';
 import { 
   Activity, 
   ShieldAlert, 
-  CheckCircle2, 
   AlertTriangle, 
   TrendingUp, 
   TrendingDown, 
@@ -14,8 +13,7 @@ import {
   Calendar,
   Zap,
   ArrowRight,
-  ShieldCheck,
-  RotateCcw
+  ShieldCheck
 } from 'lucide-react';
 import { Workout, PMCDataPoint } from '../types';
 import { calculateACWRSummary, ACWRDataPoint } from '../utils/acwrCalculations';
@@ -24,14 +22,12 @@ interface ACWRVisualizationProps {
   workouts: Workout[];
   pmcData?: PMCDataPoint[];
   antHr?: number;
-  onScheduleDeload?: () => void;
   onNavigateTab?: (tab: string) => void;
 }
 
 export const ACWRVisualization: React.FC<ACWRVisualizationProps> = ({
   workouts,
   antHr,
-  onScheduleDeload,
   onNavigateTab,
 }) => {
   const [calculationMode, setCalculationMode] = useState<'standard' | 'ewma'>('standard');
@@ -111,9 +107,9 @@ export const ACWRVisualization: React.FC<ACWRVisualizationProps> = ({
       {/* Background ambient glow */}
       <div 
         className={`absolute top-0 right-0 w-96 h-96 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20 opacity-20 ${
-          summary.zone === 'danger_overtraining' ? 'bg-rose-500' :
-          summary.zone === 'overload_risk' ? 'bg-amber-500' :
-          summary.zone === 'sweet_spot' ? 'bg-emerald-500' : 'bg-sky-500'
+          summary.zone === 'very_high' ? 'bg-rose-500' :
+          summary.zone === 'high' ? 'bg-amber-500' :
+          summary.zone === 'similar' ? 'bg-emerald-500' : 'bg-sky-500'
         }`} 
       />
 
@@ -123,10 +119,10 @@ export const ACWRVisualization: React.FC<ACWRVisualizationProps> = ({
           <div className="flex flex-wrap items-center gap-2 mb-1.5">
             <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 font-bold text-xs uppercase tracking-wider border border-emerald-500/20 flex items-center gap-1.5">
               <ShieldCheck className="w-3.5 h-3.5" />
-              Modelo Dr. Tim Gabbett (BJSM)
+              Ratio descriptivo desacoplado
             </span>
             <span className="px-2 py-0.5 rounded-md bg-zinc-800/80 text-zinc-300 font-mono text-[11px]">
-              Ventana: 7d Aguda / 28d Crónica
+              Ventana: 7d / 28d previos
             </span>
           </div>
 
@@ -303,9 +299,9 @@ export const ACWRVisualization: React.FC<ACWRVisualizationProps> = ({
                       x2={nx}
                       y2={ny}
                       stroke={
-                        summary.zone === 'danger_overtraining' ? '#f43f5e' :
-                        summary.zone === 'overload_risk' ? '#f59e0b' :
-                        summary.zone === 'sweet_spot' ? '#10b981' : '#38bdf8'
+                        summary.zone === 'very_high' ? '#f43f5e' :
+                        summary.zone === 'high' ? '#f59e0b' :
+                        summary.zone === 'similar' ? '#10b981' : '#38bdf8'
                       }
                       strokeWidth="3.5"
                       strokeLinecap="round"
@@ -335,7 +331,7 @@ export const ACWRVisualization: React.FC<ACWRVisualizationProps> = ({
               {summary.zoneLabel}
             </span>
             <div className="text-[11px] text-zinc-400 font-medium">
-              Lectura: <strong className={summary.zoneColor}>{summary.injuryRiskPctFormatted}</strong>
+              Lectura: <strong className={summary.zoneColor}>{summary.shortLabel}</strong>
             </div>
           </div>
         </div>
@@ -421,9 +417,9 @@ export const ACWRVisualization: React.FC<ACWRVisualizationProps> = ({
             </div>
 
             <div className="pt-2.5 border-t border-zinc-800/80 text-[11px] text-zinc-400 flex items-center justify-between">
-              <span>Regla del 10%:</span>
-              <span className={`font-bold font-mono ${Math.abs(summary.weeklyChangePct) <= 15 ? 'text-emerald-400' : 'text-amber-400'}`}>
-                {Math.abs(summary.weeklyChangePct) <= 15 ? 'Progresión Segura' : 'Salto Elevado'}
+              <span>Cambio semanal:</span>
+              <span className="font-bold font-mono text-zinc-300">
+                {Math.abs(summary.weeklyChangePct) <= 15 ? 'Moderado' : 'Grande'}
               </span>
             </div>
           </div>
@@ -433,18 +429,9 @@ export const ACWRVisualization: React.FC<ACWRVisualizationProps> = ({
             <div className="flex items-center gap-2.5 text-zinc-300">
               <ShieldAlert className="w-4 h-4 text-emerald-400 shrink-0" />
               <span>
-                <strong>Referencia (Gabbett):</strong> un ratio entre <strong>0,80 y 1,30</strong> indica que tu carga reciente se parece a la habitual. No es un predictor de lesiones: interprétalo junto con HRV, sueño, sensaciones y dolor.
+                <strong>Cómo se calcula:</strong> carga media de los últimos 7 días ÷ carga media de las 4 semanas <strong>anteriores</strong> (sin solaparse). Es solo una descripción: no predice lesiones ni decide tu sesión; eso lo hace el estado de readiness del día.
               </span>
             </div>
-            {summary.currentAcwr > 1.30 && onScheduleDeload && (
-              <button
-                onClick={onScheduleDeload}
-                className="shrink-0 px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold transition cursor-pointer flex items-center gap-1.5"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span>Programar Descarga</span>
-              </button>
-            )}
           </div>
 
         </div>
@@ -571,9 +558,9 @@ export const ACWRVisualization: React.FC<ACWRVisualizationProps> = ({
                 const isHovered = hoveredPoint?.date === p.date;
 
                 const ptColor = 
-                  p.zone === 'danger_overtraining' ? '#f43f5e' :
-                  p.zone === 'overload_risk' ? '#f59e0b' :
-                  p.zone === 'sweet_spot' ? '#10b981' : '#38bdf8';
+                  p.zone === 'very_high' ? '#f43f5e' :
+                  p.zone === 'high' ? '#f59e0b' :
+                  p.zone === 'similar' ? '#10b981' : '#38bdf8';
 
                 return (
                   <g 
@@ -647,9 +634,9 @@ export const ACWRVisualization: React.FC<ACWRVisualizationProps> = ({
               <div className="flex items-center gap-2">
                 <span className="font-bold text-zinc-100 font-mono text-sm">{hoveredPoint.date}</span>
                 <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                  hoveredPoint.zone === 'danger_overtraining' ? 'bg-rose-500/20 text-rose-400' :
-                  hoveredPoint.zone === 'overload_risk' ? 'bg-amber-500/20 text-amber-400' :
-                  hoveredPoint.zone === 'sweet_spot' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-sky-500/20 text-sky-400'
+                  hoveredPoint.zone === 'very_high' ? 'bg-rose-500/20 text-rose-400' :
+                  hoveredPoint.zone === 'high' ? 'bg-amber-500/20 text-amber-400' :
+                  hoveredPoint.zone === 'similar' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-sky-500/20 text-sky-400'
                 }`}>
                   Ratio: {calculationMode === 'standard' ? hoveredPoint.acwr.toFixed(2) : hoveredPoint.ewmaAcwr.toFixed(2)}
                 </span>
@@ -683,51 +670,30 @@ export const ACWRVisualization: React.FC<ACWRVisualizationProps> = ({
         )}
       </div>
 
-      {/* Coach Miguel Contextual Evaluation Box */}
+      {/* Lectura descriptiva del ratio */}
       <div className={`rounded-3xl border p-6 flex flex-col md:flex-row items-start justify-between gap-5 shadow-lg ${
-        summary.zone === 'danger_overtraining' ? 'bg-rose-950/20 border-rose-500/30 text-rose-200' :
-        summary.zone === 'overload_risk' ? 'bg-amber-950/20 border-amber-500/30 text-amber-200' :
-        summary.zone === 'sweet_spot' ? 'bg-emerald-950/20 border-emerald-500/30 text-emerald-200' : 'bg-sky-950/20 border-sky-500/30 text-sky-200'
+        summary.zone === 'very_high' ? 'bg-rose-950/20 border-rose-500/30 text-rose-200' :
+        summary.zone === 'high' ? 'bg-amber-950/20 border-amber-500/30 text-amber-200' :
+        summary.zone === 'similar' ? 'bg-emerald-950/20 border-emerald-500/30 text-emerald-200' : 'bg-sky-950/20 border-sky-500/30 text-sky-200'
       }`}>
         <div className="space-y-2.5 max-w-3xl">
           <div className="flex items-center gap-2">
-            <Flame className={`w-5 h-5 shrink-0 ${summary.zoneColor}`} />
+            <Info className={`w-5 h-5 shrink-0 ${summary.zoneColor}`} />
             <h4 className="text-sm font-bold tracking-wide uppercase">
-              Dictamen Fisiológico de Miguel sobre tu ACWR:
+              Qué dice tu ratio de carga:
             </h4>
           </div>
 
           <p className="text-xs sm:text-sm text-zinc-200 leading-relaxed">
-            {summary.coachTacticalAdvice}
+            {summary.description}
           </p>
-
-          {/* Actionable Points */}
-          <div className="pt-2">
-            <span className="text-[11px] font-bold text-zinc-300 block mb-1 uppercase tracking-wider">
-              Pautas recomendadas para los próximos 7 días:
-            </span>
-            <ul className="space-y-1 text-xs text-zinc-300">
-              {summary.actionableSteps.map((step, idx) => (
-                <li key={idx} className="flex items-center gap-2">
-                  <CheckCircle2 className={`w-3.5 h-3.5 shrink-0 ${summary.zoneColor}`} />
-                  <span>{step}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
+          <p className="text-[11px] text-zinc-400 leading-relaxed">
+            Es un dato descriptivo. Qué hacer hoy lo decide el estado de readiness (HRV, sueño, dolor y carga).
+          </p>
         </div>
 
         {/* Action Buttons */}
         <div className="flex flex-col gap-2 shrink-0 self-stretch sm:self-auto sm:min-w-[200px]">
-          {summary.currentAcwr > 1.30 && onScheduleDeload ? (
-            <button
-              onClick={onScheduleDeload}
-              className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-2xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-black text-xs shadow-xl shadow-amber-500/20 transition cursor-pointer"
-            >
-              <ShieldAlert className="w-4 h-4" />
-              <span>Programar Descarga (-45%)</span>
-            </button>
-          ) : (
             <button
               onClick={() => onNavigateTab?.('calendar')}
               className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-2xl bg-zinc-800 hover:bg-zinc-700 text-zinc-100 font-bold text-xs border border-zinc-700 transition cursor-pointer"
@@ -735,7 +701,6 @@ export const ACWRVisualization: React.FC<ACWRVisualizationProps> = ({
               <Calendar className="w-4 h-4 text-emerald-400" />
               <span>Ver Calendario de Sesiones</span>
             </button>
-          )}
 
           <button
             onClick={() => onNavigateTab?.('pmc')}

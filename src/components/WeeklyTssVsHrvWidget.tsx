@@ -64,15 +64,14 @@ export const WeeklyTssVsHrvWidget: React.FC<WeeklyTssVsHrvWidgetProps> = ({
     previousWeeklyTss,
     weeklyTssTrendPct,
     currentWeeklyKm,
-    fatigueRecoveryIndex,
-    fatigueRecoveryStatus,
+    loadRecoveryTrendScore,
+    loadRecoveryTrendLabel,
     currentStatus,
     statusLabel,
     statusColor,
     statusBgColor,
     statusBorderColor,
-    isDeloadRecommended,
-    overreachingDaysCount,
+    highLoadLowHrvDays,
     weeklyBlocks,
     series
   } = correlation;
@@ -138,54 +137,25 @@ export const WeeklyTssVsHrvWidget: React.FC<WeeklyTssVsHrvWidgetProps> = ({
   // Umbrales de carga relativos a la forma física actual (CTL × 7), no cifras fijas
   const thr = correlation.currentLoadThresholds;
 
-  // Dynamic Relationship Status Diagnosis
+  // Lectura DESCRIPTIVA del patrón que calcula hrvLoadCalculations (una sola
+  // clasificación; este widget no aplica umbrales propios). La sesión de hoy la
+  // decide el motor de readiness.
   const relationshipDiagnosis = useMemo(() => {
-    if (currentStatus === 'non_functional_overreaching' || (!!thr && currentWeeklyTss > thr.high && currentHrv7d > 0 && currentHrv7d < swcLower)) {
-      return {
-        state: 'desacople_critico',
-        title: 'Fatiga acumulada (carga alta + HRV baja)',
-        badge: 'Intensidad Supera Recuperación',
-        badgeColor: 'bg-rose-500/20 text-rose-400 border-rose-500/40',
-        summary: 'La carga semanal sostenida está provocando supresión continuada del tono vagal parasimpático.',
-        advice: 'Reduce volumen de inmediato y prioriza rodajes regenerativos claramente por debajo de tu AeT.',
-        dotColor: 'bg-rose-500',
-        icon: AlertTriangle
-      };
-    } else if (currentStatus === 'functional_overreaching' || (!!thr && currentWeeklyTss > thr.veryHigh && currentHrv7d > 0 && currentHrv7d <= baselineHrv)) {
-      return {
-        state: 'sobrecarga_funcional',
-        title: 'Sobre-esfuerzo Funcional (FOR)',
-        badge: 'Sobrecarga en Límite Adaptativo',
-        badgeColor: 'bg-amber-500/20 text-amber-400 border-amber-500/40',
-        summary: 'Pico de carga asimilado con ligera fatiga autonómica transitoria.',
-        advice: 'Estímulo óptimo para supercompensación. Mantén ritmos estrictamente en Z1-Z2 y programa 24h de descanso en 48h.',
-        dotColor: 'bg-amber-500',
-        icon: Zap
-      };
-    } else if (currentStatus === 'recovery_deload' || (!!thr && currentWeeklyTss < thr.low)) {
-      return {
-        state: 'descarga_frescura',
-        title: 'Fase de Asimilación & Frescura',
-        badge: 'Supercompensación Activa',
-        badgeColor: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/40',
-        summary: 'Carga semanal baja con rebote positivo de HRV nocturna.',
-        advice: 'Excelente momento de frescura neuromuscular. Tus depósitos y mitocondrias se están regenerando.',
-        dotColor: 'bg-cyan-400',
-        icon: RotateCcw
-      };
-    } else {
-      return {
-        state: 'adaptacion_optima',
-        title: 'Adaptación Fisiológica Óptima',
-        badge: 'Equilibrio Perfecto Carga / HRV',
-        badgeColor: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40',
-        summary: 'El sistema nervioso parasimpático absorbe el volumen sin signos de saturación simpática.',
-        advice: 'Tu cuerpo tolera la carga semanal prevista para Transvulcania. Prosigue con las sesiones pautadas.',
-        dotColor: 'bg-emerald-400',
-        icon: CheckCircle2
-      };
+    const TODAY = 'Es una tendencia, no una decisión: la sesión de hoy la fija el estado de readiness del día.';
+    if (currentStatus === 'high_load_low_hrv') {
+      return { state: 'desacople_critico', title: 'Carga muy alta + HRV baja', badge: statusLabel, badgeColor: 'bg-rose-500/20 text-rose-400 border-rose-500/40', summary: `HRV media de 7 días ${currentHrv7d} ms, bajo tu banda (${swcLower} ms), con ${currentWeeklyTss} TSS.`, advice: TODAY, dotColor: 'bg-rose-500', icon: AlertTriangle };
     }
-  }, [currentStatus, currentWeeklyTss, currentHrv7d, swcLower, baselineHrv, thr]);
+    if (currentStatus === 'high_load_hrv_below_ref' || currentStatus === 'low_load_low_hrv') {
+      return { state: 'sobrecarga_funcional', title: statusLabel, badge: statusLabel, badgeColor: 'bg-amber-500/20 text-amber-400 border-amber-500/40', summary: `HRV media de 7 días ${currentHrv7d} ms frente a tu referencia de ${baselineHrv} ms, con ${currentWeeklyTss} TSS.`, advice: TODAY, dotColor: 'bg-amber-500', icon: Zap };
+    }
+    if (currentStatus === 'low_load_hrv_recovered') {
+      return { state: 'descarga_frescura', title: 'Carga baja + HRV en referencia', badge: statusLabel, badgeColor: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/40', summary: `Carga semanal baja (${currentWeeklyTss} TSS) con la HRV media en ${currentHrv7d} ms.`, advice: TODAY, dotColor: 'bg-cyan-400', icon: RotateCcw };
+    }
+    if (currentStatus === 'insufficient_data') {
+      return { state: 'sin_datos', title: 'Sin datos de HRV', badge: 'Sin HRV', badgeColor: 'bg-zinc-700/30 text-zinc-300 border-zinc-600', summary: 'No hay HRV medida en los últimos 7 días.', advice: TODAY, dotColor: 'bg-zinc-400', icon: CheckCircle2 };
+    }
+    return { state: 'adaptacion_optima', title: 'HRV en tu banda normal', badge: statusLabel, badgeColor: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40', summary: `HRV media de 7 días ${currentHrv7d} ms dentro de tu banda (${swcLower}-${swcUpper} ms) con ${currentWeeklyTss} TSS.`, advice: TODAY, dotColor: 'bg-emerald-400', icon: CheckCircle2 };
+  }, [currentStatus, statusLabel, currentWeeklyTss, currentHrv7d, swcLower, swcUpper, baselineHrv]);
 
   const DiagIcon = relationshipDiagnosis.icon;
 
@@ -220,7 +190,7 @@ export const WeeklyTssVsHrvWidget: React.FC<WeeklyTssVsHrvWidgetProps> = ({
           </h3>
 
           <p className="text-xs text-zinc-400 max-w-2xl leading-relaxed">
-            Monitoriza la correlación directa entre la <strong>intensidad acumulada (TSS 7d)</strong> y la capacidad de <strong>recuperación del sistema parasimpático (HRV rMSSD)</strong> para detectar desacoples fisiológicos a tiempo.
+            Monitoriza la correlación directa entre la <strong>intensidad acumulada (TSS 7d)</strong> y la <strong>HRV nocturna (rMSSD, media de 7 días)</strong> para ver cómo se mueven juntas. Es descriptivo: no decide tu sesión.
           </p>
         </div>
 
@@ -297,21 +267,21 @@ export const WeeklyTssVsHrvWidget: React.FC<WeeklyTssVsHrvWidgetProps> = ({
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 leading-relaxed">
             <div className="bg-zinc-900/60 p-3 rounded-xl border border-emerald-500/20 space-y-1">
-              <span className="font-bold text-emerald-400 block">1. Adaptación Positiva</span>
+              <span className="font-bold text-emerald-400 block">1. HRV en tu banda</span>
               <p className="text-[11px] text-zinc-400">
-                La carga en TSS sube mientras la HRV 7d se mantiene dentro o sobre tu banda normal ({swcLower}-{swcUpper} ms). Las mitocondrias y el sistema nervioso asimilan el estrés.
+                La HRV media de 7 días está dentro de tu banda normal ({swcLower}-{swcUpper} ms), con la carga que sea.
               </p>
             </div>
             <div className="bg-zinc-900/60 p-3 rounded-xl border border-amber-500/20 space-y-1">
-              <span className="font-bold text-amber-400 block">2. Fatiga Funcional (FOR)</span>
+              <span className="font-bold text-amber-400 block">2. Carga alta + HRV algo baja</span>
               <p className="text-[11px] text-zinc-400">
-                Tras tiradas exigentes o microciclos de choque, la HRV baja ligeramente de forma temporal (1-2 días). Se resuelve con un día suave o descanso activo.
+                Carga por encima de lo habitual con la HRV media algo por debajo de tu referencia, aún dentro de tu banda.
               </p>
             </div>
             <div className="bg-zinc-900/60 p-3 rounded-xl border border-rose-500/20 space-y-1">
-              <span className="font-bold text-rose-400 block">3. Fatiga acumulada</span>
+              <span className="font-bold text-rose-400 block">3. Carga muy alta + HRV baja</span>
               <p className="text-[11px] text-zinc-400">
-                La carga semanal se mantiene alta ({thr ? <>&gt; {thr.high} TSS, +10 % sobre tu CTL×7</> : 'sin CTL aún'}) pero la HRV 7d se desploma por debajo de {swcLower} ms por 3+ días. Señal de agotamiento simpático: exige microciclo de descarga.
+                La carga semanal se mantiene alta ({thr ? <>&gt; {thr.high} TSS, +10 % sobre tu CTL×7</> : 'sin CTL aún'}) y la HRV media de 7 días está por debajo de {swcLower} ms. Es una tendencia, no un diagnóstico: la sesión de hoy la decide el estado de readiness.
               </p>
             </div>
           </div>
@@ -390,10 +360,10 @@ export const WeeklyTssVsHrvWidget: React.FC<WeeklyTssVsHrvWidgetProps> = ({
           <div>
             <div className="flex items-baseline gap-1.5">
               <span className={`text-2xl sm:text-3xl font-black font-mono ${
-                fatigueRecoveryIndex >= 70 ? 'text-emerald-400' :
-                fatigueRecoveryIndex >= 45 ? 'text-amber-400' : 'text-rose-400'
+                loadRecoveryTrendScore >= 70 ? 'text-emerald-400' :
+                loadRecoveryTrendScore >= 45 ? 'text-amber-400' : 'text-rose-400'
               }`}>
-                {fatigueRecoveryIndex}
+                {loadRecoveryTrendScore}
               </span>
               <span className="text-xs text-zinc-400 font-bold">/ 100</span>
             </div>
@@ -401,16 +371,16 @@ export const WeeklyTssVsHrvWidget: React.FC<WeeklyTssVsHrvWidgetProps> = ({
             <div className="w-full bg-zinc-900 h-2 rounded-full overflow-hidden mt-1.5 border border-zinc-800">
               <div 
                 className={`h-full rounded-full transition-all duration-700 ${
-                  fatigueRecoveryIndex >= 70 ? 'bg-gradient-to-r from-emerald-500 to-cyan-400' :
-                  fatigueRecoveryIndex >= 45 ? 'bg-gradient-to-r from-amber-500 to-emerald-400' :
+                  loadRecoveryTrendScore >= 70 ? 'bg-gradient-to-r from-emerald-500 to-cyan-400' :
+                  loadRecoveryTrendScore >= 45 ? 'bg-gradient-to-r from-amber-500 to-emerald-400' :
                   'bg-gradient-to-r from-rose-600 to-amber-500'
                 }`}
-                style={{ width: `${fatigueRecoveryIndex}%` }}
+                style={{ width: `${loadRecoveryTrendScore}%` }}
               />
             </div>
           </div>
           <div className="text-[10px] text-zinc-400 pt-1.5 border-t border-zinc-900 truncate">
-            {fatigueRecoveryStatus}
+            {loadRecoveryTrendLabel}
           </div>
         </div>
 
@@ -434,8 +404,8 @@ export const WeeklyTssVsHrvWidget: React.FC<WeeklyTssVsHrvWidgetProps> = ({
             </p>
           </div>
           <div className="text-[10px] pt-1.5 border-t border-zinc-800/80 flex items-center justify-between">
-            <span className="text-zinc-400">Días en desacople:</span>
-            <span className="font-mono font-bold text-zinc-200">{overreachingDaysCount} de {timeframe}d</span>
+            <span className="text-zinc-400">Días carga muy alta + HRV baja:</span>
+            <span className="font-mono font-bold text-zinc-200">{highLoadLowHrvDays} de {timeframe}d</span>
           </div>
         </div>
       </div>
@@ -470,10 +440,10 @@ export const WeeklyTssVsHrvWidget: React.FC<WeeklyTssVsHrvWidgetProps> = ({
                 <div className="w-3 h-2 rounded bg-emerald-500/20 border border-emerald-500/40" />
                 <span className="text-emerald-400">Banda SWC Normal</span>
               </div>
-              {overreachingDaysCount > 0 && (
+              {highLoadLowHrvDays > 0 && (
                 <div className="flex items-center gap-1.5">
                   <div className="w-2.5 h-2.5 rounded bg-rose-500/30 border border-rose-500/60" />
-                  <span className="text-rose-300">Desacople / Alerta</span>
+                  <span className="text-rose-300">Carga muy alta + HRV baja</span>
                 </div>
               )}
             </div>
@@ -527,7 +497,7 @@ export const WeeklyTssVsHrvWidget: React.FC<WeeklyTssVsHrvWidgetProps> = ({
 
                 {/* 2. Highlighted Overreaching (NFOR Desacople) Vertical Windows */}
                 {series.map((p, i) => {
-                  if (!p.isOverreaching) return null;
+                  if (!p.isHighLoadLowHrv) return null;
                   const x = getX(i, series.length);
                   const colW = innerW / series.length;
                   return (
@@ -633,7 +603,7 @@ export const WeeklyTssVsHrvWidget: React.FC<WeeklyTssVsHrvWidgetProps> = ({
                   const yHrv = getYHrv(p.hrv7dAvg);
                   const isHovered = hoveredPoint?.date === p.date;
 
-                  const nodeColor = p.isOverreaching
+                  const nodeColor = p.isHighLoadLowHrv
                     ? '#f43f5e'
                     : p.hrv7dAvg >= baselineHrv
                     ? '#10b981'
@@ -708,14 +678,14 @@ export const WeeklyTssVsHrvWidget: React.FC<WeeklyTssVsHrvWidgetProps> = ({
                 <div className="flex items-center gap-2">
                   <span className="font-bold text-zinc-100 font-mono">{hoveredPoint.date}</span>
                   <span className={`px-2 py-0.2 rounded text-[10px] font-bold uppercase ${
-                    hoveredPoint.status === 'non_functional_overreaching' ? 'bg-rose-500/20 text-rose-400' :
-                    hoveredPoint.status === 'functional_overreaching' ? 'bg-amber-500/20 text-amber-400' :
-                    hoveredPoint.status === 'recovery_deload' ? 'bg-cyan-500/20 text-cyan-400' :
+                    hoveredPoint.status === 'high_load_low_hrv' ? 'bg-rose-500/20 text-rose-400' :
+                    hoveredPoint.status === 'high_load_hrv_below_ref' ? 'bg-amber-500/20 text-amber-400' :
+                    hoveredPoint.status === 'low_load_hrv_recovered' ? 'bg-cyan-500/20 text-cyan-400' :
                     hoveredPoint.status === 'insufficient_data' ? 'bg-zinc-700/40 text-zinc-300' : 'bg-emerald-500/20 text-emerald-400'
                   }`}>
-                    {hoveredPoint.status === 'non_functional_overreaching' ? 'Fatiga acumulada' :
-                     hoveredPoint.status === 'functional_overreaching' ? 'Carga alta asumida' :
-                     hoveredPoint.status === 'recovery_deload' ? 'Descarga / recuperación' :
+                    {hoveredPoint.status === 'high_load_low_hrv' ? 'Carga muy alta + HRV baja' :
+                     hoveredPoint.status === 'high_load_hrv_below_ref' ? 'Carga alta + HRV algo baja' :
+                     hoveredPoint.status === 'low_load_hrv_recovered' ? 'Carga baja + HRV en referencia' :
                      hoveredPoint.status === 'insufficient_data' ? 'Sin datos de HRV' : 'Estable'}
                   </span>
                 </div>
@@ -760,7 +730,7 @@ export const WeeklyTssVsHrvWidget: React.FC<WeeklyTssVsHrvWidgetProps> = ({
             {weeklyBlocks.map((block) => {
               const isSelected = selectedBlock?.id === block.id;
               const hrvIsLow = block.avgHrv < swcLower;
-              const isOverreach = block.isOverreaching;
+              const isOverreach = block.isHighLoadLowHrv;
 
               return (
                 <div
@@ -844,7 +814,7 @@ export const WeeklyTssVsHrvWidget: React.FC<WeeklyTssVsHrvWidgetProps> = ({
                   Dictamen Fisiológico de {selectedBlock.name}
                 </span>
                 <p className="text-zinc-400 text-xs leading-relaxed">
-                  {selectedBlock.coachVerdict}
+                  {selectedBlock.description}
                 </p>
               </div>
               <div className="flex items-center gap-4 text-xs font-mono shrink-0">
@@ -885,22 +855,13 @@ export const WeeklyTssVsHrvWidget: React.FC<WeeklyTssVsHrvWidgetProps> = ({
             <button
               onClick={() => onSelectMetricsTab('hrv_load')}
               className="px-3.5 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-rose-300 text-xs font-bold border border-rose-500/30 transition cursor-pointer flex items-center gap-1.5"
-              title="Ver análisis clínico detallado y matriz de 4 cuadrantes"
+              title="Ver la matriz de 4 cuadrantes carga / HRV"
             >
               <Layers className="w-3.5 h-3.5 text-rose-400" />
               <span>Ver Matriz 4 Cuadrantes</span>
             </button>
           )}
 
-          {isDeloadRecommended && onScheduleDeload ? (
-            <button
-              onClick={onScheduleDeload}
-              className="px-4 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-400 text-zinc-950 font-black text-xs transition shadow-lg shadow-rose-950/40 cursor-pointer flex items-center gap-1.5"
-            >
-              <RotateCcw className="w-4 h-4" />
-              <span>Programar Descarga Z1</span>
-            </button>
-          ) : (
             <button
               onClick={() => onNavigateTab?.('calendar')}
               className="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold border border-zinc-700 transition cursor-pointer flex items-center gap-1.5"
@@ -908,7 +869,6 @@ export const WeeklyTssVsHrvWidget: React.FC<WeeklyTssVsHrvWidgetProps> = ({
               <Calendar className="w-3.5 h-3.5 text-emerald-400" />
               <span>Ajustar Sesiones</span>
             </button>
-          )}
 
           <button
             onClick={() => onNavigateTab?.('zonesense')}

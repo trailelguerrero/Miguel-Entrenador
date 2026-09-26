@@ -168,10 +168,10 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       id: 'tab-acwr',
       title: 'Ratio de Carga Aguda:Crónica (ACWR 28d)',
       category: 'Vistas',
-      description: 'Prevención de sobreentrenamiento con modelo Tim Gabbett y zona Sweet Spot',
+      description: 'Ratio descriptivo de carga reciente frente a las 4 semanas previas',
       icon: Activity,
       badge: 'Gabbett',
-      keywords: ['acwr', 'sobreentrenamiento', 'carga aguda', 'carga cronica', 'lesion', 'gabbett', 'sweet spot', 'prevencion'],
+      keywords: ['acwr', 'carga aguda', 'carga cronica', 'ratio', 'gabbett'],
       action: () => {
         onClose();
         onNavigateTab('metrics');
