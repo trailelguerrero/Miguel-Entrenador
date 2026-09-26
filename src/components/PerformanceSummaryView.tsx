@@ -38,7 +38,7 @@ interface PerformanceSummaryViewProps {
   onUpdateProfile: (profile: AthleteProfile) => void;
   checkIns?: DailyCheckIn[];
   workouts?: Workout[];
-  onScheduleDeload?: (startDate: string) => void;
+  onScheduleDeload?: (startDate?: string) => void;
   onOpenFartlekGenerator?: () => void;
 }
 
@@ -205,7 +205,7 @@ export const PerformanceSummaryView: React.FC<PerformanceSummaryViewProps> = ({
               }`}
             >
               <Battery className="w-4 h-4 text-amber-400" />
-              <span>Tendencia de Fatiga & Descarga (HRV)</span>
+              <span>HRV y FC de reposo</span>
             </button>
 
             <button
@@ -257,6 +257,18 @@ export const PerformanceSummaryView: React.FC<PerformanceSummaryViewProps> = ({
             </button>
           </div>
 
+          {/* Descarga a petición del atleta: la construye el motor (src/brain/deload.ts) */}
+          {onScheduleDeload && (
+            <button
+              onClick={() => onScheduleDeload()}
+              className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-zinc-950 hover:bg-zinc-800 text-zinc-300 text-xs font-bold border border-zinc-700 transition-all shadow-sm cursor-pointer ml-auto"
+              title="Genera la descarga desde mañana con tus sesiones planificadas (lo decides tú; la construye el motor)"
+            >
+              <Calendar className="w-4 h-4 text-cyan-400" />
+              <span>Programar semana de descarga</span>
+            </button>
+          )}
+
           {/* Quick Fartlek Generator Launcher Button */}
           {onOpenFartlekGenerator && (
             <button
@@ -270,12 +282,11 @@ export const PerformanceSummaryView: React.FC<PerformanceSummaryViewProps> = ({
         </div>
       </div>
 
-      {/* TAB 0: TENDENCIA DE FATIGA SEMANAL & PREDICTOR DE DESCARGA */}
+      {/* TAB 0: HRV Y FC DE REPOSO POR SEMANAS */}
       {activeSubTab === 'fatigue_hrv' && (
         <WeeklyFatigueHrvWidget
           profile={profile}
           checkIns={checkIns}
-          onScheduleDeload={onScheduleDeload}
         />
       )}
 

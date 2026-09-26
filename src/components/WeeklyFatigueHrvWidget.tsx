@@ -1,806 +1,255 @@
+import React, { useMemo, useState } from 'react';
+import { Activity, Battery, Calendar, Info, TrendingDown } from 'lucide-react';
 import { localDateKey } from '../utils/trainingLoad';
-import React, { useState, useMemo } from 'react';
-import { 
-  Activity, 
-  TrendingDown, 
-  TrendingUp, 
-  AlertTriangle, 
-  CheckCircle2, 
-  Calendar, 
-  ShieldAlert, 
-  Battery, 
-  BatteryCharging, 
-  Sparkles, 
-  Info, 
-  ArrowRight, 
-  Heart, 
-  Moon, 
-  Clock, 
-  ChevronRight,
-  Flame,
-  Zap,
-  Sliders,
-  RotateCcw
-} from 'lucide-react';
-import { DailyCheckIn, AthleteProfile, WeeklyHrvFatigueTrend, DeloadPrediction } from '../types';
-import { StorageService } from '../services/storage';
+import { DailyCheckIn, AthleteProfile, WeeklyHrvFatigueTrend } from '../types';
 
+/**
+ * HRV nocturna y FC de reposo por semanas (últimas 4) y noche a noche (28 días).
+ * Solo DESCRIBE: compara con tu referencia. No predice ni programa descargas;
+ * qué hacer hoy lo decide el motor de readiness (src/brain/readiness.ts).
+ * Los colores por noche usan los mismos cortes que el readiness (−10 % / −20 %).
+ */
 interface WeeklyFatigueHrvWidgetProps {
   profile: AthleteProfile;
   checkIns: DailyCheckIn[];
-  onScheduleDeload?: (startDate: string) => void;
 }
 
-export const WeeklyFatigueHrvWidget: React.FC<WeeklyFatigueHrvWidgetProps> = ({
-  profile,
-  checkIns,
-  onScheduleDeload,
-}) => {
-  const [selectedWeekIndex, setSelectedWeekIndex] = useState<number>(4); // Default to current week (Week 4)
-  const [showSimulateModal, setShowSimulateModal] = useState(false);
-  const [simulatedHrv, setSimulatedHrv] = useState<number>(42);
-  const [simulatedRestingHr, setSimulatedRestingHr] = useState<number>(51);
-  const [isSimulating, setIsSimulating] = useState<boolean>(false);
-  const [activeTab, setActiveTab] = useState<'trends' | 'prediction' | 'daily_chart'>('prediction');
+/** Clasificación descriptiva de la HRV media semanal frente a la referencia. */
+export function classifyWeek(avgHrv: number, hrvDevPct: number, baselineHrv: number): WeeklyHrvFatigueTrend['hrvClassification'] {
+  if (!(avgHrv > 0) || !(baselineHrv > 0)) return 'no_data';
+  if (hrvDevPct < -10) return 'below';
+  if (hrvDevPct < -5) return 'slightly_below';
+  return 'in_reference';
+}
 
-  // Baseline HRV
+const CLASS_LABEL: Record<WeeklyHrvFatigueTrend['hrvClassification'], { text: string; color: string }> = {
+  no_data: { text: 'Sin HRV o sin referencia', color: 'text-stone-400' },
+  in_reference: { text: 'HRV en tu referencia', color: 'text-emerald-400' },
+  slightly_below: { text: 'HRV algo por debajo', color: 'text-amber-400' },
+  below: { text: 'HRV por debajo (> 10 %)', color: 'text-red-400' },
+};
+
+export const WeeklyFatigueHrvWidget: React.FC<WeeklyFatigueHrvWidgetProps> = ({ profile, checkIns }) => {
+  const [selectedWeekIndex, setSelectedWeekIndex] = useState<number>(4);
+  const [activeTab, setActiveTab] = useState<'trends' | 'daily_chart'>('trends');
+
   // Misma HRV de referencia que el resto de la app: la del perfil
   const baselineHrv = profile.baselineHrv || 0;
   const baselineRestingHr = profile.restingHr || 0;
 
-  // Compute Weekly Groupings (Last 28 days grouped into 4 blocks of 7 days)
   const weeklyTrends = useMemo<WeeklyHrvFatigueTrend[]>(() => {
-    // Sort chronological: oldest to newest
-    const sorted = [...checkIns].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-    
-    // Take last 28 days or all if less
-    const last28 = sorted.slice(-28);
-    const weeks: WeeklyHrvFatigueTrend[] = [];
-
-    const weekDefinitions = [
-      { index: 1, label: 'Hace 3 semanas' },
-      { index: 2, label: 'Hace 2 semanas' },
-      { index: 3, label: 'Semana pasada' },
-      { index: 4, label: 'Últimos 7 días' },
-    ];
-    // Media solo de los valores registrados (> 0); sin datos → 0
+    const labels = ['Hace 3 semanas', 'Hace 2 semanas', 'Semana pasada', 'Últimos 7 días'];
     const avgOf = (vals: Array<number | undefined>) => {
       const v = vals.filter((x): x is number => typeof x === 'number' && x > 0);
       return v.length > 0 ? Math.round((v.reduce((a, b) => a + b, 0) / v.length) * 10) / 10 : 0;
     };
-
     // Semanas por FECHA (no por posición): la 4ª son los últimos 7 días hasta hoy
     const today = new Date();
     const keyDaysAgo = (n: number) => localDateKey(new Date(today.getFullYear(), today.getMonth(), today.getDate() - n));
+    const weeks: WeeklyHrvFatigueTrend[] = [];
     for (let w = 0; w < 4; w++) {
       const from = keyDaysAgo(27 - w * 7);
       const to = keyDaysAgo(21 - w * 7);
-      let days = last28.filter(d => d.date >= from && d.date <= to);
-
-      if (days.length === 0) {
-        continue;
-      }
-
-      // If this is the current week and simulation is active, modify today's values
-      if (w === 3 && isSimulating) {
-        days = days.map((d, idx) => idx === days.length - 1 ? {
-          ...d,
-          hrvRmssd: simulatedHrv,
-          restingHr: simulatedRestingHr,
-          status: simulatedHrv < baselineHrv * 0.85 ? 'fatigued' : 'moderate',
-        } : d);
-      }
-
-      const avgHrv = avgOf(days.map(d => d.hrvRmssd));
-      const avgRestHr = avgOf(days.map(d => d.restingHr));
-      const avgSleep = avgOf(days.map(d => d.sleepQuality));
-      const avgSoreness = avgOf(days.map(d => d.muscleSoreness));
-      const avgStress = avgOf(days.map(d => d.stressLevel));
-      const avgReadiness = Math.round(avgOf(days.map(d => d.readinessScore)));
-      
-      const amberRedCount = days.filter(d => d.status === 'moderate' || d.status === 'fatigued').length;
+      const days = checkIns.filter((d) => d.date >= from && d.date <= to).sort((a, b) => a.date.localeCompare(b.date));
+      if (days.length === 0) continue;
+      const avgHrv = avgOf(days.map((d) => d.hrvRmssd));
+      const avgRestHr = avgOf(days.map((d) => d.restingHr));
       const hrvDevPct = baselineHrv > 0 && avgHrv > 0 ? Math.round(((avgHrv - baselineHrv) / baselineHrv) * 1000) / 10 : 0;
       const restHrDelta = baselineRestingHr > 0 && avgRestHr > 0 ? Math.round((avgRestHr - baselineRestingHr) * 10) / 10 : 0;
-
-      let classification: WeeklyHrvFatigueTrend['fatigueClassification'] = 'optimal_recovery';
-      if (hrvDevPct < -12 || restHrDelta >= 3.5 || amberRedCount >= 5) {
-        classification = 'accumulated_fatigue';
-      } else if (hrvDevPct < -5 || restHrDelta >= 1.5 || amberRedCount >= 3) {
-        classification = 'functional_overreaching';
-      }
-
       weeks.push({
         weekIndex: w + 1,
-        weekLabel: weekDefinitions[w].label,
-        startDate: days[0]?.date || '',
-        endDate: days[days.length - 1]?.date || '',
+        weekLabel: labels[w],
+        startDate: days[0].date,
+        endDate: days[days.length - 1].date,
         avgHrvRmssd: avgHrv,
         baselineHrv,
         hrvDeviationPct: hrvDevPct,
         avgRestingHr: avgRestHr,
         restingHrDelta: restHrDelta,
-        avgSleepQuality: avgSleep,
-        avgMuscleSoreness: avgSoreness,
-        avgStressLevel: avgStress,
-        avgReadinessScore: avgReadiness,
-        amberRedDaysCount: amberRedCount,
+        avgSleepQuality: avgOf(days.map((d) => d.sleepQuality)),
+        avgMuscleSoreness: avgOf(days.map((d) => d.muscleSoreness)),
+        avgStressLevel: avgOf(days.map((d) => d.stressLevel)),
+        avgReadinessScore: Math.round(avgOf(days.map((d) => d.readinessScore))),
         totalDays: days.length,
-        fatigueClassification: classification,
+        hrvClassification: classifyWeek(avgHrv, hrvDevPct, baselineHrv),
         isCurrentWeek: w === 3,
       });
     }
-
     return weeks;
-  }, [checkIns, baselineHrv, baselineRestingHr, isSimulating, simulatedHrv, simulatedRestingHr]);
+  }, [checkIns, baselineHrv, baselineRestingHr]);
 
-  // Current week trend
-  // Sin check-ins en las últimas 4 semanas: semana vacía (sin datos, no inventada)
-  const emptyWeek: WeeklyHrvFatigueTrend = {
-    weekIndex: 4, weekLabel: 'Últimos 7 días', startDate: '', endDate: '',
-    avgHrvRmssd: 0, baselineHrv, hrvDeviationPct: 0, avgRestingHr: 0, restingHrDelta: 0,
-    avgSleepQuality: 0, avgMuscleSoreness: 0, avgStressLevel: 0, avgReadinessScore: 0,
-    amberRedDaysCount: 0, totalDays: 0, fatigueClassification: 'optimal_recovery', isCurrentWeek: true,
-  };
-  const currentWeek = weeklyTrends[weeklyTrends.length - 1] || emptyWeek;
-  const selectedWeek = weeklyTrends.find(w => w.weekIndex === selectedWeekIndex) || currentWeek;
-
-  // Deload Prediction Engine based on Uphill Athlete & Autonomic Biomarkers
-  const deloadPrediction = useMemo<DeloadPrediction>(() => {
-    const triggers: string[] = [];
-    let urgency: DeloadPrediction['urgency'] = 'low';
-    let confidence = 70;
-
-    // Trigger 1: HRV suppression
-    if (currentWeek.hrvDeviationPct <= -12) {
-      triggers.push(`HRV nocturna suprimida un ${Math.abs(currentWeek.hrvDeviationPct)}% respecto a tu línea base (${currentWeek.avgHrvRmssd} ms vs ${baselineHrv} ms)`);
-      confidence += 15;
-    } else if (currentWeek.hrvDeviationPct <= -6) {
-      triggers.push(`HRV ligeramente deprimida (${Math.abs(currentWeek.hrvDeviationPct)}% bajo basal)`);
-      confidence += 5;
-    }
-
-    // Trigger 2: Resting Heart Rate Drift
-    if (currentWeek.restingHrDelta >= 3.0) {
-      triggers.push(`Elevación sostenida del pulso en reposo en +${currentWeek.restingHrDelta} bpm (${currentWeek.avgRestingHr} bpm vs ${baselineRestingHr} bpm basal)`);
-      confidence += 10;
-    }
-
-    // Trigger 3: Chronic Training Phase (3rd or 4th consecutive loading week)
-    triggers.push('Mesociclo 2 en semana 4/4 (Ciclo 3:1 completado con +5.200m D- excéntricos acumulados)');
-
-    // Trigger 4: Residual Muscle Soreness
-    if (currentWeek.avgMuscleSoreness >= 4.5) {
-      triggers.push(`Dolor muscular y fatiga periférica residual elevada (${currentWeek.avgMuscleSoreness}/10 promedio)`);
-    }
-
-    // Trigger 5: Days in Amber/Red
-    if (currentWeek.amberRedDaysCount >= 4) {
-      triggers.push(`${currentWeek.amberRedDaysCount} de 7 días con estado 'Moderado' o 'Fatigado'`);
-    }
-
-    // Determine urgency
-    if (currentWeek.hrvDeviationPct <= -10 && currentWeek.restingHrDelta >= 2.5 && currentWeek.weekIndex >= 4) {
-      urgency = 'imminent';
-      confidence = Math.min(96, confidence + 10);
-    } else if (currentWeek.hrvDeviationPct <= -7 || currentWeek.weekIndex >= 3) {
-      urgency = 'high';
-      confidence = Math.min(88, confidence);
-    } else {
-      urgency = 'moderate';
-    }
-
-    // Suggested Start Date: upcoming Monday (in ~2 to 4 days)
-    const today = new Date();
-    const dayOfWeek = today.getDay(); // 0 is Sun, 1 is Mon
-    const daysUntilNextMonday = dayOfWeek === 0 ? 1 : 8 - dayOfWeek;
-    const nextMonday = new Date(today);
-    nextMonday.setDate(today.getDate() + (daysUntilNextMonday <= 1 ? 1 : daysUntilNextMonday));
-    const formattedDeloadDate = nextMonday.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
-
-    return {
-      urgency,
-      recommendedStartDate: formattedDeloadDate,
-      recommendedDurationDays: 7,
-      confidencePct: confidence,
-      currentMesocycleWeek: 4,
-      totalLoadingWeeks: 3,
-      triggersDetected: triggers,
-      physiologicalRationale: `La depresión simultánea de la HRV rMSSD por debajo del percentil 15 y el drift del pulso basal reflejan hiperactividad simpática y saturación del sistema nervioso autónomo. Según la metodología Uphill Athlete (Scott Johnston & Steve House), proseguir con sobrecarga de volumen sin descargar provocará desacople celular mitocondrial, estancamiento del umbral aeróbico (AeT ${profile.aetHr} bpm) y alto riesgo de tendinopatía en sóleos/aquiles tras los impactos excéntricos de La Palma.`,
-      suggestedVolumeReductionPct: 45,
-      coachMiguelPrescription: {
-        // Regenerativo: techo = AeT − 10 ppm (sin AeT, sin techo en ppm)
-        maxHeartRateCap: profile.aetHr ? profile.aetHr - 10 : 0,
-        zoneSenseTarget: '',
-        weeklyVolumeHours: 3.2, // ~45% reduction from ~5.8h
-        prohibitedElements: [
-          'Tiradas > 75 minutos o ritmos tempo Z3/Z4',
-          'Desnivel negativo pronunciado (>8% de bajada continuada)',
-          'Entrenamientos de fuerza máxima o pliometría agresiva',
-          profile.aetHr ? `Subidas con la FC por encima de ${profile.aetHr - 10} ppm` : 'Subidas en las que no puedas hablar'
-        ],
-        mandatoryElements: [
-          profile.aetHr ? `4 sesiones cortas (30-45 min) con la FC por debajo de ${profile.aetHr - 10} ppm sobre hierba o pista llana` : '4 sesiones cortas (30-45 min) muy suaves sobre hierba o pista llana',
-          'Respiración nasal continua y cadencia ágil (175-180 ppm)',
-          'Movilidad articular de cadera y tobillo 15 min diarios',
-          '3 series lentas de sóleo en escalón (3-1-1) sin peso extra'
-        ],
-        recoveryInterventions: [
-          'Dormir 8h+ con ventilación fresca para maximizar HRV nocturna',
-          'Masaje miofascial con pelota en fascia plantar y sóleos',
-          'Hidratación con 500 mg de sales en agua tibia tras cada rodaje suave',
-          'Prueba de HRV matutina el viernes para confirmar rebote parasimpático'
-        ]
-      }
-    };
-  }, [currentWeek, baselineHrv, baselineRestingHr, profile.aetHr]);
-
-  // Status Badge Helper
-  const getUrgencyBadge = (urgency: DeloadPrediction['urgency']) => {
-    switch (urgency) {
-      case 'imminent':
-        return (
-          <span className="px-3 py-1 rounded-full bg-red-500/20 text-red-400 border border-red-500/30 text-xs font-black flex items-center gap-1.5 animate-pulse">
-            <AlertTriangle className="w-3.5 h-3.5" />
-            Descarga Inminente Recomendada
-          </span>
-        );
-      case 'high':
-        return (
-          <span className="px-3 py-1 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 text-xs font-black flex items-center gap-1.5">
-            <Clock className="w-3.5 h-3.5" />
-            Ventana de Descarga Próxima (2-4 días)
-          </span>
-        );
-      default:
-        return (
-          <span className="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-black flex items-center gap-1.5">
-            <CheckCircle2 className="w-3.5 h-3.5" />
-            Carga Asimilada (En Ciclo)
-          </span>
-        );
-    }
-  };
+  const last28 = useMemo(() => {
+    const from = localDateKey(new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate() - 27));
+    return checkIns.filter((c) => c.date >= from && c.hrvRmssd > 0).sort((a, b) => a.date.localeCompare(b.date));
+  }, [checkIns]);
 
   if (weeklyTrends.length === 0) {
     return (
       <div className="bg-stone-900 border border-stone-800 rounded-3xl p-6 text-sm text-stone-400">
-        No hay check-ins de HRV en las últimas 4 semanas. Sincroniza Suunto o registra el check-in matutino para ver la tendencia de fatiga.
+        No hay check-ins de HRV en las últimas 4 semanas. Sincroniza Suunto o registra el check-in matutino para ver la tendencia.
       </div>
     );
   }
 
+  const selectedWeek = weeklyTrends.find((w) => w.weekIndex === selectedWeekIndex) || weeklyTrends[weeklyTrends.length - 1];
+  const chartMax = Math.max(65, ...last28.map((c) => c.hrvRmssd * 1.1));
+  const nightColor = (hrv: number) => {
+    if (!(baselineHrv > 0)) return 'bg-stone-500 group-hover:bg-stone-400';
+    const pct = ((hrv - baselineHrv) / baselineHrv) * 100;
+    return pct < -20 ? 'bg-red-500 group-hover:bg-red-400' : pct < -10 ? 'bg-amber-500 group-hover:bg-amber-400' : 'bg-emerald-500 group-hover:bg-emerald-400';
+  };
+  const tabBtn = (active: boolean) =>
+    `px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+      active ? 'bg-amber-500 text-stone-950 shadow-md font-black' : 'bg-stone-950 text-stone-400 hover:text-stone-200 border border-stone-800'
+    }`;
+
   return (
     <div className="bg-stone-900 border border-stone-800 rounded-3xl p-6 sm:p-7 shadow-2xl space-y-6">
-      
-      {/* Top Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-stone-800 pb-5">
-        <div className="space-y-1.5">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 text-[11px] font-bold uppercase tracking-wider border border-amber-500/30 flex items-center gap-1">
-              <Activity className="w-3 h-3" />
-              Biomarcadores Suunto & Check-Ins Diarios
-            </span>
-            <span className="text-xs text-stone-400 font-mono">
-              Algoritmo de Fatiga Autonómica Uphill Athlete
-            </span>
-          </div>
-
-          <h2 className="text-xl sm:text-2xl font-black text-stone-100 flex items-center gap-2.5">
-            <Battery className="w-6 h-6 text-amber-400" />
-            Tendencia de Fatiga Semanal & Predictor de Descarga
-          </h2>
-
-          <p className="text-xs text-stone-300 max-w-3xl leading-relaxed">
-            Monitoriza la evolución semanal de la <strong>HRV nocturna (rMSSD)</strong>, el <strong>drift del pulso en reposo</strong> y la tensión neuromuscular para predecir cuándo el cuerpo exige un microciclo de descarga antes de caer en sobreentrenamiento no funcional.
-          </p>
-        </div>
-
-        {/* Prediction Status Badge & Simulator Button */}
-        <div className="flex flex-wrap items-center gap-3 self-start lg:self-center">
-          {getUrgencyBadge(deloadPrediction.urgency)}
-          <button
-            onClick={() => setShowSimulateModal(true)}
-            className="px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs font-semibold border border-stone-700 transition flex items-center gap-1.5 cursor-pointer"
-            title="Simular variaciones de HRV para calibrar la predicción"
-          >
-            <Sliders className="w-3.5 h-3.5 text-amber-400" />
-            <span>Simulador HRV</span>
-          </button>
-        </div>
+      <div className="space-y-1.5 border-b border-stone-800 pb-5">
+        <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 text-[11px] font-bold uppercase tracking-wider border border-amber-500/30 inline-flex items-center gap-1">
+          <Activity className="w-3 h-3" />
+          Suunto y check-ins diarios
+        </span>
+        <h2 className="text-xl sm:text-2xl font-black text-stone-100 flex items-center gap-2.5">
+          <Battery className="w-6 h-6 text-amber-400" />
+          HRV y FC de reposo por semanas
+        </h2>
+        <p className="text-xs text-stone-300 max-w-3xl leading-relaxed">
+          Cómo evolucionan tu <strong>HRV nocturna (rMSSD)</strong> y tu <strong>FC de reposo</strong> frente a tu referencia
+          {baselineHrv > 0 ? ` (${baselineHrv} ms)` : ' (aún sin referencia de HRV)'}. Es una descripción: la sesión de cada día la decide el estado de readiness.
+        </p>
       </div>
 
-      {/* Navigation Subtabs */}
       <div className="flex flex-wrap gap-2 border-b border-stone-800/80 pb-3">
-        <button
-          onClick={() => setActiveTab('prediction')}
-          className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-            activeTab === 'prediction'
-              ? 'bg-amber-500 text-stone-950 shadow-md font-black'
-              : 'bg-stone-950 text-stone-400 hover:text-stone-200 border border-stone-800'
-          }`}
-        >
-          <ShieldAlert className="w-4 h-4" />
-          <span>Diagnóstico & Predictor de Descarga ({deloadPrediction.confidencePct}%)</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('trends')}
-          className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-            activeTab === 'trends'
-              ? 'bg-amber-500 text-stone-950 shadow-md font-black'
-              : 'bg-stone-950 text-stone-400 hover:text-stone-200 border border-stone-800'
-          }`}
-        >
+        <button onClick={() => setActiveTab('trends')} className={tabBtn(activeTab === 'trends')}>
           <TrendingDown className="w-4 h-4" />
-          <span>Evolución de 4 Semanas de Carga</span>
+          <span>Últimas 4 semanas</span>
         </button>
-
-        <button
-          onClick={() => setActiveTab('daily_chart')}
-          className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-            activeTab === 'daily_chart'
-              ? 'bg-amber-500 text-stone-950 shadow-md font-black'
-              : 'bg-stone-950 text-stone-400 hover:text-stone-200 border border-stone-800'
-          }`}
-        >
+        <button onClick={() => setActiveTab('daily_chart')} className={tabBtn(activeTab === 'daily_chart')}>
           <Activity className="w-4 h-4" />
-          <span>Curva Continua de 28 Días</span>
+          <span>Noche a noche (28 días)</span>
         </button>
       </div>
 
-      {/* TAB 1: PREDICTION ENGINE & PRESCRIPTION */}
-      {activeTab === 'prediction' && (
-        <div className="space-y-6">
-          
-          {/* Main Hero Prediction Card */}
-          <div className="bg-gradient-to-r from-stone-950 via-stone-900 to-amber-950/30 border border-stone-800 rounded-2xl p-5 sm:p-6 shadow-xl relative overflow-hidden">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 relative z-10">
-              
-              {/* Left Column: Timing & Urgency */}
-              <div className="lg:col-span-2 space-y-4">
-                <div className="flex items-center gap-2 text-xs font-mono text-amber-400 font-semibold">
-                  <Sparkles className="w-4 h-4" />
-                  <span>PREDICCIÓN BASADA EN METODOLOGÍA UPHILL ATHLETE</span>
-                </div>
-
-                <div className="space-y-1">
-                  <h3 className="text-xl sm:text-2xl font-black text-stone-100">
-                    Momento Sugerido: <span className="text-amber-400">{deloadPrediction.recommendedStartDate}</span>
-                  </h3>
-                  <p className="text-xs text-stone-300">
-                    Duración prevista: <strong>{deloadPrediction.recommendedDurationDays} días</strong> (1 microciclo completo de consolidación y supercompensación).
-                  </p>
-                </div>
-
-                {/* Triggers Detected */}
-                <div className="space-y-2 pt-2">
-                  <span className="text-xs font-bold text-stone-300 uppercase tracking-wider block">
-                    Criterios Fisiológicos Activados ({deloadPrediction.triggersDetected.length}):
-                  </span>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {deloadPrediction.triggersDetected.map((trigger, i) => (
-                      <div key={i} className="flex items-start gap-2 bg-stone-950/70 p-2.5 rounded-xl border border-stone-800/80 text-xs text-stone-300">
-                        <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0 mt-1.5" />
-                        <span>{trigger}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Biological Explanation */}
-                <div className="p-3.5 rounded-xl bg-stone-950 border border-stone-800 text-xs text-stone-300 leading-relaxed space-y-1">
-                  <div className="flex items-center gap-1.5 text-amber-400 font-bold text-[11px] uppercase">
-                    <Info className="w-3.5 h-3.5" />
-                    <span>Dictamen Fisiológico de Miguel:</span>
-                  </div>
-                  <p className="text-stone-300 text-[11px] leading-relaxed">
-                    {deloadPrediction.physiologicalRationale}
-                  </p>
-                </div>
-              </div>
-
-              {/* Right Column: Key Diagnostic Numbers */}
-              <div className="bg-stone-950/90 border border-stone-800/90 p-5 rounded-2xl flex flex-col justify-between space-y-4">
-                <div>
-                  <span className="text-[10px] text-stone-400 uppercase font-bold tracking-wider block mb-1">
-                    Índice de Confianza
-                  </span>
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-3xl font-black text-amber-400 font-mono">
-                      {deloadPrediction.confidencePct}%
-                    </span>
-                    <span className="text-xs text-stone-400 font-semibold">Alta Precisión</span>
-                  </div>
-                  <div className="w-full bg-stone-850 h-2 rounded-full mt-2 overflow-hidden">
-                    <div 
-                      className="h-full bg-gradient-to-r from-amber-500 to-emerald-400 rounded-full" 
-                      style={{ width: `${deloadPrediction.confidencePct}%` }}
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-2.5 pt-2 border-t border-stone-800 text-xs font-mono">
-                  <div className="flex justify-between items-center">
-                    <span className="text-stone-400">HRV Actual vs Basal:</span>
-                    <span className="text-red-400 font-bold">
-                      {currentWeek.avgHrvRmssd} ms ({currentWeek.hrvDeviationPct}%)
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-stone-400">FC Reposo vs Basal:</span>
-                    <span className="text-amber-400 font-bold">
-                      {currentWeek.avgRestingHr} bpm (+{currentWeek.restingHrDelta} bpm)
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-stone-400">Semana del Mesociclo:</span>
-                    <span className="text-stone-200 font-bold">Semana 4 de 4 (Fin de Bloque)</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-stone-400">Reducción Volumen:</span>
-                    <span className="text-emerald-400 font-bold">-{deloadPrediction.suggestedVolumeReductionPct}% recomendado</span>
-                  </div>
-                </div>
-
-                {onScheduleDeload && (
-                  <button
-                    onClick={() => onScheduleDeload(deloadPrediction.recommendedStartDate)}
-                    className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold text-xs shadow-lg shadow-amber-500/20 transition flex items-center justify-center gap-1.5 cursor-pointer mt-2"
-                  >
-                    <Calendar className="w-4 h-4" />
-                    <span>Programar Descarga en el Calendario</span>
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Coach Miguel's Exact Deload Protocol */}
-          <div className="bg-stone-950 border border-stone-800 rounded-2xl p-5 space-y-4">
-            <div className="flex items-center justify-between border-b border-stone-800 pb-3">
-              <h4 className="text-sm font-bold text-stone-100 flex items-center gap-2">
-                <Flame className="w-4 h-4 text-amber-400" />
-                Protocolo Táctico de Microciclo de Descarga (Recuperación Activa)
-              </h4>
-              <span className="text-xs font-mono text-emerald-400 font-bold">
-                Volumen Objetivo: {deloadPrediction.coachMiguelPrescription.weeklyVolumeHours} horas
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              
-              {/* Prohibited Elements */}
-              <div className="bg-red-950/20 border border-red-900/30 rounded-xl p-4 space-y-2">
-                <span className="text-xs font-bold text-red-400 uppercase tracking-wider block flex items-center gap-1.5">
-                  <ShieldAlert className="w-3.5 h-3.5" />
-                  Prohibido Durante la Descarga
-                </span>
-                <ul className="space-y-1.5 text-[11px] text-stone-300">
-                  {deloadPrediction.coachMiguelPrescription.prohibitedElements.map((elem, i) => (
-                    <li key={i} className="flex items-start gap-2">
-                      <span className="text-red-400 font-bold shrink-0">✕</span>
-                      <span>{elem}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              {/* Mandatory Elements */}
-              <div className="bg-emerald-950/20 border border-emerald-900/30 rounded-xl p-4 space-y-2">
-                <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider block flex items-center gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  Pautas Obligatorias
-                </span>
-                <ul className="space-y-1.5 text-[11px] text-stone-300">
-                  {deloadPrediction.coachMiguelPrescription.mandatoryElements.map((elem, i) => (
-                    <li key={i} className="flex items-start gap-2">
-                      <span className="text-emerald-400 font-bold shrink-0">✓</span>
-                      <span>{elem}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              {/* Recovery Interventions */}
-              <div className="bg-cyan-950/20 border border-cyan-900/30 rounded-xl p-4 space-y-2">
-                <span className="text-xs font-bold text-cyan-400 uppercase tracking-wider block flex items-center gap-1.5">
-                  <Moon className="w-3.5 h-3.5" />
-                  Regeneración & Parasimpático
-                </span>
-                <ul className="space-y-1.5 text-[11px] text-stone-300">
-                  {deloadPrediction.coachMiguelPrescription.recoveryInterventions.map((elem, i) => (
-                    <li key={i} className="flex items-start gap-2">
-                      <span className="text-cyan-400 font-bold shrink-0">◆</span>
-                      <span>{elem}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 2: 4-WEEK PROGRESSION COMPARISON */}
       {activeTab === 'trends' && (
         <div className="space-y-5">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-bold text-stone-200 flex items-center gap-2">
               <Calendar className="w-4 h-4 text-amber-400" />
-              Comparativa Semanal de Biomarcadores (Mesociclo 2)
+              Comparativa semanal
             </h3>
             <span className="text-xs text-stone-400">
-              Línea Base HRV: <strong className="text-stone-200">{baselineHrv} ms</strong> | FC Reposo: <strong className="text-stone-200">{baselineRestingHr} bpm</strong>
+              Referencia HRV: <strong className="text-stone-200">{baselineHrv || '—'} ms</strong> | FC reposo: <strong className="text-stone-200">{baselineRestingHr || '—'} bpm</strong>
             </span>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {weeklyTrends.map((week) => {
-              const isSelected = selectedWeekIndex === week.weekIndex;
-              const isDeloadCandidate = week.fatigueClassification === 'accumulated_fatigue';
-
+              const isSelected = selectedWeek.weekIndex === week.weekIndex;
+              const cls = CLASS_LABEL[week.hrvClassification];
               return (
                 <div
                   key={week.weekIndex}
                   onClick={() => setSelectedWeekIndex(week.weekIndex)}
                   className={`rounded-2xl border p-4 transition-all cursor-pointer ${
-                    isSelected 
-                      ? 'bg-stone-850 border-amber-500 shadow-xl shadow-amber-500/10' 
-                      : week.isCurrentWeek
-                      ? 'bg-stone-900 border-amber-500/50'
-                      : 'bg-stone-950 border-stone-800/80 hover:border-stone-700'
+                    isSelected ? 'bg-stone-850 border-amber-500 shadow-xl shadow-amber-500/10' : week.isCurrentWeek ? 'bg-stone-900 border-amber-500/50' : 'bg-stone-950 border-stone-800/80 hover:border-stone-700'
                   }`}
                 >
                   <div className="flex items-center justify-between gap-2 mb-3">
-                    <span className="text-xs font-bold text-stone-200">
-                      {week.weekLabel.split(' ')[0]} {week.weekLabel.split(' ')[1]}
-                    </span>
-                    {week.isCurrentWeek ? (
-                      <span className="px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-400 text-[10px] font-bold uppercase">
-                        Actual
-                      </span>
-                    ) : (
-                      <span className="text-[10px] text-stone-400 font-mono">
-                        {week.startDate.slice(5)} al {week.endDate.slice(5)}
-                      </span>
-                    )}
+                    <span className="text-xs font-bold text-stone-200">{week.weekLabel}</span>
+                    <span className="text-[10px] text-stone-400 font-mono">{week.startDate.slice(5)} al {week.endDate.slice(5)}</span>
                   </div>
-
-                  {/* HRV Metric */}
                   <div className="space-y-1 mb-3">
-                    <span className="text-[10px] text-stone-400 block font-medium">HRV Media Nocturna</span>
+                    <span className="text-[10px] text-stone-400 block font-medium">HRV media nocturna</span>
                     <div className="flex items-baseline gap-2">
-                      <span className="text-2xl font-black text-stone-100 font-mono">
-                        {week.avgHrvRmssd}
-                      </span>
-                      <span className={`text-xs font-bold font-mono ${week.hrvDeviationPct < 0 ? 'text-red-400' : 'text-emerald-400'}`}>
-                        {week.hrvDeviationPct > 0 ? `+${week.hrvDeviationPct}%` : `${week.hrvDeviationPct}%`}
-                      </span>
+                      <span className="text-2xl font-black text-stone-100 font-mono">{week.avgHrvRmssd || '—'}</span>
+                      {week.avgHrvRmssd > 0 && baselineHrv > 0 && (
+                        <span className={`text-xs font-bold font-mono ${cls.color}`}>
+                          {week.hrvDeviationPct > 0 ? `+${week.hrvDeviationPct}%` : `${week.hrvDeviationPct}%`}
+                        </span>
+                      )}
                     </div>
                   </div>
-
-                  {/* Other metrics */}
                   <div className="grid grid-cols-2 gap-2 text-xs font-mono mb-3">
                     <div className="bg-stone-950 p-2 rounded-lg border border-stone-850">
-                      <span className="text-[9px] text-stone-400 block">FC Reposo</span>
-                      <span className={`font-bold ${week.restingHrDelta >= 3 ? 'text-amber-400' : 'text-stone-200'}`}>
-                        {week.avgRestingHr} bpm
-                      </span>
+                      <span className="text-[9px] text-stone-400 block">FC reposo</span>
+                      <span className="font-bold text-stone-200">{week.avgRestingHr || '—'} bpm</span>
                     </div>
                     <div className="bg-stone-950 p-2 rounded-lg border border-stone-850">
                       <span className="text-[9px] text-stone-400 block">Agujetas</span>
-                      <span className="font-bold text-stone-200">
-                        {week.avgMuscleSoreness}/10
-                      </span>
+                      <span className="font-bold text-stone-200">{week.avgMuscleSoreness || '—'}/10</span>
                     </div>
                   </div>
-
-                  {/* Status Indicator */}
-                  <div className="pt-2 border-t border-stone-800/80 flex items-center justify-between text-[11px]">
-                    <span className="text-stone-400">Días Alerta:</span>
-                    <span className={`font-bold font-mono ${week.amberRedDaysCount >= 4 ? 'text-red-400' : 'text-stone-300'}`}>
-                      {week.amberRedDaysCount} / {week.totalDays}
-                    </span>
-                  </div>
+                  <div className={`pt-2 border-t border-stone-800/80 text-[11px] font-bold ${cls.color}`}>{cls.text}</div>
                 </div>
               );
             })}
           </div>
 
-          {/* Selected Week Deep Breakdown */}
           <div className="bg-stone-950 border border-stone-800 rounded-2xl p-5 space-y-3">
             <h4 className="text-sm font-bold text-stone-200 flex items-center gap-2">
               <Info className="w-4 h-4 text-amber-400" />
-              Detalle Fisiológico: {selectedWeek.weekLabel}
+              Detalle: {selectedWeek.weekLabel}
             </h4>
-            
             <p className="text-xs text-stone-300 leading-relaxed">
-              Durante esta semana, la media de HRV se situó en <strong>{selectedWeek.avgHrvRmssd} ms</strong> ({selectedWeek.hrvDeviationPct}% respecto a la línea base de {baselineHrv} ms). 
-              El pulso en reposo registró una variación de <strong>{selectedWeek.restingHrDelta >= 0 ? `+${selectedWeek.restingHrDelta}` : selectedWeek.restingHrDelta} bpm</strong>. 
-              {selectedWeek.fatigueClassification === 'accumulated_fatigue' 
-                ? ' Los marcadores constatan que la fatiga periférica y central ha alcanzado el umbral donde el rendimiento decrece si no se inserta un microciclo de descarga.'
-                : ' Los niveles de estrés neuromuscular se asimilaron correctamente sin saturar el sistema nervioso simpático.'}
+              {selectedWeek.totalDays} noche{selectedWeek.totalDays === 1 ? '' : 's'} con check-in.
+              {selectedWeek.avgHrvRmssd > 0 ? (
+                <> HRV media <strong>{selectedWeek.avgHrvRmssd} ms</strong>{baselineHrv > 0 ? <> ({selectedWeek.hrvDeviationPct}% frente a tu referencia de {baselineHrv} ms)</> : null}.</>
+              ) : (
+                ' Sin HRV medida.'
+              )}
+              {selectedWeek.avgRestingHr > 0 && baselineRestingHr > 0 ? (
+                <> FC de reposo {selectedWeek.avgRestingHr} bpm ({selectedWeek.restingHrDelta >= 0 ? `+${selectedWeek.restingHrDelta}` : selectedWeek.restingHrDelta} bpm frente a tu referencia).</>
+              ) : null}{' '}
+              La HRV baja también por sueño, estrés, calor, alcohol o enfermedad: la app no puede saber la causa.
             </p>
           </div>
         </div>
       )}
 
-      {/* TAB 3: 28-DAY CONTINUOUS CURVE */}
       {activeTab === 'daily_chart' && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-sm font-bold text-stone-200 flex items-center gap-2">
               <Activity className="w-4 h-4 text-cyan-400" />
-              Registro Diario Continuo de HRV (Últimos 28 días)
+              HRV noche a noche (últimos 28 días)
             </h3>
-            <div className="flex items-center gap-4 text-xs font-mono">
-              <span className="flex items-center gap-1 text-emerald-400">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> Óptimo (&gt;50 ms)
-              </span>
-              <span className="flex items-center gap-1 text-amber-400">
-                <span className="w-2.5 h-2.5 rounded-full bg-amber-500" /> Moderado (45-49 ms)
-              </span>
-              <span className="flex items-center gap-1 text-red-400">
-                <span className="w-2.5 h-2.5 rounded-full bg-red-500" /> Fatigado (&lt;45 ms)
-              </span>
-            </div>
+            {baselineHrv > 0 && (
+              <div className="flex flex-wrap items-center gap-4 text-xs font-mono">
+                <span className="flex items-center gap-1 text-emerald-400"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> ≥ −10 %</span>
+                <span className="flex items-center gap-1 text-amber-400"><span className="w-2.5 h-2.5 rounded-full bg-amber-500" /> −10 a −20 %</span>
+                <span className="flex items-center gap-1 text-red-400"><span className="w-2.5 h-2.5 rounded-full bg-red-500" /> &lt; −20 %</span>
+              </div>
+            )}
           </div>
 
-          {/* Bar Chart Timeline */}
           <div className="bg-stone-950 border border-stone-850 p-4 rounded-2xl overflow-x-auto">
             <div className="min-w-[650px] flex items-end justify-between gap-1.5 h-44 pt-6 pb-2 border-b border-stone-800 relative">
-              
-              {/* Baseline Reference Line */}
-              <div 
-                className="absolute left-0 right-0 border-b border-dashed border-stone-500 pointer-events-none z-10 flex justify-end"
-                style={{ bottom: `${(baselineHrv / 65) * 100}%` }}
-              >
-                <span className="text-[10px] text-stone-400 font-mono bg-stone-950 px-1 -translate-y-2">
-                  Línea Base {baselineHrv} ms
-                </span>
-              </div>
-
-              {/* Threshold Line for Deload (<44 ms) */}
-              <div 
-                className="absolute left-0 right-0 border-b border-dashed border-red-500/40 pointer-events-none z-10 flex justify-end"
-                style={{ bottom: `${(44 / 65) * 100}%` }}
-              >
-                <span className="text-[9px] text-red-400 font-mono bg-stone-950 px-1 -translate-y-2">
-                  Umbral de Descarga (44 ms)
-                </span>
-              </div>
-
-              {checkIns.slice(-28).map((entry, idx) => {
-                const heightPct = Math.min(100, Math.max(20, (entry.hrvRmssd / 65) * 100));
-                const isRed = entry.hrvRmssd < 45;
-                const isAmber = entry.hrvRmssd >= 45 && entry.hrvRmssd < 50;
-
-                return (
-                  <div 
-                    key={idx} 
-                    className="flex-1 flex flex-col items-center gap-1 group relative cursor-pointer"
-                  >
-                    {/* Tooltip on hover */}
-                    <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-12 bg-stone-900 border border-stone-750 text-stone-100 text-[10px] p-1.5 rounded-lg whitespace-nowrap shadow-xl z-20 pointer-events-none font-mono">
-                      <div>{entry.date}</div>
-                      <div>HRV: {entry.hrvRmssd} ms | FC: {entry.restingHr} bpm</div>
-                    </div>
-
-                    <div 
-                      className={`w-full max-w-[14px] rounded-t-sm transition-all ${
-                        isRed 
-                          ? 'bg-red-500 group-hover:bg-red-400' 
-                          : isAmber 
-                          ? 'bg-amber-500 group-hover:bg-amber-400' 
-                          : 'bg-emerald-500 group-hover:bg-emerald-400'
-                      }`}
-                      style={{ height: `${heightPct}%` }}
-                    />
-                    <span className="text-[8px] text-stone-500 font-mono">
-                      {idx % 3 === 0 ? entry.date.slice(8) : ''}
-                    </span>
+              {baselineHrv > 0 && (
+                <div
+                  className="absolute left-0 right-0 border-b border-dashed border-stone-500 pointer-events-none z-10 flex justify-end"
+                  style={{ bottom: `${(baselineHrv / chartMax) * 100}%` }}
+                >
+                  <span className="text-[10px] text-stone-400 font-mono bg-stone-950 px-1 -translate-y-2">Referencia {baselineHrv} ms</span>
+                </div>
+              )}
+              {last28.map((entry, idx) => (
+                <div key={entry.date} className="flex-1 flex flex-col items-center gap-1 group relative cursor-pointer">
+                  <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-12 bg-stone-900 border border-stone-750 text-stone-100 text-[10px] p-1.5 rounded-lg whitespace-nowrap shadow-xl z-20 pointer-events-none font-mono">
+                    <div>{entry.date}</div>
+                    <div>HRV: {entry.hrvRmssd} ms{entry.restingHr ? ` | FC: ${entry.restingHr} bpm` : ''}</div>
                   </div>
-                );
-              })}
+                  <div className={`w-full max-w-[14px] rounded-t-sm transition-all ${nightColor(entry.hrvRmssd)}`} style={{ height: `${Math.min(100, Math.max(5, (entry.hrvRmssd / chartMax) * 100))}%` }} />
+                  <span className="text-[8px] text-stone-500 font-mono">{idx % 3 === 0 ? entry.date.slice(8) : ''}</span>
+                </div>
+              ))}
             </div>
             <div className="flex justify-between text-[10px] text-stone-500 pt-2 font-mono">
-              <span>Hace 28 días (Inicio Mesociclo 2)</span>
-              <span>Hace 14 días (Pico Carga)</span>
-              <span className="text-amber-400 font-bold">Hoy (Ventana de Descarga)</span>
+              <span>Hace 28 días</span>
+              <span>Hoy</span>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* Simulator Modal */}
-      {showSimulateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md bg-stone-900 border border-stone-800 rounded-2xl p-6 shadow-2xl text-stone-100 space-y-4">
-            <div className="flex items-center justify-between border-b border-stone-800 pb-3">
-              <h3 className="text-base font-bold flex items-center gap-2">
-                <Sliders className="w-5 h-5 text-amber-400" />
-                Simulador de Biomarcadores de Recuperación
-              </h3>
-              <button 
-                onClick={() => setShowSimulateModal(false)}
-                className="text-stone-400 hover:text-stone-200 text-sm"
-              >
-                ✕
-              </button>
-            </div>
-
-            <p className="text-xs text-stone-400 leading-relaxed">
-              Ajusta los valores hipotéticos de HRV y FC en reposo para comprobar cómo responde el motor predictivo de Uphill Athlete.
-            </p>
-
-            <div className="space-y-4">
-              <div>
-                <div className="flex justify-between text-xs mb-1 font-mono">
-                  <span className="text-stone-300">HRV Nocturna rMSSD:</span>
-                  <span className="text-amber-400 font-bold">{simulatedHrv} ms</span>
-                </div>
-                <input
-                  type="range"
-                  min="32"
-                  max="62"
-                  value={simulatedHrv}
-                  onChange={(e) => setSimulatedHrv(Number(e.target.value))}
-                  className="w-full accent-amber-500 cursor-pointer"
-                />
-                <div className="flex justify-between text-[10px] text-stone-500 font-mono">
-                  <span>32 ms (Fatiga Severa)</span>
-                  <span>51 ms (Línea Base)</span>
-                  <span>62 ms (Fresco)</span>
-                </div>
-              </div>
-
-              <div>
-                <div className="flex justify-between text-xs mb-1 font-mono">
-                  <span className="text-stone-300">Pulsaciones en Reposo:</span>
-                  <span className="text-cyan-400 font-bold">{simulatedRestingHr} bpm</span>
-                </div>
-                <input
-                  type="range"
-                  min="42"
-                  max="58"
-                  value={simulatedRestingHr}
-                  onChange={(e) => setSimulatedRestingHr(Number(e.target.value))}
-                  className="w-full accent-cyan-500 cursor-pointer"
-                />
-                <div className="flex justify-between text-[10px] text-stone-500 font-mono">
-                  <span>42 bpm (Recuperado)</span>
-                  <span>46 bpm (Basal)</span>
-                  <span>58 bpm (Drift Alto)</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsSimulating(false);
-                  setSimulatedHrv(43);
-                  setSimulatedRestingHr(51);
-                  setShowSimulateModal(false);
-                }}
-                className="flex-1 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs font-semibold"
-              >
-                Restablecer Real
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setIsSimulating(true);
-                  setShowSimulateModal(false);
-                }}
-                className="flex-1 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 text-xs font-bold"
-              >
-                Aplicar Simulación
-              </button>
-            </div>
-          </div>
+          <p className="text-[11px] text-stone-400">Colores con los mismos cortes que el estado de readiness para una noche (HRV −10 % y −20 % frente a tu referencia).</p>
         </div>
       )}
     </div>

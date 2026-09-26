@@ -202,3 +202,9 @@ test('Regresión HRV: describe la tendencia, sin "Decisión Táctica" ni % de ca
   const src = readFileSync('src/utils/hrvLinearRegression.ts', 'utf8') + readFileSync('src/components/HRVPredictiveRegressionCard.tsx', 'utf8');
   assert.doesNotMatch(src, /Decisión Táctica|recommendedAction|recommendedLoadAdjustmentPct|coachPrescription|onScheduleDeload|Overreaching|mitocondrial/);
 });
+
+test('Widget HRV semanal: sin predictor de descarga ni datos inventados', () => {
+  const src = readFileSync('src/components/WeeklyFatigueHrvWidget.tsx', 'utf8');
+  assert.doesNotMatch(src, /Mesociclo 2|5\.200|DeloadPrediction|Umbral de Descarga|onScheduleDeload|imminent|sobreentrenamiento|mitocondrial|44 ms/);
+  assert.doesNotMatch(readFileSync('src/types/index.ts', 'utf8'), /imminent_overtraining|DeloadPrediction/);
+});

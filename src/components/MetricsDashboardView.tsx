@@ -58,7 +58,6 @@ interface MetricsDashboardViewProps {
   pmcData: PMCDataPoint[];
   suuntoConfig: SuuntoIntegrationConfig;
   onNavigateTab: (tab: string) => void;
-  onScheduleDeload?: () => void;
 }
 
 export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
@@ -69,7 +68,6 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
   pmcData,
   suuntoConfig,
   onNavigateTab,
-  onScheduleDeload,
 }) => {
   const [period, setPeriod] = useState<'7d' | '30d' | 'mesocycle' | 'season'>('mesocycle');
   const [activeMetricsTab, setActiveMetricsTab] = useState<'all' | 'hrv_load' | 'hrv_predictive' | 'acwr' | 'pmc' | 'zones'>('all');
@@ -613,7 +611,6 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
             checkIns={checkIns}
             pmcData={pmcData}
             profile={profile}
-            onScheduleDeload={onScheduleDeload}
             onNavigateTab={onNavigateTab}
             onSelectMetricsTab={(tab) => setActiveMetricsTab(tab as any)}
           />
@@ -887,7 +884,6 @@ export const MetricsDashboardView: React.FC<MetricsDashboardViewProps> = ({
             checkIns={checkIns}
             pmcData={pmcData}
             profile={profile}
-            onScheduleDeload={onScheduleDeload}
             onNavigateTab={onNavigateTab}
           />
         </div>

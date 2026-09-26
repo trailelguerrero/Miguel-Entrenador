@@ -27,7 +27,6 @@ interface WeeklyTssVsHrvWidgetProps {
   checkIns: DailyCheckIn[];
   pmcData: PMCDataPoint[];
   profile: AthleteProfile;
-  onScheduleDeload?: () => void;
   onNavigateTab?: (tab: string) => void;
   onSelectMetricsTab?: (tab: 'hrv_load' | 'pmc' | 'acwr' | 'zones' | 'hrv_predictive') => void;
   defaultTimeframe?: 14 | 28 | 35;
@@ -38,7 +37,6 @@ export const WeeklyTssVsHrvWidget: React.FC<WeeklyTssVsHrvWidgetProps> = ({
   checkIns,
   pmcData,
   profile,
-  onScheduleDeload,
   onNavigateTab,
   onSelectMetricsTab,
   defaultTimeframe = 28,

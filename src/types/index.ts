@@ -766,30 +766,10 @@ export interface WeeklyHrvFatigueTrend {
   avgMuscleSoreness: number; // 1-10
   avgStressLevel: number; // 1-10
   avgReadinessScore: number; // 0-100
-  amberRedDaysCount: number;
   totalDays: number;
-  fatigueClassification: 'optimal_recovery' | 'functional_overreaching' | 'accumulated_fatigue' | 'imminent_overtraining';
+  /** Descriptivo: HRV media semanal frente a la referencia (no es un diagnóstico). */
+  hrvClassification: 'no_data' | 'in_reference' | 'slightly_below' | 'below';
   isCurrentWeek: boolean;
-}
-
-export interface DeloadPrediction {
-  urgency: 'low' | 'moderate' | 'high' | 'imminent';
-  recommendedStartDate: string;
-  recommendedDurationDays: number;
-  confidencePct: number;
-  currentMesocycleWeek: number; // e.g. Week 4 of 4
-  totalLoadingWeeks: number;
-  triggersDetected: string[];
-  physiologicalRationale: string;
-  suggestedVolumeReductionPct: number;
-  coachMiguelPrescription: {
-    maxHeartRateCap: number;
-    zoneSenseTarget: string;
-    weeklyVolumeHours: number;
-    prohibitedElements: string[];
-    mandatoryElements: string[];
-    recoveryInterventions: string[];
-  };
 }
 
 // 7. Fartlek Generator Types

@@ -27,7 +27,6 @@ interface HRVLoadOverreachingViewProps {
   checkIns: DailyCheckIn[];
   pmcData: PMCDataPoint[];
   profile: AthleteProfile;
-  onScheduleDeload?: () => void;
   onNavigateTab?: (tab: string) => void;
 }
 
@@ -36,7 +35,6 @@ export const HRVLoadOverreachingView: React.FC<HRVLoadOverreachingViewProps> = (
   checkIns,
   pmcData,
   profile,
-  onScheduleDeload,
   onNavigateTab,
 }) => {
   const [loadMetric, setLoadMetric] = useState<'tss' | 'km' | 'hours'>('tss');

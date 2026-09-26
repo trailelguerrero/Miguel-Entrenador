@@ -1032,7 +1032,6 @@ ${structureLine} Ya puedes ver los entrenamientos en tu calendario.${warningLine
             pmcData={pmcData}
             suuntoConfig={suuntoConfig}
             onNavigateTab={(tab) => setActiveTab(tab)}
-            onScheduleDeload={handleScheduleDeload}
           />
         )}
 
